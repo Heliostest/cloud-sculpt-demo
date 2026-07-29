@@ -2,17 +2,31 @@ import commonWgsl from '../shaders/common.wgsl?raw';
 import densityWgsl from '../shaders/density.wgsl?raw';
 import skyWgsl from '../shaders/sky.wgsl?raw';
 import raymarchWgsl from '../shaders/raymarch.fg.wgsl?raw';
-import { generateScCellRGBA, generateWeatherRGBA } from './weatherGen';
+import {
+  generateHighCellRGBA,
+  generateHighWarpRGBA,
+  generateHighWeatherRGBA,
+  generateHighWispRGBA,
+  generateScCellRGBA,
+  generateWeatherRGBA,
+} from './weatherGen';
 import { generateCloudLutRGBA } from './cloudLutGen';
 import { generateDetailRGBA, generateHpDetailRGBA, generateShapeRGBA, generateVolumeMipChainRGBA } from './noiseAtlasGen';
 import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, type DemoParams } from './params';
 
-const UNIFORM_SIZE = 608;
+const UNIFORM_SIZE = 736;
 
 export interface CameraState {
   position: [number, number, number];
   target: [number, number, number];
   fovY: number;
+}
+
+export interface GpuTimingInfo {
+  supported: boolean;
+  lastGpuMs: number | null;
+  averageGpuMs: number | null;
+  sampleCount: number;
 }
 
 function mulMat4(a: Float32Array, b: Float32Array): Float32Array {
@@ -122,7 +136,10 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   if (!navigator.gpu) throw new Error('WebGPU not available');
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) throw new Error('No GPU adapter');
-  const device = await adapter.requestDevice();
+  const timestampSupported = adapter.features.has('timestamp-query');
+  const device = await adapter.requestDevice({
+    requiredFeatures: timestampSupported ? ['timestamp-query'] : [],
+  });
   const gpuContext = canvas.getContext('webgpu');
   if (!gpuContext) throw new Error('No webgpu context');
   const context = gpuContext;
@@ -135,6 +152,10 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   const hpDetailData = generateHpDetailRGBA(32);
   const cloudLutData = generateCloudLutRGBA(256, 32);
   const scCellData = generateScCellRGBA(256);
+  const highWeatherData = generateHighWeatherRGBA(512);
+  const highCellData = generateHighCellRGBA(256);
+  const highWarpData = generateHighWarpRGBA(256);
+  const highWispData = generateHighWispRGBA(256);
   const shapeMips = generateVolumeMipChainRGBA(shapeData, 128);
   const detailMips = generateVolumeMipChainRGBA(detailData, 32);
   const hpDetailMips = generateVolumeMipChainRGBA(hpDetailData, 32);
@@ -145,6 +166,34 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
   device.queue.writeTexture({ texture: weatherTex }, weatherData.buffer as ArrayBuffer, { bytesPerRow: 512 * 4 }, [512, 512]);
+
+  const highWeatherTex = device.createTexture({
+    size: [512, 512],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture({ texture: highWeatherTex }, highWeatherData.buffer as ArrayBuffer, { bytesPerRow: 512 * 4 }, [512, 512]);
+
+  const highCellTex = device.createTexture({
+    size: [256, 256],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture({ texture: highCellTex }, highCellData.buffer as ArrayBuffer, { bytesPerRow: 256 * 4 }, [256, 256]);
+
+  const highWarpTex = device.createTexture({
+    size: [256, 256],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture({ texture: highWarpTex }, highWarpData.buffer as ArrayBuffer, { bytesPerRow: 256 * 4 }, [256, 256]);
+
+  const highWispTex = device.createTexture({
+    size: [256, 256],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture({ texture: highWispTex }, highWispData.buffer as ArrayBuffer, { bytesPerRow: 256 * 4 }, [256, 256]);
 
   const shapeTex = device.createTexture({
     size: [128, 128, 128],
@@ -230,6 +279,20 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
+  const timestampQuerySet = timestampSupported ? device.createQuerySet({ type: 'timestamp', count: 2 }) : null;
+  const timestampResolveBuffer = timestampSupported ? device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+  }) : null;
+  const timestampReadBuffer = timestampSupported ? device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  }) : null;
+  let timingPending = false;
+  let timingFrame = 0;
+  let lastGpuMs: number | null = null;
+  const gpuSamples: number[] = [];
+
   const code = `${commonWgsl}\n${densityWgsl}\n${skyWgsl}\n${raymarchWgsl}`;
   const module = device.createShaderModule({ code });
   const info = await module.getCompilationInfo();
@@ -259,6 +322,10 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       { binding: 7, resource: hpDetailTex.createView() },
       { binding: 8, resource: cloudLutTex.createView() },
       { binding: 9, resource: scCellTex.createView() },
+      { binding: 10, resource: highWeatherTex.createView() },
+      { binding: 11, resource: highCellTex.createView() },
+      { binding: 12, resource: highWarpTex.createView() },
+      { binding: 13, resource: highWispTex.createView() },
     ],
   });
 
@@ -471,7 +538,41 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[148] = params.noiseMipOffset;
     f32[149] = params.erosionMipOffset;
     f32[150] = params.forceSimpleMode ? 1 : 0;
-    f32[151] = 0;
+    f32[151] = params.detailFadeEnabled ? 1 : 0;
+
+    // Independent HP Ac/As high-cloud path. The general demo layer 2 remains separate.
+    f32[152] = params.highCloudEnabled ? 1 : 0;
+    f32[153] = params.highBaseKm * 1000;
+    f32[154] = params.highTopKm * 1000;
+    f32[155] = params.highSteps;
+    f32[156] = params.highWeatherRepeat;
+    f32[157] = params.highCloudTypeOverride;
+    f32[158] = params.highDensityMultiplier;
+    f32[159] = params.highCellWindSpeed;
+    f32[160] = params.highCellScaleX;
+    f32[161] = params.highCellScaleZ;
+    f32[162] = params.highWarpScaleX;
+    f32[163] = params.highWarpScaleZ;
+    f32[164] = params.highWarpStrength;
+    f32[165] = params.highAcCellStrength;
+    f32[166] = params.highAsCellStrength;
+    f32[167] = params.highCellPow;
+    f32[168] = params.highBandBottom;
+    f32[169] = params.highBandTop;
+    f32[170] = params.highBottomCoverageScale;
+    f32[171] = params.highHeightCurvePow;
+    f32[172] = params.highDensityThreshold;
+    f32[173] = params.highDensitySoftness;
+    f32[174] = params.highCloudSoftness;
+    f32[175] = params.hiASoftContrast;
+    f32[176] = params.highWispScaleX;
+    f32[177] = params.highWispScaleZ;
+    f32[178] = params.highWispStrength;
+    f32[179] = params.highHorizonStartKm * 1000;
+    f32[180] = params.highHorizonEndKm * 1000;
+    f32[181] = 0;
+    f32[182] = 0;
+    f32[183] = 0;
 
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
   }
@@ -501,20 +602,66 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     writeUniforms(params, camera, aspect, time, weatherOffset, windOffset, shapeOffset, detailOffset, detailMorph);
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
-    const pass = encoder.beginRenderPass({
+    const sampleTimestamp = timestampQuerySet !== null
+      && timestampResolveBuffer !== null
+      && timestampReadBuffer !== null
+      && !timingPending
+      && timingFrame % 4 === 0;
+    timingFrame++;
+    const passDescriptor: GPURenderPassDescriptor = {
       colorAttachments: [{
         view,
         clearValue: { r: 0.1, g: 0.15, b: 0.25, a: 1 },
         loadOp: 'clear',
         storeOp: 'store',
       }],
-    });
+    };
+    if (sampleTimestamp && timestampQuerySet) {
+      passDescriptor.timestampWrites = {
+        querySet: timestampQuerySet,
+        beginningOfPassWriteIndex: 0,
+        endOfPassWriteIndex: 1,
+      };
+    }
+    const pass = encoder.beginRenderPass(passDescriptor);
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.draw(3);
     pass.end();
+    if (sampleTimestamp && timestampQuerySet && timestampResolveBuffer && timestampReadBuffer) {
+      encoder.resolveQuerySet(timestampQuerySet, 0, 2, timestampResolveBuffer, 0);
+      encoder.copyBufferToBuffer(timestampResolveBuffer, 0, timestampReadBuffer, 0, 16);
+    }
     device.queue.submit([encoder.finish()]);
+    if (sampleTimestamp && timestampReadBuffer) {
+      timingPending = true;
+      void timestampReadBuffer.mapAsync(GPUMapMode.READ).then(() => {
+        const values = new BigUint64Array(timestampReadBuffer.getMappedRange());
+        const elapsed = Number(values[1] - values[0]) / 1_000_000;
+        if (Number.isFinite(elapsed) && elapsed >= 0) {
+          lastGpuMs = elapsed;
+          gpuSamples.push(elapsed);
+          if (gpuSamples.length > 16) gpuSamples.shift();
+        }
+        timestampReadBuffer.unmap();
+        timingPending = false;
+      }).catch(() => {
+        timingPending = false;
+      });
+    }
   }
 
-  return { render, resizeCanvas, device };
+  function getGpuTimingInfo(): GpuTimingInfo {
+    const averageGpuMs = gpuSamples.length > 0
+      ? gpuSamples.reduce((sum, value) => sum + value, 0) / gpuSamples.length
+      : null;
+    return {
+      supported: timestampSupported,
+      lastGpuMs,
+      averageGpuMs,
+      sampleCount: gpuSamples.length,
+    };
+  }
+
+  return { render, resizeCanvas, device, getGpuTimingInfo };
 }

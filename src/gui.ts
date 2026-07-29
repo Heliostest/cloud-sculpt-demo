@@ -67,6 +67,38 @@ export function createGui(
   hpLod.add(params, 'noiseMipOffset', 0, 7, 0.1);
   hpLod.add(params, 'erosionMipOffset', 0, 5, 0.1);
   hpLod.add(params, 'forceSimpleMode');
+  hpLod.add(params, 'detailFadeEnabled');
+
+  const high = gui.addFolder('HP High Cloud (Ac / As)');
+  high.add(params, 'highCloudEnabled');
+  high.add(params, 'highCloudTypeOverride', -1, 1, 0.01).name('type override');
+  high.add(params, 'highWeatherRepeat', 0.000005, 0.00008, 0.000001);
+  high.add(params, 'highBaseKm', 3, 14, 0.1);
+  high.add(params, 'highTopKm', 4, 18, 0.1);
+  high.add(params, 'highSteps', 8, 192, 1);
+  high.add(params, 'highBandBottom', 0, 1, 0.01);
+  high.add(params, 'highBandTop', 0, 1, 0.01);
+  high.add(params, 'highBottomCoverageScale', 0, 1, 0.01);
+  high.add(params, 'highHeightCurvePow', 0.05, 4, 0.01);
+  high.add(params, 'highDensityThreshold', 0, 1, 0.01);
+  high.add(params, 'highDensitySoftness', 0.001, 1, 0.01);
+  high.add(params, 'highCloudSoftness', 0.001, 0.3, 0.001);
+  high.add(params, 'highDensityMultiplier', 0, 3, 0.01);
+  const highCell = high.addFolder('Cell / Warp / Wisp');
+  highCell.add(params, 'highCellScaleX', 0.1, 16, 0.1);
+  highCell.add(params, 'highCellScaleZ', 0.1, 16, 0.1);
+  highCell.add(params, 'highCellWindSpeed', 0, 4, 0.01);
+  highCell.add(params, 'highWarpScaleX', 0.1, 8, 0.1);
+  highCell.add(params, 'highWarpScaleZ', 0.1, 8, 0.1);
+  highCell.add(params, 'highWarpStrength', 0, 0.5, 0.005);
+  highCell.add(params, 'highAcCellStrength', 0, 1, 0.01);
+  highCell.add(params, 'highAsCellStrength', 0, 1, 0.01);
+  highCell.add(params, 'highCellPow', 0.05, 4, 0.01);
+  highCell.add(params, 'highWispScaleX', 0.1, 16, 0.1);
+  highCell.add(params, 'highWispScaleZ', 0.1, 16, 0.1);
+  highCell.add(params, 'highWispStrength', 0, 1, 0.01);
+  highCell.add(params, 'highHorizonStartKm', 0, 250, 1);
+  highCell.add(params, 'highHorizonEndKm', 1, 400, 1);
 
   const weather = gui.addFolder('Weather');
   weather.add(params, 'coverage', 0.1, 1.0, 0.01);
@@ -90,7 +122,7 @@ export function createGui(
   sun.add(params, 'sunAzimuthDeg', 0, 360, 1);
   sun.add(params, 'sunElevationDeg', 5, 80, 1);
 
-  const layers = gui.addFolder('Layers');
+  const layers = gui.addFolder('Generic 3D Layers (not HP High)');
   for (let i = 0; i < params.layers.length; i++) {
     const L = params.layers[i];
     const f = layers.addFolder(`L${i}`);
@@ -115,7 +147,7 @@ export function createGui(
   quality.add(params, 'lightSteps', 4, 8, 1);
   quality.add(params, 'exposure', 0.2, 3, 0.01);
 
-  gui.add(params, 'debugMode', ['Final', 'Support', 'AfterShape', 'FinalDensity', 'Weather', 'DensityCoverage']);
+  gui.add(params, 'debugMode', ['Final', 'Support', 'AfterShape', 'FinalDensity', 'Weather', 'DensityCoverage', 'HighWeather', 'HighBand', 'HighDensity']);
 
   const cam = {
     side: () => hooks.onPreset('side'),

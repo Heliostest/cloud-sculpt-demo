@@ -110,3 +110,80 @@ export function generateScCellRGBA(size = 256): Uint8Array {
   }
   return data;
 }
+
+export function generateHighWeatherRGBA(size = 512): Uint8Array {
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const v = y / size;
+      const broad = fbmTile(u * 4 + 0.21, v * 4 + 0.63, 4, 5);
+      const broken = 1 - worleyTile(u * 7 + 0.4, v * 7 + 0.2, 7);
+      const coverage = Math.min(1, Math.max(0, (broad * 0.82 + broken * 0.18 - 0.28) / 0.72));
+      const type = Math.min(1, Math.max(0, fbmTile(u * 2 + 0.73, v * 2 + 0.19, 2, 4)));
+      const msWeight = Math.min(1, Math.max(0, coverage * (0.7 + broken * 0.3)));
+      const i = (y * size + x) * 4;
+      data[i] = Math.round(coverage * 255);
+      data[i + 1] = Math.round(type * 255);
+      data[i + 2] = 0;
+      data[i + 3] = Math.round(msWeight * 255);
+    }
+  }
+  return data;
+}
+
+export function generateHighCellRGBA(size = 256): Uint8Array {
+  const data = new Uint8Array(size * size * 4);
+  const period = 5;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const v = y / size;
+      const cell = 1 - worleyTile(u * period, v * period, period);
+      const shaped = Math.min(1, Math.max(0, cell * 1.08));
+      const i = (y * size + x) * 4;
+      const value = Math.round(shaped * 255);
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+}
+
+export function generateHighWarpRGBA(size = 256): Uint8Array {
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const v = y / size;
+      const wx = fbmTile(u * 3 + 0.17, v * 3 + 0.71, 3, 4);
+      const wz = fbmTile(u * 3 + 1.11, v * 3 + 0.29, 3, 4);
+      const i = (y * size + x) * 4;
+      data[i] = Math.round(wx * 255);
+      data[i + 1] = Math.round(wz * 255);
+      data[i + 2] = 0;
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+}
+
+export function generateHighWispRGBA(size = 256): Uint8Array {
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const v = y / size;
+      const wisp = Math.pow(fbmTile(u * 9 + 0.43, v * 9 + 0.87, 9, 4), 1.6);
+      const i = (y * size + x) * 4;
+      const value = Math.round(Math.min(1, Math.max(0, wisp)) * 255);
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+}

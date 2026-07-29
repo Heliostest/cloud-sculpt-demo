@@ -183,18 +183,20 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 为 3D shape/detail 纹理生成 mip chain，或记录 WebGPU 侧采用的等效预滤波方案。
 - [x] 将 `noiseMipOffset`、`erosionMipOffset` 显式传入 evaluator。
 - [x] 增加 `simpleMode`，粗探测时跳过 detail；保留 step-length `detailFade` 作为抗闪烁扩展，但不要把它称为 HP mip LOD。
-- [ ] 比较固定 LOD、mip LOD、detailFade 三种方式的稳定性和 GPU 时间。
+- [x] 比较固定 LOD、mip LOD、detailFade 三种方式的稳定性和 GPU 时间。
 
-实现记录：shape、current detail 与 HP detail 均生成完整 3D box-filter mip chain；HP evaluator 使用独立 shape/detail LOD，raymarch 的 probe/ahead 路径使用 `simpleMode`，最终密度与光照采样仍使用完整模式。固定验证场景中，阶段 7 的 `current` LOD 0 截图与阶段 0 基线字节一致；HP 的 LOD 2 与强制 simple 截图均已保存且无 WGSL/WebGPU 错误。GPU 时间比较仍待接入 timestamp-query 或等价的可靠计时设施。
+实现记录：shape、current detail 与 HP detail 均生成完整 3D box-filter mip chain；HP evaluator 使用独立 shape/detail LOD，raymarch 的 probe/ahead 路径使用 `simpleMode`，最终密度与光照采样仍使用完整模式。固定验证场景中，阶段 7 的 `current` LOD 0 截图与阶段 0 基线字节一致；HP 的 LOD 2 与强制 simple 截图均已保存且无 WGSL/WebGPU 错误。WebGPU timestamp-query 本机趋势值为固定 LOD 0 `81.553 ms`、mip LOD 2 `75.710 ms`、step detail fade `82.461 ms`；fixed 与 detail-fade 在当前步长范围内截图字节一致，mip LOD 2 会降低高频细节。具体记录见 evidence，不能外推为跨设备基准。
 
 验收：远距/大步长下细节不闪烁；simple mode 不采样 detail；完整模式在 LOD 0 与阶段 6 近景基线一致。
 
 ### 阶段 8：实现独立 Ac/As 高空云路径（L3）
 
-- [ ] 新建独立 high-weather 通道与 evaluator，不复用低云 3D shape/detail。
-- [ ] 添加 cell、warp、wisp、coverage-driven top/bottom、horizon shift、band softness 和独立 density multiplier。
-- [ ] 主 raymarch 为高空云建立可独立调节的密度采样区间，再与低云结果合成；高空云光步属于后续光照路线图，不在本文实施范围内。
-- [ ] 原 demo 第三层可保留为通用 3D 层，但 UI 和命名必须与 HP high cloud 区分。
+- [x] 新建独立 high-weather 通道与 evaluator，不复用低云 3D shape/detail。
+- [x] 添加 cell、warp、wisp、coverage-driven top/bottom、horizon shift、band softness 和独立 density multiplier。
+- [x] 主 raymarch 为高空云建立可独立调节的密度采样区间，再与低云结果合成；高空云光步属于后续光照路线图，不在本文实施范围内。
+- [x] 原 demo 第三层可保留为通用 3D 层，但 UI 和命名必须与 HP high cloud 区分。
+
+实现记录：高空云使用独立 high-weather（R coverage、G As/Ac type、A Hi-A/MS weight）、cell、RG warp 与 wisp 四张 2D 纹理；`evaluateHighCloudDensity` 不调用低云 3D shape/detail。高云使用独立球壳区间和均匀步进，按相机位于高云底部上下选择前后合成顺序，并提供 `HighWeather`、`HighBand`、`HighDensity` 调试视图。当前 demo 仅提供轻量高云自阴影近似，未宣称复刻 HP 的完整 HDRP 高云光照。
 
 验收：关闭高空云路径时低云逐像素不变；Ac/As 不采样低云 shape/detail；高空云可单独 debug 和计时。
 
@@ -245,4 +247,4 @@ L3 完成需额外满足：
 
 ## 9. 当前建议的下一步
 
-阶段 0–6 已完成；阶段 7 的 mip chain、显式 LOD 与 `simpleMode` 已落地并保留 `current` 字节级截图回归，尚余 GPU 时间对比。下一项功能工作是阶段 8 的独立 Ac/As 高空云 evaluator。
+阶段 0–8 已完成。`current` 与高云关闭时的 HP 低云均保留字节级截图回归；剩余工作属于调参、更多硬件上的性能采样，或不在本路线图范围内的完整高云光照模型。

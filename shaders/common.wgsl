@@ -46,6 +46,14 @@ struct Uniforms {
   hpSc2: vec4f,
   hpDensityPost0: vec4f,
   hpLod0: vec4f,
+  hpHigh0: vec4f,
+  hpHigh1: vec4f,
+  hpHigh2: vec4f,
+  hpHigh3: vec4f,
+  hpHigh4: vec4f,
+  hpHigh5: vec4f,
+  hpHigh6: vec4f,
+  hpHigh7: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
@@ -58,6 +66,10 @@ struct Uniforms {
 @group(0) @binding(7) var hpDetailTex: texture_3d<f32>;
 @group(0) @binding(8) var cloudLutTex: texture_2d<f32>;
 @group(0) @binding(9) var scCellTex: texture_2d<f32>;
+@group(0) @binding(10) var highWeatherTex: texture_2d<f32>;
+@group(0) @binding(11) var highCellTex: texture_2d<f32>;
+@group(0) @binding(12) var highWarpTex: texture_2d<f32>;
+@group(0) @binding(13) var highWispTex: texture_2d<f32>;
 
 fn saturate(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn saturate3(x: vec3f) -> vec3f { return clamp(x, vec3f(0.0), vec3f(1.0)); }

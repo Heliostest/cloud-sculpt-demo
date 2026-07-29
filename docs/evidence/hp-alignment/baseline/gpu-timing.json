@@ -1,0 +1,29 @@
+{
+  "date": "2026-07-29",
+  "scenario": "oblique-cb",
+  "densityModel": "hpLowCloud",
+  "timer": "WebGPU timestamp-query, rolling arithmetic mean",
+  "warning": "Small-sample same-machine trend only; do not compare across devices.",
+  "results": {
+    "fixedLod0_detailFadeOff": {
+      "gpuMs": 81.553,
+      "samples": 5,
+      "query": "detailFade=0&noiseMip=0&erosionMip=0"
+    },
+    "mipLod2_detailFadeOff": {
+      "gpuMs": 75.71,
+      "samples": 4,
+      "query": "detailFade=0&noiseMip=2&erosionMip=2"
+    },
+    "lod0_stepDetailFade": {
+      "gpuMs": 82.461,
+      "samples": 4,
+      "query": "detailFade=1&noiseMip=0&erosionMip=0"
+    },
+    "lod0_stepDetailFade_withAcHighCloud": {
+      "gpuMs": 93.258,
+      "samples": 4,
+      "query": "detailFade=1&noiseMip=0&erosionMip=0&high=1&highType=1"
+    }
+  }
+}

@@ -71,6 +71,16 @@ async function main(): Promise<void> {
   if (Number.isFinite(erosionMipOffset)) params.erosionMipOffset = Math.max(0, Math.min(5, erosionMipOffset));
   const forceSimpleMode = query.get('simple');
   if (forceSimpleMode !== null) params.forceSimpleMode = forceSimpleMode === '1' || forceSimpleMode === 'true';
+  const detailFade = query.get('detailFade');
+  if (detailFade !== null) params.detailFadeEnabled = detailFade !== '0' && detailFade !== 'false';
+  const highCloud = query.get('high');
+  if (highCloud !== null) params.highCloudEnabled = highCloud === '1' || highCloud === 'true';
+  const highType = Number(query.get('highType'));
+  if (query.has('highType') && Number.isFinite(highType)) params.highCloudTypeOverride = Math.max(-1, Math.min(1, highType));
+  const highDensity = Number(query.get('highDensity'));
+  if (query.has('highDensity') && Number.isFinite(highDensity)) params.highDensityMultiplier = Math.max(0, Math.min(3, highDensity));
+  const highSteps = Number(query.get('highSteps'));
+  if (query.has('highSteps') && Number.isFinite(highSteps)) params.highSteps = Math.max(4, Math.min(256, Math.round(highSteps)));
   const detailChannel = query.get('detailChannel');
   if (detailChannel) {
     params.billowyLowWeight = detailChannel === 'billowyLow' ? 1 : 0;
@@ -93,6 +103,9 @@ async function main(): Promise<void> {
   document.body.dataset.noiseMipOffset = String(params.noiseMipOffset);
   document.body.dataset.erosionMipOffset = String(params.erosionMipOffset);
   document.body.dataset.forceSimpleMode = String(params.forceSimpleMode);
+  document.body.dataset.detailFadeEnabled = String(params.detailFadeEnabled);
+  document.body.dataset.highCloudEnabled = String(params.highCloudEnabled);
+  document.body.dataset.highCloudType = String(params.highCloudTypeOverride);
   document.body.dataset.densityModel = params.densityModel;
   document.body.dataset.scStrength = String(params.scStrength);
 
@@ -161,6 +174,12 @@ async function main(): Promise<void> {
 
     const cam = orbitToCamera(orbit.yaw, orbit.pitch, orbit.dist, [orbit.targetX, orbit.targetY, orbit.targetZ]);
     renderer.render(params, cam, time, weatherOffset, windOffset, shapeOffset, detailOffset, detailMorph);
+    const gpuTiming = renderer.getGpuTimingInfo();
+    document.body.dataset.gpuTimingSupported = String(gpuTiming.supported);
+    document.body.dataset.gpuSampleCount = String(gpuTiming.sampleCount);
+    if (gpuTiming.averageGpuMs !== null) {
+      document.body.dataset.gpuMs = gpuTiming.averageGpuMs.toFixed(3);
+    }
     if (!validationReady) {
       validationReady = true;
       void renderer.device.queue.onSubmittedWorkDone().then(() => {

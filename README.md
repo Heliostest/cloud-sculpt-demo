@@ -32,3 +32,5 @@ npm run test:density
 HP 密度差异审计与渐进对齐计划：[`HP_DENSITY_ALIGNMENT_ROADMAP.md`](HP_DENSITY_ALIGNMENT_ROADMAP.md)
 
 固定视觉验证场景：`/?scenario=side-cu`、`oblique-cb`、`top-density`、`detail-off`。场景参数记录在 `docs/evidence/hp-alignment/baseline/scenarios.json`。
+
+密度模式可通过 `&model=current|hpCore|hpLowCloud` 切换。HP 低云支持 `noiseMip`、`erosionMip`、`simple` 和 `detailFade` 对照；独立 Ac/As 高空云通过 `&high=1&highType=0|1` 启用，并可用 `HighWeather`、`HighBand`、`HighDensity` 调试视图检查。完整复现参数与截图见 `docs/evidence/hp-alignment/baseline/README.md`。

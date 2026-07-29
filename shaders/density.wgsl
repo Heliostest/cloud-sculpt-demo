@@ -7,6 +7,82 @@ struct DensitySample {
   densityCoverage: f32,
 };
 
+struct HighCloudSample {
+  density: f32,
+  coverage: f32,
+  typeMix: f32,
+  height01: f32,
+  bandMask: f32,
+};
+
+fn emptyHighCloudSample() -> HighCloudSample {
+  return HighCloudSample(0.0, 0.0, 0.0, 0.0, 0.0);
+}
+
+fn highWeatherUv(worldPos: vec3f) -> vec2f {
+  return worldPos.xz * U.hpHigh1.x + U.weatherOffset;
+}
+
+fn sampleHighWeather(worldPos: vec3f) -> vec4f {
+  return textureSampleLevel(highWeatherTex, weatherSamp, highWeatherUv(worldPos) + U.windOffset, 0.0);
+}
+
+fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
+  if (U.hpHigh0.x < 0.5) {
+    return emptyHighCloudSample();
+  }
+  let baseAlt = U.hpHigh0.y;
+  let topAlt = max(baseAlt + 1.0, U.hpHigh0.z);
+  let alt = altitude(worldPos);
+  if (alt < baseAlt || alt > topAlt) {
+    return emptyHighCloudSample();
+  }
+  let normalizedHeight = saturate((alt - baseAlt) / (topAlt - baseAlt));
+  let weather = sampleHighWeather(worldPos);
+  let coverage = saturate(weather.r);
+  if (coverage < 0.001) {
+    return HighCloudSample(0.0, coverage, weather.g, normalizedHeight, 0.0);
+  }
+  let typeMix = select(saturate(weather.g), saturate(U.hpHigh1.y), U.hpHigh1.y >= 0.0);
+  let cellStrength = mix(U.hpHigh3.z, U.hpHigh3.y, typeMix);
+  let baseUv = highWeatherUv(worldPos);
+  let windUv = U.windOffset * U.hpHigh1.w;
+  let warpUv = baseUv * U.hpHigh2.zw + windUv * 0.5;
+  let warp = (textureSampleLevel(highWarpTex, weatherSamp, warpUv, 0.0).rg * 2.0 - 1.0) * U.hpHigh3.x;
+  let cellUv = baseUv * U.hpHigh2.xy + windUv + warp;
+  let cellRaw = saturate(textureSampleLevel(highCellTex, weatherSamp, cellUv, 0.0).r);
+  let cellShaped = pow(max(cellRaw, 0.001), max(U.hpHigh3.w, 0.01));
+
+  let coverForHeight = pow(coverage, max(U.hpHigh4.w, 0.01));
+  let drivenTop = mix(U.hpHigh4.x, U.hpHigh4.y, coverForHeight);
+  let thickFactor = mix(1.0, cellShaped, saturate(cellStrength * 0.5));
+  let effectiveTop = U.hpHigh4.x + (drivenTop - U.hpHigh4.x) * thickFactor;
+  let effectiveBottom = U.hpHigh4.x - (U.hpHigh4.y - U.hpHigh4.x) * U.hpHigh4.z * coverForHeight;
+
+  let distXZ = length((worldPos - U.cameraPos).xz);
+  let distT = smoothstep(U.hpHigh6.w, max(U.hpHigh6.w + 1.0, U.hpHigh7.x), distXZ);
+  let horizonShift = distT * effectiveBottom;
+  let adjustedBottom = effectiveBottom - horizonShift;
+  let adjustedTop = effectiveTop - horizonShift;
+  let bandSoft = max(U.hpHigh5.z, 0.001);
+  let bandMask = smoothstep(adjustedBottom - bandSoft, adjustedBottom + bandSoft, normalizedHeight)
+    * (1.0 - smoothstep(adjustedTop - bandSoft, adjustedTop + bandSoft, normalizedHeight));
+
+  let wispUv = baseUv * U.hpHigh6.xy + windUv;
+  let wispRaw = textureSampleLevel(highWispTex, weatherSamp, wispUv, 0.0).r;
+  let wisp = saturate(wispRaw * wispRaw);
+  let densitySoft = U.hpHigh5.y * (1.0 - pow(saturate(weather.a), max(U.hpHigh5.w, 0.01)));
+  let baseDensity = remapClamped(coverage, U.hpHigh5.x, U.hpHigh5.x + max(densitySoft, 0.001));
+  let cellFactor = mix(1.0, cellShaped, saturate(cellStrength));
+  var density = (baseDensity * cellFactor - wisp * U.hpHigh6.z * typeMix) * bandMask;
+  if (U.hpDensityPost0.z > 0.0) {
+    let darkWeight = 1.0 - pow(saturate(weather.a), max(U.hpDensityPost0.w, 0.01));
+    density *= 1.0 - saturate(U.hpDensityPost0.z * darkWeight);
+  }
+  density = max(0.0, density * U.hpHigh1.z);
+  return HighCloudSample(density, coverage, typeMix, normalizedHeight, bandMask);
+}
+
 fn sampleWeather(worldPos: vec3f) -> vec4f {
   let uv = worldPos.xz * U.weatherRepeat + U.weatherOffset + U.windOffset;
   return textureSampleLevel(weatherTex, weatherSamp, uv, 0.0);
@@ -233,7 +309,8 @@ fn cloudFromShapeHpCore(
 
   let detailOff = (U.debugFlags.y & 1u) != 0u;
   let detailWave = 1.0 / max(1e-5, U.detailRepeat);
-  let detailFade = 1.0 - softstep(0.45 * detailWave, 1.1 * detailWave, stepLen);
+  let detailFadeByStep = 1.0 - softstep(0.45 * detailWave, 1.1 * detailWave, stepLen);
+  let detailFade = select(1.0, detailFadeByStep, U.hpLod0.w >= 0.5);
   var erodedB = shape;
   var erodedW = shape;
   if (!simpleMode && U.hpLod0.z < 0.5 && !detailOff && detailAmt > 1e-4 && detailFade > 0.01) {

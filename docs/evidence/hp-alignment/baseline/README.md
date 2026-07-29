@@ -34,4 +34,14 @@ CloudLut 的 RGB 分别是 Cu/Tcu/Cb。由于 demo weather 采用 repeat、没�
 - `stage7-current-side-cu.png` 与 `current-side-cu.png` 字节一致，证明 mip 资源迁移没有改变 current 的 LOD 0 回归结果。
 - `hpLowCloud-stage7-lod0-oblique-cb.png`、`hpLowCloud-stage7-mip2-oblique-cb.png` 与 `hpLowCloud-stage7-simple-oblique-cb.png` 分别记录完整 LOD 0、显式 LOD 2 与强制 simple 的结果。
 
-当前环境尚未建立可靠的 WebGPU timestamp-query 计时，因此阶段 7 的 GPU 时间比较仍保留为待办；现有证据只覆盖功能、视觉稳定性和无运行时错误，不把 CPU 截图耗时当作 GPU 时间。
+阶段 7 已接入可选 WebGPU timestamp-query；不支持该 feature 的设备会显示 `data-gpu-timing-supported="false"`，但仍正常渲染。固定 `oblique-cb + hpLowCloud` 场景的本机趋势值记录在 `gpu-timing.json`，这些小样本结果只用于同机相对比较。
+
+阶段 8 独立高空云入口：
+
+- `&high=1`：启用独立 Ac/As 路径；默认关闭，关闭时不改变低云结果。
+- `&highType=0|1`：强制 As 或 Ac；省略时使用 high-weather G。
+- `&highDensity=<value>&highSteps=<count>`：覆盖高云独立密度倍率与步数。
+- `&debug=HighWeather|HighBand|HighDensity`：分别检查 high-weather 通道、高度带和最终高云密度。
+- `hpHigh-stage8-ac-oblique.png` 与 `hpHigh-stage8-as-oblique.png` 记录 Ac/As 最终合成；`hpHigh-stage8-weather.png`、`hpHigh-stage8-band-side.png`、`hpHigh-stage8-density.png` 记录独立调试输出。
+
+高云关闭时，阶段 8 的 `current/side-cu` 与阶段 0 基线字节一致，`hpLowCloud/oblique-cb` 与阶段 7 LOD 0 基线字节一致。

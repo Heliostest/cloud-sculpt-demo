@@ -1,4 +1,4 @@
-export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'Weather' | 'DensityCoverage';
+export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'Weather' | 'DensityCoverage' | 'HighWeather' | 'HighBand' | 'HighDensity';
 
 export type DensityModel = 'current' | 'hpCore' | 'hpLowCloud';
 
@@ -92,6 +92,35 @@ export interface DemoParams {
   noiseMipOffset: number;
   erosionMipOffset: number;
   forceSimpleMode: boolean;
+  detailFadeEnabled: boolean;
+  highCloudEnabled: boolean;
+  highWeatherRepeat: number;
+  highBaseKm: number;
+  highTopKm: number;
+  highSteps: number;
+  highCloudTypeOverride: number;
+  highCellScaleX: number;
+  highCellScaleZ: number;
+  highCellWindSpeed: number;
+  highWarpScaleX: number;
+  highWarpScaleZ: number;
+  highWarpStrength: number;
+  highAcCellStrength: number;
+  highAsCellStrength: number;
+  highCellPow: number;
+  highBandBottom: number;
+  highBandTop: number;
+  highBottomCoverageScale: number;
+  highHeightCurvePow: number;
+  highDensityThreshold: number;
+  highDensitySoftness: number;
+  highCloudSoftness: number;
+  highWispScaleX: number;
+  highWispScaleZ: number;
+  highWispStrength: number;
+  highDensityMultiplier: number;
+  highHorizonStartKm: number;
+  highHorizonEndKm: number;
   detailOff: boolean;
   sunAzimuthDeg: number;
   sunElevationDeg: number;
@@ -176,6 +205,35 @@ export function createDefaultParams(): DemoParams {
     noiseMipOffset: 0.0,
     erosionMipOffset: 0.0,
     forceSimpleMode: false,
+    detailFadeEnabled: true,
+    highCloudEnabled: false,
+    highWeatherRepeat: 0.000018,
+    highBaseKm: 6.5,
+    highTopKm: 10.5,
+    highSteps: 96,
+    highCloudTypeOverride: -1,
+    highCellScaleX: 4.0,
+    highCellScaleZ: 4.0,
+    highCellWindSpeed: 1.5,
+    highWarpScaleX: 1.4,
+    highWarpScaleZ: 1.4,
+    highWarpStrength: 0.12,
+    highAcCellStrength: 0.88,
+    highAsCellStrength: 0.32,
+    highCellPow: 1.8,
+    highBandBottom: 0.2,
+    highBandTop: 0.82,
+    highBottomCoverageScale: 0.25,
+    highHeightCurvePow: 0.8,
+    highDensityThreshold: 0.36,
+    highDensitySoftness: 0.18,
+    highCloudSoftness: 0.055,
+    highWispScaleX: 7.0,
+    highWispScaleZ: 7.0,
+    highWispStrength: 0.28,
+    highDensityMultiplier: 0.06,
+    highHorizonStartKm: 35,
+    highHorizonEndKm: 140,
     detailOff: false,
     sunAzimuthDeg: 210,
     sunElevationDeg: 32,
@@ -237,6 +295,9 @@ export const DEBUG_MODE_INDEX: Record<DebugMode, number> = {
   FinalDensity: 3,
   Weather: 4,
   DensityCoverage: 5,
+  HighWeather: 6,
+  HighBand: 7,
+  HighDensity: 8,
 };
 
 export function isDebugMode(value: string | null): value is DebugMode {

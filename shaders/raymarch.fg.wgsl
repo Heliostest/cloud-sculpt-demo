@@ -30,6 +30,74 @@ fn lightTransmittance(pos: vec3f, dens0: f32) -> f32 {
   return exp(-min(tau, 16.0));
 }
 
+fn highLightTransmittance(pos: vec3f, dens0: f32) -> f32 {
+  let stepLen = max(80.0, (U.hpHigh0.z - U.hpHigh0.y) / 12.0);
+  var tau = dens0 * U.optical.y * 6.0;
+  for (var i = 0u; i < 4u; i++) {
+    let p = pos + U.sunDir * (stepLen * (f32(i) + 1.0));
+    tau += evaluateHighCloudDensity(p).density * U.optical.y * stepLen;
+  }
+  return exp(-min(tau, 12.0));
+}
+
+fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
+  if (U.hpHigh0.x < 0.5) {
+    return vec4f(0.0, 0.0, 0.0, 1.0);
+  }
+  let shell = rayCloudShell(ro, rd, U.hpHigh0.y, U.hpHigh0.z);
+  if (shell.y < shell.x) {
+    return vec4f(0.0, 0.0, 0.0, 1.0);
+  }
+  let t0 = max(shell.x, 0.0);
+  let t1 = min(shell.y, U.quality.w);
+  if (t1 <= t0) {
+    return vec4f(0.0, 0.0, 0.0, 1.0);
+  }
+  let debugMode = U.debugFlags.x;
+  if (debugMode == 6u) {
+    let p = ro + rd * ((t0 + t1) * 0.5);
+    let w = sampleHighWeather(p);
+    return vec4f(w.r, w.g, w.a, 0.0);
+  }
+
+  let stepCount = max(4u, min(256u, u32(U.hpHigh0.w)));
+  let stepLen = (t1 - t0) / f32(stepCount);
+  let jitter = fract(sin(dot(ro + rd * t0, vec3f(41.7, 289.1, 113.5))) * 15731.743);
+  var t = t0 + jitter * stepLen;
+  var transmittance = 1.0;
+  var radiance = vec3f(0.0);
+  var maxBand = 0.0;
+  var maxDensity = 0.0;
+  for (var i = 0u; i < 256u; i++) {
+    if (i >= stepCount || t >= t1 || transmittance < 0.008) { break; }
+    let pos = ro + rd * t;
+    let s = evaluateHighCloudDensity(pos);
+    maxBand = max(maxBand, s.bandMask);
+    maxDensity = max(maxDensity, s.density);
+    if (s.density > 0.001) {
+      let sigmaT = s.density * U.optical.y;
+      let sigmaS = sigmaT * saturate(U.optical.x / max(1e-5, U.optical.y));
+      let midPos = pos + rd * (stepLen * 0.5);
+      let tSun = max(0.12, highLightTransmittance(midPos, s.density));
+      let phase = dualLobeHG(dot(rd, U.sunDir));
+      let ambient = vec3f(0.56, 0.66, 0.82) * mix(0.95, 1.25, s.height01);
+      let sunCol = vec3f(1.05, 0.97, 0.9) * 1.8;
+      let inScatter = (sunCol * tSun * phase + ambient * 0.55) * sigmaS;
+      let absorb = exp(-sigmaT * stepLen);
+      radiance += transmittance * inScatter * ((1.0 - absorb) / max(1e-4, sigmaT));
+      transmittance *= absorb;
+    }
+    t += stepLen;
+  }
+  if (debugMode == 7u) {
+    return vec4f(vec3f(maxBand), 0.0);
+  }
+  if (debugMode == 8u) {
+    return vec4f(vec3f(maxDensity), 0.0);
+  }
+  return vec4f(radiance, transmittance);
+}
+
 fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   let topAlt = U.optical.w;
   var baseAlt = topAlt;
@@ -160,10 +228,22 @@ fn fs(inp: VSOut) -> @location(0) vec4f {
   let ro = U.cameraPos;
 
   let bg = sampleBackground(ro, rd);
-  let cloud = marchCloud(ro, rd);
+  let lowCloud = marchCloud(ro, rd);
+  let highCloud = marchHighCloud(ro, rd);
+  var cloud = lowCloud;
+  if (U.hpHigh0.x >= 0.5) {
+    let highBottomAlt = U.hpHigh0.y + U.hpHigh4.x * (U.hpHigh0.z - U.hpHigh0.y);
+    if (altitude(ro) >= highBottomAlt) {
+      cloud = vec4f(highCloud.rgb + highCloud.a * lowCloud.rgb, highCloud.a * lowCloud.a);
+    } else {
+      cloud = vec4f(lowCloud.rgb + lowCloud.a * highCloud.rgb, lowCloud.a * highCloud.a);
+    }
+  }
   var color = cloud.rgb + bg * cloud.a;
   if (U.debugFlags.x >= 1u && U.debugFlags.x <= 5u) {
-    color = cloud.rgb;
+    color = lowCloud.rgb;
+  } else if (U.debugFlags.x >= 6u && U.debugFlags.x <= 8u) {
+    color = highCloud.rgb;
   }
   color *= U.hero2.z;
   color = color / (color + vec3f(1.0));

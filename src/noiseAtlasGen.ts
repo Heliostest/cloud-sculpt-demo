@@ -141,3 +141,70 @@ export function generateDetailRGBA(size = 32): Uint8Array {
   }
   return data;
 }
+
+// HP-compatible channel roles. The generated Worley fields approximate the
+// required frequency bands; they are not claimed to reproduce HP source assets.
+export function generateHpDetailRGBA(size = 32): Uint8Array {
+  const data = new Uint8Array(size * size * size * 4);
+  const lowP = 3;
+  const highP = 12;
+  for (let z = 0; z < size; z++) {
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const nx = x / size;
+        const ny = y / size;
+        const nz = z / size;
+        const wispyLow = 1 - worley3Tile(nx * lowP + 0.37, ny * lowP + 0.11, nz * lowP + 0.29, lowP);
+        const wispyHigh = 1 - worley3Tile(nx * highP + 0.17, ny * highP + 0.43, nz * highP + 0.31, highP);
+        const billowyLow = 1 - worley3Tile(nx * lowP, ny * lowP, nz * lowP, lowP);
+        const billowyHigh = 1 - worley3Tile(nx * highP + 0.53, ny * highP + 0.23, nz * highP + 0.07, highP);
+        const i = (z * size * size + y * size + x) * 4;
+        data[i] = Math.round(wispyLow * 255);
+        data[i + 1] = Math.round(wispyHigh * 255);
+        data[i + 2] = Math.round(billowyLow * 255);
+        data[i + 3] = Math.round(billowyHigh * 255);
+      }
+    }
+  }
+  return data;
+}
+
+export interface VolumeMipLevel {
+  size: number;
+  data: Uint8Array;
+}
+
+export function generateVolumeMipChainRGBA(base: Uint8Array, baseSize: number): VolumeMipLevel[] {
+  const levels: VolumeMipLevel[] = [{ size: baseSize, data: base }];
+  let previous = base;
+  let previousSize = baseSize;
+  while (previousSize > 1) {
+    const size = Math.max(1, previousSize >> 1);
+    const data = new Uint8Array(size * size * size * 4);
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const dst = (z * size * size + y * size + x) * 4;
+          for (let channel = 0; channel < 4; channel++) {
+            let sum = 0;
+            for (let oz = 0; oz < 2; oz++) {
+              for (let oy = 0; oy < 2; oy++) {
+                for (let ox = 0; ox < 2; ox++) {
+                  const sx = Math.min(previousSize - 1, x * 2 + ox);
+                  const sy = Math.min(previousSize - 1, y * 2 + oy);
+                  const sz = Math.min(previousSize - 1, z * 2 + oz);
+                  sum += previous[(sz * previousSize * previousSize + sy * previousSize + sx) * 4 + channel];
+                }
+              }
+            }
+            data[dst + channel] = Math.round(sum / 8);
+          }
+        }
+      }
+    }
+    levels.push({ size, data });
+    previous = data;
+    previousSize = size;
+  }
+  return levels;
+}

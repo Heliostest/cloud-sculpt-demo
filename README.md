@@ -12,6 +12,7 @@ npm run dev
 ```bash
 npm run typecheck
 npm run build
+npm run test:density
 ```
 
 需要支持 WebGPU 的浏览器（Chrome / Edge）。
@@ -27,3 +28,7 @@ npm run build
   若含 HDRP 派生思路，需另行遵守 Unity/HDRP 许可。
 
 规格：`docs/superpowers/specs/2026-07-29-cloud-sculpt-raymarch-demo-design.md`
+
+HP 密度差异审计与渐进对齐计划：[`HP_DENSITY_ALIGNMENT_ROADMAP.md`](HP_DENSITY_ALIGNMENT_ROADMAP.md)
+
+固定视觉验证场景：`/?scenario=side-cu`、`oblique-cb`、`top-density`、`detail-off`。场景参数记录在 `docs/evidence/hp-alignment/baseline/scenarios.json`。

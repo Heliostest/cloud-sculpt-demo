@@ -23,7 +23,7 @@ fn lightTransmittance(pos: vec3f, dens0: f32) -> f32 {
     if (i >= steps) { break; }
     t += stepLen;
     let p = pos + sun * t;
-    let s = evaluateSculpted(p, stepLen);
+    let s = evaluateSculpted(p, stepLen, false);
     tau += s.density * U.optical.y * stepLen;
     stepLen *= 1.6;
   }
@@ -57,6 +57,11 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     let cov = coverageSignal(w);
     return vec4f(cov, w.g, w.b, 0.0);
   }
+  if (debugMode == 5u) {
+    let p = ro + rd * ((t0 + t1) * 0.5);
+    let s = evaluateSculpted(p, U.quality.x, true);
+    return vec4f(vec3f(s.densityCoverage), 0.0);
+  }
 
   let jitter = fract(sin(dot(ro + rd * t0, vec3f(127.1, 311.7, 74.7))) * 43758.5453);
   var t = t0 + jitter * min(U.quality.x, 40.0);
@@ -74,7 +79,7 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   for (var i = 0u; i < 768u; i++) {
     if (i >= maxIter || t >= t1 || transmittance < 0.008) { break; }
     let pos = ro + rd * t;
-    let probe = evaluateSculpted(pos, minStep);
+    let probe = evaluateSculpted(pos, minStep, true);
     var stepLen = minStep;
     if (probe.density > 0.008) {
       stepLen = select(minStep * 0.9, minStep * 0.35, probe.density < 0.22);
@@ -85,7 +90,7 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     } else {
       // 空域前瞻：若下一步落在云内则收回步长
       let leap = min(mix(minStep, maxStep, 0.4), t1 - t);
-      let ahead = evaluateSculpted(pos + rd * leap, leap);
+      let ahead = evaluateSculpted(pos + rd * leap, leap, true);
       // 只用 density 前瞻，避免 support 壳把空步拉小却积不出可见散射
       if (ahead.density > 0.01) {
         stepLen = minStep * 0.55;
@@ -95,7 +100,7 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
       }
     }
     stepLen = min(stepLen, t1 - t);
-    let s = evaluateSculpted(pos, stepLen);
+    let s = evaluateSculpted(pos, stepLen, false);
     dbgSupport = max(dbgSupport, s.support);
     dbgAfter = max(dbgAfter, s.afterShape);
     dbgDens = max(dbgDens, s.density);
@@ -157,7 +162,7 @@ fn fs(inp: VSOut) -> @location(0) vec4f {
   let bg = sampleBackground(ro, rd);
   let cloud = marchCloud(ro, rd);
   var color = cloud.rgb + bg * cloud.a;
-  if (U.debugFlags.x >= 1u && U.debugFlags.x <= 4u) {
+  if (U.debugFlags.x >= 1u && U.debugFlags.x <= 5u) {
     color = cloud.rgb;
   }
   color *= U.hero2.z;

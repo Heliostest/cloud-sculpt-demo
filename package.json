@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
+    "test:density": "node --test tests/density-core.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,4 +1,6 @@
-export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'Weather';
+export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'Weather' | 'DensityCoverage';
+
+export type DensityModel = 'current' | 'hpCore' | 'hpLowCloud';
 
 export type CameraPreset = 'side' | 'oblique45' | 'top';
 
@@ -25,6 +27,7 @@ export interface HeroParams {
 }
 
 export interface DemoParams {
+  densityModel: DensityModel;
   coverage: number;
   weatherExponent: number;
   mesoStrength: number;
@@ -37,6 +40,58 @@ export interface DemoParams {
   detailStrength: number;
   detailRepeat: number;
   wispyEdgeWidth: number;
+  densityThreshold: number;
+  wispyReach: number;
+  edgeSoftness: number;
+  wispyTopHeight: number;
+  wispyTopHardness: number;
+  bottomSmoothHeight: number;
+  bottomSmoothPow: number;
+  loCovCoverIntensity: number;
+  loCovCoverContrast: number;
+  loCovHeightIntensity: number;
+  loCovHeightContrast: number;
+  cloudTypeOverride: number;
+  hpShapeScaleX: number;
+  hpShapeScaleY: number;
+  hpShapeScaleZ: number;
+  hpDetailScaleX: number;
+  hpDetailScaleY: number;
+  hpDetailScaleZ: number;
+  hpBaseWindSpeed: number;
+  hpDetailWindSpeed: number;
+  hpDetailVerticalWindSpeed: number;
+  billowyLowWeight: number;
+  billowyHighWeight: number;
+  wispyLowWeight: number;
+  wispyHighWeight: number;
+  detailStrengthCu: number;
+  detailStrengthTcu: number;
+  detailStrengthCb: number;
+  densityMultiplierCu: number;
+  densityMultiplierTcu: number;
+  densityMultiplierCb: number;
+  densityMultiplier: number;
+  loCoverTopStrength: number;
+  loCoverTopMax: number;
+  loCoverTopCurvePow: number;
+  scStrength: number;
+  scHeightScale: number;
+  scDetailStrength: number;
+  scCellThickPow: number;
+  scCellThickStrength: number;
+  scCellNoiseStrength: number;
+  scCoverageIntensity: number;
+  scCoverageContrast: number;
+  scCellScaleX: number;
+  scCellScaleZ: number;
+  hiASoftContrast: number;
+  hiAConstant: number;
+  densityModIntensity: number;
+  densityModContrast: number;
+  noiseMipOffset: number;
+  erosionMipOffset: number;
+  forceSimpleMode: boolean;
   detailOff: boolean;
   sunAzimuthDeg: number;
   sunElevationDeg: number;
@@ -56,6 +111,7 @@ export interface DemoParams {
 
 export function createDefaultParams(): DemoParams {
   return {
+    densityModel: 'current',
     coverage: 0.62,
     weatherExponent: 0.85,
     mesoStrength: 0.16,
@@ -63,11 +119,63 @@ export function createDefaultParams(): DemoParams {
     weatherRepeat: 0.000032,
     windSpeed: 8,
     windAngleDeg: 35,
-    shapeAmount: 0.28,
-    shapeRepeat: 0.00016,
-    detailStrength: 0.22,
-    detailRepeat: 0.00055,
-    wispyEdgeWidth: 0.38,
+    shapeAmount: 0.55,
+    shapeRepeat: 0.00011,
+    detailStrength: 0.42,
+    detailRepeat: 0.0009,
+    wispyEdgeWidth: 0.28,
+    densityThreshold: 0.0,
+    wispyReach: 0.252,
+    edgeSoftness: 0.25,
+    wispyTopHeight: 0.55,
+    wispyTopHardness: 0.22,
+    bottomSmoothHeight: 0.14,
+    bottomSmoothPow: 1.4,
+    loCovCoverIntensity: 1.0,
+    loCovCoverContrast: 1.0,
+    loCovHeightIntensity: 1.0,
+    loCovHeightContrast: 1.0,
+    cloudTypeOverride: -1,
+    hpShapeScaleX: 0.00011,
+    hpShapeScaleY: 0.00011,
+    hpShapeScaleZ: 0.00011,
+    hpDetailScaleX: 0.0009,
+    hpDetailScaleY: 0.0009,
+    hpDetailScaleZ: 0.0009,
+    hpBaseWindSpeed: 1.0,
+    hpDetailWindSpeed: 1.5,
+    hpDetailVerticalWindSpeed: 0.25,
+    billowyLowWeight: 0.65,
+    billowyHighWeight: 0.35,
+    wispyLowWeight: 0.65,
+    wispyHighWeight: 0.35,
+    detailStrengthCu: 0.85,
+    detailStrengthTcu: 1.0,
+    detailStrengthCb: 1.2,
+    densityMultiplierCu: 1.0,
+    densityMultiplierTcu: 1.0,
+    densityMultiplierCb: 1.0,
+    densityMultiplier: 1.0,
+    loCoverTopStrength: 0.0,
+    loCoverTopMax: 1.8,
+    loCoverTopCurvePow: 1.0,
+    scStrength: 0.0,
+    scHeightScale: 0.22,
+    scDetailStrength: 0.45,
+    scCellThickPow: 1.8,
+    scCellThickStrength: 0.8,
+    scCellNoiseStrength: 1.15,
+    scCoverageIntensity: 1.0,
+    scCoverageContrast: 1.0,
+    scCellScaleX: 4.0,
+    scCellScaleZ: 4.0,
+    hiASoftContrast: 1.0,
+    hiAConstant: 0.0,
+    densityModIntensity: 0.0,
+    densityModContrast: 1.0,
+    noiseMipOffset: 0.0,
+    erosionMipOffset: 0.0,
+    forceSimpleMode: false,
     detailOff: false,
     sunAzimuthDeg: 210,
     sunElevationDeg: 32,
@@ -128,4 +236,19 @@ export const DEBUG_MODE_INDEX: Record<DebugMode, number> = {
   AfterShape: 2,
   FinalDensity: 3,
   Weather: 4,
+  DensityCoverage: 5,
 };
+
+export function isDebugMode(value: string | null): value is DebugMode {
+  return value !== null && value in DEBUG_MODE_INDEX;
+}
+
+export const DENSITY_MODEL_INDEX: Record<DensityModel, number> = {
+  current: 0,
+  hpCore: 1,
+  hpLowCloud: 2,
+};
+
+export function isDensityModel(value: string | null): value is DensityModel {
+  return value !== null && value in DENSITY_MODEL_INDEX;
+}

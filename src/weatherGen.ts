@@ -83,10 +83,28 @@ export function generateWeatherRGBA(size = 512): Uint8Array {
       const meso = 1 - worleyTile(u * mesoP, v * mesoP, mesoP);
       const typeBase = fbmTile(u * typeP + 0.37, v * typeP + 0.11, typeP, 3);
       const type = Math.min(1, Math.max(0, typeBase * 0.85 + meso * 0.15));
+      const scMask = Math.min(1, Math.max(0, (typeBase - 0.38) / 0.42));
       const i = (y * size + x) * 4;
       data[i] = Math.round(Math.min(1, Math.max(0, macro * 1.12)) * 255);
       data[i + 1] = Math.round(Math.min(1, Math.max(0, meso * 0.92 + 0.08)) * 255);
       data[i + 2] = Math.round(type * 255);
+      data[i + 3] = Math.round(scMask * 255);
+    }
+  }
+  return data;
+}
+
+export function generateScCellRGBA(size = 256): Uint8Array {
+  const data = new Uint8Array(size * size * 4);
+  const period = 8;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const cell = 1 - worleyTile((x / size) * period, (y / size) * period, period);
+      const i = (y * size + x) * 4;
+      const value = Math.round(Math.min(1, Math.max(0, cell)) * 255);
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
       data[i + 3] = 255;
     }
   }

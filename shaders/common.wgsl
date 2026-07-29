@@ -31,6 +31,21 @@ struct Uniforms {
   quality: vec4f,
   optical: vec4f,
   debugFlags: vec4u,
+  hpCore0: vec4f,
+  hpCore1: vec4f,
+  hpCoverage0: vec4f,
+  hpShapeScale: vec4f,
+  hpDetailScale: vec4f,
+  hpDetailWeights: vec4f,
+  hpDetailMotion: vec4f,
+  hpTypeDetail: vec4f,
+  hpTypeDensity: vec4f,
+  hpCoverTop: vec4f,
+  hpSc0: vec4f,
+  hpSc1: vec4f,
+  hpSc2: vec4f,
+  hpDensityPost0: vec4f,
+  hpLod0: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
@@ -40,6 +55,9 @@ struct Uniforms {
 @group(0) @binding(4) var shapeSamp: sampler;
 @group(0) @binding(5) var detailTex: texture_3d<f32>;
 @group(0) @binding(6) var detailSamp: sampler;
+@group(0) @binding(7) var hpDetailTex: texture_3d<f32>;
+@group(0) @binding(8) var cloudLutTex: texture_2d<f32>;
+@group(0) @binding(9) var scCellTex: texture_2d<f32>;
 
 fn saturate(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn saturate3(x: vec3f) -> vec3f { return clamp(x, vec3f(0.0), vec3f(1.0)); }
@@ -48,6 +66,10 @@ fn remapClamped(v: f32, low: f32, high: f32) -> f32 {
 }
 fn densityRemap(d: f32, low: f32) -> f32 {
   return remapClamped(d, low, 1.0);
+}
+fn hpDensityRemapSafe(d: f32, low: f32) -> f32 {
+  if (low >= 1.0) { return 0.0; }
+  return saturate((d - low) / (1.0 - low));
 }
 fn henyeyGreenstein(cosTheta: f32, g: f32) -> f32 {
   let g2 = g * g;

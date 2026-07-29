@@ -2,11 +2,12 @@ import commonWgsl from '../shaders/common.wgsl?raw';
 import densityWgsl from '../shaders/density.wgsl?raw';
 import skyWgsl from '../shaders/sky.wgsl?raw';
 import raymarchWgsl from '../shaders/raymarch.fg.wgsl?raw';
-import { generateWeatherRGBA } from './weatherGen';
-import { generateDetailRGBA, generateShapeRGBA } from './noiseAtlasGen';
-import { DEBUG_MODE_INDEX, type DemoParams } from './params';
+import { generateScCellRGBA, generateWeatherRGBA } from './weatherGen';
+import { generateCloudLutRGBA } from './cloudLutGen';
+import { generateDetailRGBA, generateHpDetailRGBA, generateShapeRGBA, generateVolumeMipChainRGBA } from './noiseAtlasGen';
+import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, type DemoParams } from './params';
 
-const UNIFORM_SIZE = 368;
+const UNIFORM_SIZE = 608;
 
 export interface CameraState {
   position: [number, number, number];
@@ -131,6 +132,12 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   const weatherData = generateWeatherRGBA(512);
   const shapeData = generateShapeRGBA(128);
   const detailData = generateDetailRGBA(32);
+  const hpDetailData = generateHpDetailRGBA(32);
+  const cloudLutData = generateCloudLutRGBA(256, 32);
+  const scCellData = generateScCellRGBA(256);
+  const shapeMips = generateVolumeMipChainRGBA(shapeData, 128);
+  const detailMips = generateVolumeMipChainRGBA(detailData, 32);
+  const hpDetailMips = generateVolumeMipChainRGBA(hpDetailData, 32);
 
   const weatherTex = device.createTexture({
     size: [512, 512],
@@ -144,30 +151,79 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     dimension: '3d',
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    mipLevelCount: shapeMips.length,
+  });
+  for (let mip = 0; mip < shapeMips.length; mip++) {
+    const level = shapeMips[mip];
+    device.queue.writeTexture(
+      { texture: shapeTex, mipLevel: mip },
+      level.data.buffer as ArrayBuffer,
+      { bytesPerRow: level.size * 4, rowsPerImage: level.size },
+      [level.size, level.size, level.size],
+    );
+  }
+
+  const scCellTex = device.createTexture({
+    size: [256, 256],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
   device.queue.writeTexture(
-    { texture: shapeTex },
-    shapeData.buffer as ArrayBuffer,
-    { bytesPerRow: 128 * 4, rowsPerImage: 128 },
-    [128, 128, 128],
+    { texture: scCellTex },
+    scCellData.buffer as ArrayBuffer,
+    { bytesPerRow: 256 * 4 },
+    [256, 256],
   );
+
+  const cloudLutTex = device.createTexture({
+    size: [256, 32],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture(
+    { texture: cloudLutTex },
+    cloudLutData.buffer as ArrayBuffer,
+    { bytesPerRow: 256 * 4 },
+    [256, 32],
+  );
+
+  const hpDetailTex = device.createTexture({
+    size: [32, 32, 32],
+    dimension: '3d',
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    mipLevelCount: hpDetailMips.length,
+  });
+  for (let mip = 0; mip < hpDetailMips.length; mip++) {
+    const level = hpDetailMips[mip];
+    device.queue.writeTexture(
+      { texture: hpDetailTex, mipLevel: mip },
+      level.data.buffer as ArrayBuffer,
+      { bytesPerRow: level.size * 4, rowsPerImage: level.size },
+      [level.size, level.size, level.size],
+    );
+  }
 
   const detailTex = device.createTexture({
     size: [32, 32, 32],
     dimension: '3d',
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    mipLevelCount: detailMips.length,
   });
-  device.queue.writeTexture(
-    { texture: detailTex },
-    detailData.buffer as ArrayBuffer,
-    { bytesPerRow: 32 * 4, rowsPerImage: 32 },
-    [32, 32, 32],
-  );
+  for (let mip = 0; mip < detailMips.length; mip++) {
+    const level = detailMips[mip];
+    device.queue.writeTexture(
+      { texture: detailTex, mipLevel: mip },
+      level.data.buffer as ArrayBuffer,
+      { bytesPerRow: level.size * 4, rowsPerImage: level.size },
+      [level.size, level.size, level.size],
+    );
+  }
 
   const weatherSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat' });
-  const shapeSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', addressModeW: 'repeat' });
-  const detailSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', addressModeW: 'repeat' });
+  const shapeSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', addressModeW: 'repeat' });
+  const detailSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', addressModeW: 'repeat' });
 
   const uniformBuf = device.createBuffer({
     size: UNIFORM_SIZE,
@@ -200,6 +256,9 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       { binding: 4, resource: shapeSamp },
       { binding: 5, resource: detailTex.createView() },
       { binding: 6, resource: detailSamp },
+      { binding: 7, resource: hpDetailTex.createView() },
+      { binding: 8, resource: cloudLutTex.createView() },
+      { binding: 9, resource: scCellTex.createView() },
     ],
   });
 
@@ -330,7 +389,89 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     u32[88] = DEBUG_MODE_INDEX[params.debugMode];
     u32[89] = params.detailOff ? 1 : 0;
     u32[90] = params.lightSteps;
-    u32[91] = 0;
+    u32[91] = DENSITY_MODEL_INDEX[params.densityModel];
+
+    // hpCore0: densityThreshold, wispyReach, edgeSoftness, wispyTopHeight
+    f32[92] = params.densityThreshold;
+    f32[93] = params.wispyReach;
+    f32[94] = params.edgeSoftness;
+    f32[95] = params.wispyTopHeight;
+
+    // hpCore1: wispyTopHardness, bottomSmoothHeight, bottomSmoothPow, typeOverride
+    f32[96] = params.wispyTopHardness;
+    f32[97] = params.bottomSmoothHeight;
+    f32[98] = params.bottomSmoothPow;
+    f32[99] = params.cloudTypeOverride;
+
+    // hpCoverage0: Cover intensity/contrast, Height intensity/contrast
+    f32[100] = params.loCovCoverIntensity;
+    f32[101] = params.loCovCoverContrast;
+    f32[102] = params.loCovHeightIntensity;
+    f32[103] = params.loCovHeightContrast;
+
+    // hpShapeScale/detailScale: xyz cycles/metre, w horizontal wind multiplier
+    f32[104] = params.hpShapeScaleX;
+    f32[105] = params.hpShapeScaleY;
+    f32[106] = params.hpShapeScaleZ;
+    f32[107] = params.hpBaseWindSpeed;
+    f32[108] = params.hpDetailScaleX;
+    f32[109] = params.hpDetailScaleY;
+    f32[110] = params.hpDetailScaleZ;
+    f32[111] = params.hpDetailWindSpeed;
+
+    // HP detail weights: BillowyLow/High, WispyLow/High
+    f32[112] = params.billowyLowWeight;
+    f32[113] = params.billowyHighWeight;
+    f32[114] = params.wispyLowWeight;
+    f32[115] = params.wispyHighWeight;
+
+    const windAngle = (params.windAngleDeg * Math.PI) / 180;
+    f32[116] = params.hpDetailVerticalWindSpeed;
+    f32[117] = Math.cos(windAngle) * params.windSpeed;
+    f32[118] = Math.sin(windAngle) * params.windSpeed;
+    f32[119] = 0;
+
+    // Per-type HP values: Cu, Tcu, Cb
+    f32[120] = params.detailStrengthCu;
+    f32[121] = params.detailStrengthTcu;
+    f32[122] = params.detailStrengthCb;
+    f32[123] = 0;
+    f32[124] = params.densityMultiplierCu;
+    f32[125] = params.densityMultiplierTcu;
+    f32[126] = params.densityMultiplierCb;
+    f32[127] = params.densityMultiplier;
+
+    // Coverage-driven, bottom-anchored cloud-top stretch
+    f32[128] = params.loCoverTopStrength;
+    f32[129] = params.loCoverTopMax;
+    f32[130] = params.loCoverTopCurvePow;
+    f32[131] = 0;
+
+    // Sc: strength, height scale, detail strength, cell pow
+    f32[132] = params.scStrength;
+    f32[133] = params.scHeightScale;
+    f32[134] = params.scDetailStrength;
+    f32[135] = params.scCellThickPow;
+    // Sc: thickness strength, sample strength, coverage intensity/contrast
+    f32[136] = params.scCellThickStrength;
+    f32[137] = params.scCellNoiseStrength;
+    f32[138] = params.scCoverageIntensity;
+    f32[139] = params.scCoverageContrast;
+    f32[140] = params.scCellScaleX;
+    f32[141] = params.scCellScaleZ;
+    f32[142] = 0;
+    f32[143] = 0;
+
+    // Hi-A edge softness and low-cloud coverage darkness modulation
+    f32[144] = params.hiAConstant;
+    f32[145] = params.hiASoftContrast;
+    f32[146] = params.densityModIntensity;
+    f32[147] = params.densityModContrast;
+
+    f32[148] = params.noiseMipOffset;
+    f32[149] = params.erosionMipOffset;
+    f32[150] = params.forceSimpleMode ? 1 : 0;
+    f32[151] = 0;
 
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
   }

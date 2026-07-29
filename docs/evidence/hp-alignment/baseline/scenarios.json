@@ -1,0 +1,41 @@
+{
+  "baselineDate": "2026-07-29",
+  "queryFormat": "?scenario=<name>&model=<current|hpCore|hpLowCloud>",
+  "shared": {
+    "densityModel": "current",
+    "windSpeed": 0,
+    "frozenTime": 6
+  },
+  "scenarios": {
+    "side-cu": {
+      "camera": "side",
+      "debugMode": "Final",
+      "detailOff": false,
+      "cloudTypeOverride": 0
+    },
+    "oblique-cb": {
+      "camera": "oblique45",
+      "debugMode": "Final",
+      "detailOff": false,
+      "cloudTypeOverride": 1
+    },
+    "oblique-tcu": {
+      "camera": "oblique45",
+      "debugMode": "Final",
+      "detailOff": false,
+      "cloudTypeOverride": 0.5
+    },
+    "top-density": {
+      "camera": "top",
+      "debugMode": "FinalDensity",
+      "detailOff": false,
+      "cloudTypeOverride": -1
+    },
+    "detail-off": {
+      "camera": "oblique45",
+      "debugMode": "Final",
+      "detailOff": true,
+      "cloudTypeOverride": -1
+    }
+  }
+}

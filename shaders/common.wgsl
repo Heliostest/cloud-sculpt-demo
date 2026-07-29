@@ -83,6 +83,74 @@ fn rayBox(ro: vec3f, rd: vec3f, bmin: vec3f, bmax: vec3f) -> vec2f {
 fn raySlabY(ro: vec3f, rd: vec3f, y0: f32, y1: f32) -> vec2f {
   return rayAxis(ro.y, rd.y, y0, y1);
 }
+
+// 球壳大气：压低视线时远云仍可被命中（平板 slab 会先扎地）
+const PLANET_R: f32 = 6360000.0;
+
+fn planetCenter() -> vec3f {
+  return vec3f(0.0, -PLANET_R, 0.0);
+}
+
+fn altitude(p: vec3f) -> f32 {
+  return length(p - planetCenter()) - PLANET_R;
+}
+
+fn raySphere(ro: vec3f, rd: vec3f, center: vec3f, radius: f32) -> vec2f {
+  let oc = ro - center;
+  let b = dot(oc, rd);
+  let c = dot(oc, oc) - radius * radius;
+  let h = b * b - c;
+  if (h < 0.0) {
+    return vec2f(1.0, -1.0);
+  }
+  let s = sqrt(h);
+  return vec2f(-b - s, -b + s);
+}
+
+fn rayCloudShell(ro: vec3f, rd: vec3f, baseAlt: f32, topAlt: f32) -> vec2f {
+  let c = planetCenter();
+  let bAlt = max(0.0, baseAlt);
+  let tAlt = max(bAlt + 50.0, topAlt);
+  let r0 = PLANET_R + bAlt;
+  let r1 = PLANET_R + tAlt;
+  let to = raySphere(ro, rd, c, r1);
+  if (to.x > to.y) {
+    return vec2f(1.0, -1.0);
+  }
+  let ti = raySphere(ro, rd, c, r0);
+  let h = altitude(ro);
+  var t0 = 0.0;
+  var t1 = 0.0;
+  if (h >= tAlt) {
+    if (to.y < 0.0) {
+      return vec2f(1.0, -1.0);
+    }
+    t0 = max(0.0, to.x);
+    t1 = to.y;
+    if (ti.x <= ti.y && ti.x > t0) {
+      t1 = min(t1, ti.x);
+    }
+  } else if (h <= bAlt) {
+    // 在内球内：从内球穿出进入壳层
+    if (ti.x > ti.y) {
+      return vec2f(1.0, -1.0);
+    }
+    t0 = max(0.0, ti.y);
+    t1 = to.y;
+  } else {
+    // 壳层内
+    t0 = 0.0;
+    t1 = to.y;
+    if (ti.x <= ti.y && ti.x > 0.0) {
+      t1 = min(t1, ti.x);
+    }
+  }
+  if (t1 <= t0) {
+    return vec2f(1.0, -1.0);
+  }
+  return vec2f(t0, t1);
+}
+
 fn shapeAlteringSemiCircle(h: f32, bias: f32) -> f32 {
   let x = saturate(h);
   return saturate(1.0 - pow(abs(2.0 * x - 1.0 - bias), 1.35));

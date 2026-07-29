@@ -31,28 +31,21 @@ fn lightTransmittance(pos: vec3f, dens0: f32) -> f32 {
 }
 
 fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
-  let halfM = U.optical.z;
-  let topM = U.optical.w;
-  // Y-slab：平视长距；大 XZ 盒裁剪；rd.y≈0 时 rayAxis 可处理层内射线
-  let slab = raySlabY(ro, rd, 0.0, topM);
-  let boxHit = rayBox(ro, rd, vec3f(-halfM, -1.0, -halfM), vec3f(halfM, topM + 1.0, halfM));
-  var t0 = -1.0;
-  var t1 = -2.0;
-  if (slab.y >= max(slab.x, 0.0)) {
-    t0 = max(slab.x, 0.0);
-    t1 = min(slab.y, U.quality.w);
+  let topAlt = U.optical.w;
+  var baseAlt = topAlt;
+  if (U.layer0.w > 0.5) { baseAlt = min(baseAlt, U.layer0.x); }
+  if (U.layer1.w > 0.5) { baseAlt = min(baseAlt, U.layer1.x); }
+  if (U.layer2.w > 0.5) { baseAlt = min(baseAlt, U.layer2.x); }
+  if (U.hero0.w > 0.5) { baseAlt = min(baseAlt, U.hero1.y); }
+  if (baseAlt >= topAlt) { baseAlt = 0.0; }
+
+  let shell = rayCloudShell(ro, rd, baseAlt, topAlt);
+  if (shell.y < shell.x) {
+    return vec4f(0.0, 0.0, 0.0, 1.0);
   }
-  if (boxHit.y >= max(boxHit.x, 0.0)) {
-    let b0 = max(boxHit.x, 0.0);
-    let b1 = min(boxHit.y, U.quality.w);
-    if (t1 > t0) {
-      t0 = max(t0, b0);
-      t1 = min(t1, b1);
-    } else {
-      t0 = b0;
-      t1 = b1;
-    }
-  }
+  // 不再用世界 XZ 盒硬裁（会把地平线远云切掉）
+  let t0 = max(shell.x, 0.0);
+  let t1 = min(shell.y, U.quality.w);
   if (t1 <= t0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }

@@ -46,7 +46,8 @@ fn layerSupport(worldPos: vec3f, baseM: f32, topM: f32, densScale: f32, w: vec4f
   if (densScale <= 1e-4 || topM <= baseM) {
     return vec4f(0.0);
   }
-  let h01 = saturate((worldPos.y - baseM) / max(1.0, topM - baseM));
+  let alt = altitude(worldPos);
+  let h01 = saturate((alt - baseM) / max(1.0, topM - baseM));
   let hFade = softstep(0.0, 0.1, h01) * (1.0 - softstep(0.86, 1.0, h01));
   if (hFade <= 0.0) {
     return vec4f(0.0);
@@ -77,7 +78,7 @@ fn heroSupport(worldPos: vec3f) -> vec4f {
   }
   let baseM = U.hero1.y;
   let thick = max(50.0, U.hero1.z);
-  let h01 = saturate((worldPos.y - baseM) / thick);
+  let h01 = saturate((altitude(worldPos) - baseM) / thick);
   let typeMix = saturate(U.hero1.w);
   let anvilR = anvilFootprintBoost(h01, typeMix);
   let ell2 = length((worldPos.xz - center) / (radii * anvilR));
@@ -162,16 +163,15 @@ fn evaluateLayer(
   *outDensity = min(1.0, density);
 }
 
-fn boxEdgeFade(worldPos: vec3f) -> f32 {
-  let halfM = max(100.0, U.optical.z);
-  let edge = halfM * 0.08;
-  let ax = halfM - abs(worldPos.x);
-  let az = halfM - abs(worldPos.z);
-  return softstep(0.0, edge, min(ax, az));
+fn distanceFade(worldPos: vec3f) -> f32 {
+  // 相对相机距离淡出，替代世界原点 XZ 硬边
+  let maxD = max(5000.0, U.quality.w * 0.92);
+  let d = length(worldPos - U.cameraPos);
+  return 1.0 - softstep(maxD * 0.82, maxD, d);
 }
 
 fn evaluateSculpted(worldPos: vec3f, stepLen: f32) -> DensitySample {
-  let edgeFade = boxEdgeFade(worldPos);
+  let edgeFade = distanceFade(worldPos);
   if (edgeFade <= 0.0) {
     return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0);
   }

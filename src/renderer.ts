@@ -176,6 +176,13 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
 
   const code = `${commonWgsl}\n${densityWgsl}\n${skyWgsl}\n${raymarchWgsl}`;
   const module = device.createShaderModule({ code });
+  const info = await module.getCompilationInfo();
+  for (const m of info.messages) {
+    console[m.type === 'error' ? 'error' : 'warn'](`[WGSL ${m.type}] ${m.message}`);
+  }
+  if (info.messages.some((m) => m.type === 'error')) {
+    throw new Error('WGSL compile failed');
+  }
   const pipeline = device.createRenderPipeline({
     layout: 'auto',
     vertex: { module, entryPoint: 'vs' },

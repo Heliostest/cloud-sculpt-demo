@@ -56,15 +56,32 @@ fn henyeyGreenstein(cosTheta: f32, g: f32) -> f32 {
 fn dualLobeHG(cosTheta: f32) -> f32 {
   return mix(henyeyGreenstein(cosTheta, 0.65), henyeyGreenstein(cosTheta, -0.2), 0.35);
 }
+fn rayAxis(o: f32, d: f32, mn: f32, mx: f32) -> vec2f {
+  if (abs(d) < 1e-8) {
+    if (o < mn || o > mx) {
+      return vec2f(1.0, -1.0);
+    }
+    return vec2f(-1e20, 1e20);
+  }
+  let t0 = (mn - o) / d;
+  let t1 = (mx - o) / d;
+  return vec2f(min(t0, t1), max(t0, t1));
+}
+
 fn rayBox(ro: vec3f, rd: vec3f, bmin: vec3f, bmax: vec3f) -> vec2f {
-  let inv = 1.0 / rd;
-  let t0 = (bmin - ro) * inv;
-  let t1 = (bmax - ro) * inv;
-  let tmin = min(t0, t1);
-  let tmax = max(t0, t1);
-  let tNear = max(max(tmin.x, tmin.y), tmin.z);
-  let tFar = min(min(tmax.x, tmax.y), tmax.z);
+  let tx = rayAxis(ro.x, rd.x, bmin.x, bmax.x);
+  let ty = rayAxis(ro.y, rd.y, bmin.y, bmax.y);
+  let tz = rayAxis(ro.z, rd.z, bmin.z, bmax.z);
+  if (tx.x > tx.y || ty.x > ty.y || tz.x > tz.y) {
+    return vec2f(1.0, -1.0);
+  }
+  let tNear = max(tx.x, max(ty.x, tz.x));
+  let tFar = min(tx.y, min(ty.y, tz.y));
   return vec2f(tNear, tFar);
+}
+
+fn raySlabY(ro: vec3f, rd: vec3f, y0: f32, y1: f32) -> vec2f {
+  return rayAxis(ro.y, rd.y, y0, y1);
 }
 fn shapeAlteringSemiCircle(h: f32, bias: f32) -> f32 {
   let x = saturate(h);

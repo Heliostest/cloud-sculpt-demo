@@ -164,7 +164,7 @@ fn evaluateLayer(
 
 fn boxEdgeFade(worldPos: vec3f) -> f32 {
   let halfM = max(100.0, U.optical.z);
-  let edge = halfM * 0.18;
+  let edge = halfM * 0.08;
   let ax = halfM - abs(worldPos.x);
   let az = halfM - abs(worldPos.z);
   return softstep(0.0, edge, min(ax, az));

@@ -33,15 +33,26 @@ fn lightTransmittance(pos: vec3f, dens0: f32) -> f32 {
 fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   let halfM = U.optical.z;
   let topM = U.optical.w;
-  let boxMin = vec3f(-halfM, 0.0, -halfM);
-  let boxMax = vec3f(halfM, topM, halfM);
-  let hit = rayBox(ro, rd, boxMin, boxMax);
-  if (hit.y < 0.0 || hit.x > hit.y) {
-    return vec4f(0.0, 0.0, 0.0, 1.0);
+  // Y-slab：平视长距；大 XZ 盒裁剪；rd.y≈0 时 rayAxis 可处理层内射线
+  let slab = raySlabY(ro, rd, 0.0, topM);
+  let boxHit = rayBox(ro, rd, vec3f(-halfM, -1.0, -halfM), vec3f(halfM, topM + 1.0, halfM));
+  var t0 = -1.0;
+  var t1 = -2.0;
+  if (slab.y >= max(slab.x, 0.0)) {
+    t0 = max(slab.x, 0.0);
+    t1 = min(slab.y, U.quality.w);
   }
-
-  let t0 = max(hit.x, 0.0);
-  let t1 = min(hit.y, U.quality.w);
+  if (boxHit.y >= max(boxHit.x, 0.0)) {
+    let b0 = max(boxHit.x, 0.0);
+    let b1 = min(boxHit.y, U.quality.w);
+    if (t1 > t0) {
+      t0 = max(t0, b0);
+      t1 = min(t1, b1);
+    } else {
+      t0 = b0;
+      t1 = b1;
+    }
+  }
   if (t1 <= t0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
@@ -54,7 +65,6 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     return vec4f(cov, w.g, w.b, 0.0);
   }
 
-  // 射线起点抖动，减轻等密度面同心细线
   let jitter = fract(sin(dot(ro + rd * t0, vec3f(127.1, 311.7, 74.7))) * 43758.5453);
   var t = t0 + jitter * min(U.quality.x, 40.0);
   var transmittance = 1.0;
@@ -65,16 +75,31 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   let minStep = U.quality.x;
   let maxStep = U.quality.y;
   let maxIter = u32(U.quality.z);
+  // 刚离开云面后若干步保持小步长，避免大步跳过后方云体
+  var exitHold = 0u;
 
-  for (var i = 0u; i < 512u; i++) {
-    if (i >= maxIter || t >= t1 || transmittance < 0.01) { break; }
+  for (var i = 0u; i < 768u; i++) {
+    if (i >= maxIter || t >= t1 || transmittance < 0.008) { break; }
     let pos = ro + rd * t;
-    var stepLen = maxStep;
-    let probe = evaluateSculpted(pos, stepLen);
-    if (probe.support > 0.001 || probe.density > 0.001) {
-      stepLen = select(minStep, minStep * 0.4, probe.density < 0.18);
+    let probe = evaluateSculpted(pos, minStep);
+    var stepLen = minStep;
+    if (probe.density > 0.008) {
+      stepLen = select(minStep * 0.9, minStep * 0.35, probe.density < 0.22);
+      exitHold = 6u;
+    } else if (exitHold > 0u) {
+      stepLen = minStep * 0.75;
+      exitHold -= 1u;
     } else {
-      stepLen = mix(minStep, maxStep, 0.7);
+      // 空域前瞻：若下一步落在云内则收回步长
+      let leap = min(mix(minStep, maxStep, 0.4), t1 - t);
+      let ahead = evaluateSculpted(pos + rd * leap, leap);
+      // 只用 density 前瞻，避免 support 壳把空步拉小却积不出可见散射
+      if (ahead.density > 0.01) {
+        stepLen = minStep * 0.55;
+        exitHold = 4u;
+      } else {
+        stepLen = leap;
+      }
     }
     stepLen = min(stepLen, t1 - t);
     let s = evaluateSculpted(pos, stepLen);
@@ -82,22 +107,24 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     dbgAfter = max(dbgAfter, s.afterShape);
     dbgDens = max(dbgDens, s.density);
 
-    // 薄边：散射保留、消光压低 → 羽化而不画硬轮廓线
-    if (s.density > 0.002) {
+    // 过低密度不积分：否则薄 support 边会变成“看不见却挡后景”的黑壳
+    if (s.density > 0.012) {
       let dens = s.density;
-      let typeW = mix(1.0, 1.12, s.typeMix);
-      let sigmaS = dens * U.optical.x * typeW;
+      let typeW = mix(1.0, 1.08, s.typeMix);
+      // 消光≈散射（高反照率），禁止 sigmaT>>sigmaS 造隐形壳体
       let sigmaT = dens * U.optical.y * typeW;
-      var tSun = lightTransmittance(pos, dens);
-      let powder = 1.0 - exp(-dens * 3.0);
-      tSun *= mix(1.25, powder, softstep(0.04, 0.3, dens));
-      tSun = max(tSun, 0.15);
+      let sigmaS = sigmaT * saturate(U.optical.x / max(1e-5, U.optical.y));
+      let midPos = pos + rd * (stepLen * 0.5);
+      var tSun = lightTransmittance(midPos, dens);
+      let powder = 1.0 - exp(-dens * 2.0);
+      tSun *= mix(1.2, powder, softstep(0.08, 0.4, dens));
+      tSun = max(tSun, 0.06);
       let cosTheta = dot(rd, U.sunDir);
       let phase = dualLobeHG(cosTheta);
-      let ambient = vec3f(0.6, 0.68, 0.8) * mix(0.95, 1.25, s.height01);
-      let sunCol = vec3f(1.05, 0.96, 0.88) * 2.2;
-      var multi = 0.28;
-      var mAmp = 0.55;
+      let ambient = vec3f(0.58, 0.66, 0.78) * mix(0.9, 1.2, s.height01);
+      let sunCol = vec3f(1.05, 0.96, 0.88) * 2.1;
+      var multi = 0.22;
+      var mAmp = 0.5;
       var mTau = -log(max(1e-4, tSun));
       for (var o: i32 = 0; o < 3; o++) {
         multi += mAmp * exp(-mTau);

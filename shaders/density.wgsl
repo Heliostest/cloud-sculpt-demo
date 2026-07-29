@@ -14,21 +14,22 @@ fn sampleWeather(worldPos: vec3f) -> vec4f {
 fn coverageSignal(w: vec4f) -> f32 {
   let macroCov = pow(saturate(w.r), U.weatherExponent);
   let meso = saturate(w.g * U.mesoContrast);
-  return macroCov * mix(1.0, meso, U.mesoStrength);
+  // meso 只做轻破碎，避免斑块被撕成碎末
+  return macroCov * mix(1.0, meso, U.mesoStrength * 0.55);
 }
 
 fn cuDomeProfile(h01: f32) -> f32 {
-  let base = softstep(0.0, 0.12, h01);
-  let top = 1.0 - softstep(0.55, 1.0, h01);
-  let dome = shapeAlteringSemiCircle(h01, -0.15);
-  return base * top * mix(0.75, 1.0, dome);
+  let base = softstep(0.0, 0.1, h01);
+  let top = 1.0 - softstep(0.72, 1.0, h01);
+  let dome = shapeAlteringSemiCircle(h01, -0.2);
+  return base * top * mix(0.8, 1.0, dome);
 }
 
 fn cbProfile(h01: f32) -> f32 {
-  let base = softstep(0.0, 0.08, h01);
-  let body = shapeAlteringSemiCircle(h01, -0.05);
-  let anvil = select(1.0, mix(1.0, 0.55, softstep(0.62, 0.95, h01)), h01 > 0.62);
-  let top = 1.0 - softstep(0.88, 1.0, h01);
+  let base = softstep(0.0, 0.07, h01);
+  let body = shapeAlteringSemiCircle(h01, -0.08);
+  let anvil = select(1.0, mix(1.0, 0.62, softstep(0.58, 0.92, h01)), h01 > 0.58);
+  let top = 1.0 - softstep(0.9, 1.0, h01);
   return base * body * anvil * top;
 }
 
@@ -37,8 +38,8 @@ fn verticalProfile(h01: f32, typeMix: f32) -> f32 {
 }
 
 fn anvilFootprintBoost(h01: f32, typeMix: f32) -> f32 {
-  let anvil = softstep(0.62, 0.92, h01) * typeMix;
-  return 1.0 + anvil * 0.85;
+  let anvil = softstep(0.58, 0.9, h01) * typeMix;
+  return 1.0 + anvil * 0.9;
 }
 
 fn layerSupport(worldPos: vec3f, baseM: f32, topM: f32, densScale: f32, w: vec4f) -> vec4f {
@@ -46,17 +47,19 @@ fn layerSupport(worldPos: vec3f, baseM: f32, topM: f32, densScale: f32, w: vec4f
     return vec4f(0.0);
   }
   let h01 = saturate((worldPos.y - baseM) / max(1.0, topM - baseM));
-  if (h01 <= 0.0 || h01 >= 1.0) {
+  let hFade = softstep(0.0, 0.1, h01) * (1.0 - softstep(0.86, 1.0, h01));
+  if (hFade <= 0.0) {
     return vec4f(0.0);
   }
   let typeMix = saturate(w.b);
   let cov = coverageSignal(w) * anvilFootprintBoost(h01, typeMix);
-  let heightScale = shapeAlteringSemiCircle(h01, -0.1);
+  let heightScale = shapeAlteringSemiCircle(h01, -0.12);
   let factor = 1.0 - U.coverage * heightScale;
-  let filterWidth = mix(0.22, 0.12, typeMix);
+  let filterWidth = mix(0.62, 0.38, typeMix);
   let supportWeather = remapClamped(cov, factor, factor + filterWidth);
+  let supportWeatherSoft = supportWeather * supportWeather * (3.0 - 2.0 * supportWeather);
   let profile = verticalProfile(h01, typeMix);
-  let support = supportWeather * profile * densScale;
+  let support = supportWeatherSoft * profile * densScale * hFade;
   return vec4f(support, typeMix, h01, densScale);
 }
 
@@ -68,7 +71,7 @@ fn heroSupport(worldPos: vec3f) -> vec4f {
   let radii = max(vec2f(U.hero0.z, U.hero1.x), vec2f(1.0));
   let d = (worldPos.xz - center) / radii;
   let ell = length(d);
-  let fade = 1.0 - softstep(0.75, 1.05, ell);
+  let fade = 1.0 - softstep(0.7, 1.08, ell);
   if (fade <= 0.0) {
     return vec4f(0.0);
   }
@@ -78,7 +81,7 @@ fn heroSupport(worldPos: vec3f) -> vec4f {
   let typeMix = saturate(U.hero1.w);
   let anvilR = anvilFootprintBoost(h01, typeMix);
   let ell2 = length((worldPos.xz - center) / (radii * anvilR));
-  let fade2 = 1.0 - softstep(0.75, 1.05, ell2);
+  let fade2 = 1.0 - softstep(0.7, 1.08, ell2);
   let profile = verticalProfile(h01, typeMix);
   let support = fade2 * profile * U.hero2.x * U.hero2.y;
   return vec4f(support, typeMix, h01, 1.0);
@@ -87,7 +90,7 @@ fn heroSupport(worldPos: vec3f) -> vec4f {
 fn sampleShape(worldPos: vec3f) -> f32 {
   let p = worldPos * U.shapeRepeat + U.shapeOffset + vec3f(U.windOffset.x, U.time * 0.002, U.windOffset.y) * 0.35;
   let s = textureSampleLevel(shapeTex, shapeSamp, p, 0.0);
-  return saturate(s.r * 0.625 + s.g * 0.25 + s.b * 0.125);
+  return saturate(s.r * 0.88 + s.g * 0.1 + s.b * 0.02);
 }
 
 fn sampleDetail(worldPos: vec3f) -> vec2f {
@@ -127,15 +130,15 @@ fn evaluateLayer(
   }
 
   let shape = sampleShape(worldPos);
-  let shapeAmount = U.shapeAmount * shapeAmt * mix(1.05, 0.85, typeMix);
+  let shapeAmount = U.shapeAmount * shapeAmt * mix(0.85, 0.65, typeMix);
   let d0 = support;
-  let d1 = remapClamped(d0, (1.0 - shape) * shapeAmount, 1.0);
+  let d1 = remapClamped(d0, (1.0 - shape) * shapeAmount * 0.7, 1.0);
   *outAfterShape = d1;
 
   let detailOff = (U.debugFlags.y & 1u) != 0u;
   let detailWave = 1.0 / max(1e-5, U.detailRepeat);
-  let detailFade = 1.0 - softstep(0.35 * detailWave, 0.85 * detailWave, stepLen);
-  if (detailOff || detailAmt <= 1e-4 || d1 < 0.02 || detailFade <= 0.01) {
+  let detailFade = 1.0 - softstep(0.45 * detailWave, 1.1 * detailWave, stepLen);
+  if (detailOff || detailAmt <= 1e-4 || d1 < 0.01 || detailFade <= 0.01) {
     *outDensity = d1;
     return;
   }
@@ -143,15 +146,35 @@ fn evaluateLayer(
   let det = sampleDetail(worldPos);
   let billowy = det.x;
   let wispy = det.y;
-  let detailStr = U.detailStrength * detailAmt * mix(1.0, 1.35, typeMix) * detailFade;
-  let topW = softstep(0.35, 0.85, h01);
-  let erodeB = densityRemap(d1, billowy * detailStr * mix(0.6, 1.2, topW));
-  let erodeW = densityRemap(d1, wispy * detailStr * (1.0 - 0.7 * topW) * 0.85);
-  let density = mix(erodeW, erodeB, softstep(0.0, U.wispyEdgeWidth, erodeB));
-  *outDensity = min(d1, density);
+  let detailStr = U.detailStrength * detailAmt * mix(0.75, 1.0, typeMix) * detailFade;
+  let topW = softstep(0.35, 0.9, h01);
+  let edgeMask = 1.0 - softstep(0.12, 0.55, d1);
+
+  let thrB = billowy * detailStr * mix(0.18, 0.4, topW) * mix(0.55, 1.0, edgeMask);
+  let thrW = max(0.0, thrB - U.wispyEdgeWidth * 0.75);
+  let erodeB = densityRemap(d1, thrB);
+  var erodeW = densityRemap(d1, thrW + wispy * detailStr * 0.28 * (1.0 - 0.35 * topW) * edgeMask);
+  erodeW *= 1.0 - softstep(0.88, 1.0, h01);
+
+  let coreMix = softstep(0.0, max(U.wispyEdgeWidth, 0.12), erodeB);
+  var density = mix(erodeW, erodeB, coreMix);
+  density = pow(saturate(density), 0.92);
+  *outDensity = min(1.0, density);
+}
+
+fn boxEdgeFade(worldPos: vec3f) -> f32 {
+  let halfM = max(100.0, U.optical.z);
+  let edge = halfM * 0.18;
+  let ax = halfM - abs(worldPos.x);
+  let az = halfM - abs(worldPos.z);
+  return softstep(0.0, edge, min(ax, az));
 }
 
 fn evaluateSculpted(worldPos: vec3f, stepLen: f32) -> DensitySample {
+  let edgeFade = boxEdgeFade(worldPos);
+  if (edgeFade <= 0.0) {
+    return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0);
+  }
   let w = sampleWeather(worldPos);
   var bestSupport = 0.0;
   var bestAfter = 0.0;
@@ -185,23 +208,25 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32) -> DensitySample {
     }
   }
 
-  // hero-only path when layers empty near hero
   let hs = heroSupport(worldPos);
   if (hs.x > bestSupport) {
     var s = hs.x;
     var typeMix = hs.y;
     var h01 = hs.z;
     let shape = sampleShape(worldPos);
-    let d1 = remapClamped(s, (1.0 - shape) * U.shapeAmount, 1.0);
+    let d1 = remapClamped(s, (1.0 - shape) * U.shapeAmount * 0.85, 1.0);
     var dens = d1;
     let detailOff = (U.debugFlags.y & 1u) != 0u;
-    if (!detailOff && d1 > 0.02) {
+    if (!detailOff && d1 > 0.01) {
       let det = sampleDetail(worldPos);
-      let topW = softstep(0.35, 0.85, h01);
-      let detailStr = U.detailStrength * mix(1.0, 1.35, typeMix);
-      let erodeB = densityRemap(d1, det.x * detailStr * mix(0.6, 1.2, topW));
-      let erodeW = densityRemap(d1, det.y * detailStr * (1.0 - 0.7 * topW) * 0.85);
-      dens = min(d1, mix(erodeW, erodeB, softstep(0.0, U.wispyEdgeWidth, erodeB)));
+      let topW = softstep(0.3, 0.88, h01);
+      let detailStr = U.detailStrength * mix(0.9, 1.2, typeMix);
+      let thrB = (1.0 - saturate(d1)) * 0.35 + det.x * detailStr * mix(0.45, 0.95, topW);
+      let thrW = thrB - U.wispyEdgeWidth * 0.85;
+      let erodeB = densityRemap(d1, thrB);
+      let erodeW = densityRemap(d1, max(thrW, 0.0) + det.y * detailStr * (1.0 - 0.55 * topW) * 0.35);
+      dens = mix(erodeW, erodeB, softstep(0.0, max(U.wispyEdgeWidth, 0.08), erodeB));
+      dens *= softstep(0.008, 0.05, dens);
     }
     bestSupport = s;
     bestAfter = d1;
@@ -210,5 +235,11 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32) -> DensitySample {
     bestH = h01;
   }
 
-  return DensitySample(bestSupport, bestAfter, bestDens, bestType, bestH);
+  return DensitySample(
+    bestSupport * edgeFade,
+    bestAfter * edgeFade,
+    bestDens * edgeFade,
+    bestType,
+    bestH
+  );
 }

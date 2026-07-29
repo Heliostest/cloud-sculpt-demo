@@ -17,17 +17,17 @@ fn lightTransmittance(pos: vec3f, dens0: f32) -> f32 {
   let steps = max(1u, U.debugFlags.z);
   let sun = U.sunDir;
   var t = 0.0;
-  var tau = dens0 * U.optical.y * 40.0;
-  var stepLen = U.quality.x * 1.5;
+  var tau = dens0 * U.optical.y * 12.0;
+  var stepLen = 55.0;
   for (var i = 0u; i < 8u; i++) {
     if (i >= steps) { break; }
     t += stepLen;
     let p = pos + sun * t;
     let s = evaluateSculpted(p, stepLen);
-    tau += s.density * U.optical.y * stepLen * mix(1.0, 1.25, s.typeMix);
-    stepLen *= 1.55;
+    tau += s.density * U.optical.y * stepLen;
+    stepLen *= 1.6;
   }
-  return exp(-tau);
+  return exp(-min(tau, 16.0));
 }
 
 fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
@@ -54,7 +54,9 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     return vec4f(cov, w.g, w.b, 0.0);
   }
 
-  var t = t0;
+  // 射线起点抖动，减轻等密度面同心细线
+  let jitter = fract(sin(dot(ro + rd * t0, vec3f(127.1, 311.7, 74.7))) * 43758.5453);
+  var t = t0 + jitter * min(U.quality.x, 40.0);
   var transmittance = 1.0;
   var radiance = vec3f(0.0);
   var dbgSupport = 0.0;
@@ -70,9 +72,9 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     var stepLen = maxStep;
     let probe = evaluateSculpted(pos, stepLen);
     if (probe.support > 0.001 || probe.density > 0.001) {
-      stepLen = minStep;
+      stepLen = select(minStep, minStep * 0.4, probe.density < 0.18);
     } else {
-      stepLen = mix(minStep, maxStep, 0.65);
+      stepLen = mix(minStep, maxStep, 0.7);
     }
     stepLen = min(stepLen, t1 - t);
     let s = evaluateSculpted(pos, stepLen);
@@ -80,24 +82,29 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     dbgAfter = max(dbgAfter, s.afterShape);
     dbgDens = max(dbgDens, s.density);
 
-    if (s.density > 1e-4) {
-      let sigmaS = s.density * U.optical.x * mix(1.0, 1.2, s.typeMix);
-      let sigmaT = s.density * U.optical.y * mix(1.0, 1.35, s.typeMix);
-      let tSun = lightTransmittance(pos, s.density);
+    // 薄边：散射保留、消光压低 → 羽化而不画硬轮廓线
+    if (s.density > 0.002) {
+      let dens = s.density;
+      let typeW = mix(1.0, 1.12, s.typeMix);
+      let sigmaS = dens * U.optical.x * typeW;
+      let sigmaT = dens * U.optical.y * typeW;
+      var tSun = lightTransmittance(pos, dens);
+      let powder = 1.0 - exp(-dens * 3.0);
+      tSun *= mix(1.25, powder, softstep(0.04, 0.3, dens));
+      tSun = max(tSun, 0.15);
       let cosTheta = dot(rd, U.sunDir);
       let phase = dualLobeHG(cosTheta);
-      let ambient = vec3f(0.35, 0.42, 0.55) * mix(0.45, 1.0, s.height01);
-      let powder = 1.0 - exp(-s.density * 12.0);
-      let sunCol = vec3f(1.0, 0.93, 0.82) * 1.35;
-      var multi = 0.0;
+      let ambient = vec3f(0.6, 0.68, 0.8) * mix(0.95, 1.25, s.height01);
+      let sunCol = vec3f(1.05, 0.96, 0.88) * 2.2;
+      var multi = 0.28;
       var mAmp = 0.55;
       var mTau = -log(max(1e-4, tSun));
       for (var o: i32 = 0; o < 3; o++) {
         multi += mAmp * exp(-mTau);
-        mTau *= 0.5;
-        mAmp *= 0.5;
+        mTau *= 0.45;
+        mAmp *= 0.55;
       }
-      let inScatter = (sunCol * tSun * phase + ambient * multi) * sigmaS * powder;
+      let inScatter = (sunCol * tSun * phase + ambient * multi) * sigmaS;
       let absorb = exp(-sigmaT * stepLen);
       radiance += transmittance * inScatter * ((1.0 - absorb) / max(1e-4, sigmaT));
       transmittance *= absorb;

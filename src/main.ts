@@ -6,8 +6,9 @@ function applyPreset(preset: CameraPreset, cam: { yaw: number; pitch: number; di
   cam.targetY = 1800;
   if (preset === 'side') {
     cam.yaw = 0.35;
-    cam.pitch = 0.12;
-    cam.dist = 9000;
+    cam.pitch = 0.22;
+    cam.dist = 11000;
+    cam.targetY = 1200;
   } else if (preset === 'oblique45') {
     cam.yaw = 0.7;
     cam.pitch = Math.PI / 4;
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
   const params = createDefaultParams();
   const renderer = await createRenderer(canvas);
 
-  const orbit = { yaw: 0.7, pitch: Math.PI / 4, dist: 14000, targetY: 1800 };
+  const orbit = { yaw: 0.55, pitch: 0.32, dist: 12000, targetY: 1400 };
   applyPreset('oblique45', orbit);
 
   let dragging = false;

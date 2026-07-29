@@ -1,3 +1,7 @@
+function wrap(i: number, period: number): number {
+  return ((i % period) + period) % period;
+}
+
 function hash3(x: number, y: number, z: number): number {
   let n = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 2147483647);
   n = (n ^ (n >>> 13)) >>> 0;
@@ -13,21 +17,27 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-function valueNoise3(x: number, y: number, z: number): number {
+function valueNoise3Tile(x: number, y: number, z: number, period: number): number {
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
   const z0 = Math.floor(z);
   const fx = fade(x - x0);
   const fy = fade(y - y0);
   const fz = fade(z - z0);
-  const n000 = hash3(x0, y0, z0);
-  const n100 = hash3(x0 + 1, y0, z0);
-  const n010 = hash3(x0, y0 + 1, z0);
-  const n110 = hash3(x0 + 1, y0 + 1, z0);
-  const n001 = hash3(x0, y0, z0 + 1);
-  const n101 = hash3(x0 + 1, y0, z0 + 1);
-  const n011 = hash3(x0, y0 + 1, z0 + 1);
-  const n111 = hash3(x0 + 1, y0 + 1, z0 + 1);
+  const xa = wrap(x0, period);
+  const xb = wrap(x0 + 1, period);
+  const ya = wrap(y0, period);
+  const yb = wrap(y0 + 1, period);
+  const za = wrap(z0, period);
+  const zb = wrap(z0 + 1, period);
+  const n000 = hash3(xa, ya, za);
+  const n100 = hash3(xb, ya, za);
+  const n010 = hash3(xa, yb, za);
+  const n110 = hash3(xb, yb, za);
+  const n001 = hash3(xa, ya, zb);
+  const n101 = hash3(xb, ya, zb);
+  const n011 = hash3(xa, yb, zb);
+  const n111 = hash3(xb, yb, zb);
   const nx00 = lerp(n000, n100, fx);
   const nx10 = lerp(n010, n110, fx);
   const nx01 = lerp(n001, n101, fx);
@@ -35,21 +45,23 @@ function valueNoise3(x: number, y: number, z: number): number {
   return lerp(lerp(nx00, nx10, fy), lerp(nx01, nx11, fy), fz);
 }
 
-function fbm3(x: number, y: number, z: number, octaves: number): number {
+function fbm3Tile(x: number, y: number, z: number, period: number, octaves: number): number {
   let amp = 0.5;
   let freq = 1;
   let sum = 0;
   let norm = 0;
+  let p = period;
   for (let i = 0; i < octaves; i++) {
-    sum += valueNoise3(x * freq, y * freq, z * freq) * amp;
+    sum += valueNoise3Tile(x * freq, y * freq, z * freq, p) * amp;
     norm += amp;
     amp *= 0.5;
-    freq *= 2.01;
+    freq *= 2;
+    p *= 2;
   }
   return sum / norm;
 }
 
-function worley3(x: number, y: number, z: number): number {
+function worley3Tile(x: number, y: number, z: number, period: number): number {
   const xi = Math.floor(x);
   const yi = Math.floor(y);
   const zi = Math.floor(z);
@@ -60,9 +72,12 @@ function worley3(x: number, y: number, z: number): number {
         const cx = xi + ox;
         const cy = yi + oy;
         const cz = zi + oz;
-        const px = cx + hash3(cx, cy, cz);
-        const py = cy + hash3(cx + 3, cy + 7, cz + 11);
-        const pz = cz + hash3(cx + 13, cy + 17, cz + 19);
+        const hx = wrap(cx, period);
+        const hy = wrap(cy, period);
+        const hz = wrap(cz, period);
+        const px = cx + hash3(hx, hy, hz);
+        const py = cy + hash3(hx + 3, hy + 7, hz + 11);
+        const pz = cz + hash3(hx + 13, hy + 17, hz + 19);
         const dx = px - x;
         const dy = py - y;
         const dz = pz - z;
@@ -80,17 +95,20 @@ function remap(v: number, low: number, high: number): number {
 
 export function generateShapeRGBA(size = 128): Uint8Array {
   const data = new Uint8Array(size * size * size * 4);
+  const p4 = 4;
+  const p8 = 8;
+  const p16 = 16;
   for (let z = 0; z < size; z++) {
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const u = x / size;
-        const v = y / size;
-        const w = z / size;
-        const perlin = fbm3(u * 4, v * 4, w * 4, 4);
-        const worleyLow = 1 - worley3(u * 4, v * 4, w * 4);
-        const worleyMid = 1 - worley3(u * 8, v * 8, w * 8);
-        const worleyHigh = 1 - worley3(u * 16, v * 16, w * 16);
-        const shape = remap(perlin, 1 - worleyLow, 1);
+        const u = (x / size) * p4;
+        const v = (y / size) * p4;
+        const w = (z / size) * p4;
+        const perlin = fbm3Tile(u, v, w, p4, 4);
+        const worleyLow = 1 - worley3Tile(u, v, w, p4);
+        const worleyMid = 1 - worley3Tile((x / size) * p8, (y / size) * p8, (z / size) * p8, p8);
+        const worleyHigh = 1 - worley3Tile((x / size) * p16, (y / size) * p16, (z / size) * p16, p16);
+        const shape = remap(perlin * 0.82 + worleyLow * 0.18, 0.08, 0.9);
         const i = (z * size * size + y * size + x) * 4;
         data[i] = Math.round(shape * 255);
         data[i + 1] = Math.round(worleyLow * 255);
@@ -104,15 +122,15 @@ export function generateShapeRGBA(size = 128): Uint8Array {
 
 export function generateDetailRGBA(size = 32): Uint8Array {
   const data = new Uint8Array(size * size * size * 4);
+  const p3 = 3;
+  const p6 = 6;
+  const p12 = 12;
   for (let z = 0; z < size; z++) {
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const u = x / size;
-        const v = y / size;
-        const w = z / size;
-        const billowy = 1 - worley3(u * 3, v * 3, w * 3);
-        const wispy = 1 - worley3(u * 6 + 2.7, v * 6 - 1.3, w * 6 + 0.9);
-        const fine = 1 - worley3(u * 12, v * 12, w * 12);
+        const billowy = 1 - worley3Tile((x / size) * p3, (y / size) * p3, (z / size) * p3, p3);
+        const wispy = 1 - worley3Tile((x / size) * p6 + 0.37, (y / size) * p6 + 0.11, (z / size) * p6 + 0.29, p6);
+        const fine = 1 - worley3Tile((x / size) * p12, (y / size) * p12, (z / size) * p12, p12);
         const i = (z * size * size + y * size + x) * 4;
         data[i] = Math.round(billowy * 255);
         data[i + 1] = Math.round(wispy * 255);

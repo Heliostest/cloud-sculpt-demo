@@ -52,13 +52,20 @@ fn hpMultiScatterSun(cosTheta: f32, opticalDepth: f32) -> f32 {
   return luminance;
 }
 
-fn highLightTransmittance(pos: vec3f, dens0: f32) -> f32 {
-  let stepLen = max(80.0, (U.hpHigh0.z - U.hpHigh0.y) / 12.0);
-  var tau = dens0 * U.optical.y * 6.0;
-  for (var i = 0u; i < 4u; i++) {
-    let p = pos + U.sunDir * (stepLen * (f32(i) + 1.0));
-    tau += evaluateHighCloudDensity(p).density * U.optical.y * stepLen;
+fn highLightTransmittance(pos: vec3f, coverBright: f32) -> f32 {
+  let shell = rayCloudShell(pos, U.sunDir, U.hpHigh0.y, U.hpHigh0.z);
+  if (shell.y <= 0.0) {
+    return 1.0;
   }
+  let coverDist = min(max(shell.y, 0.0), 3000.0);
+  let stepLen = coverDist / 4.0;
+  var extinctionSum = 0.0;
+  for (var i = 0u; i < 4u; i++) {
+    let p = pos + U.sunDir * (stepLen * (f32(i) + 0.5));
+    extinctionSum += evaluateHighCloudDensity(p).density * stepLen;
+  }
+  let coverAbsorption = 1.0 + saturate(coverBright) * U.hpHighOptical.z;
+  let tau = extinctionSum * U.hpHighOptical.y * coverAbsorption;
   return exp(-min(tau, 12.0));
 }
 
@@ -97,10 +104,12 @@ fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
     maxBand = max(maxBand, s.bandMask);
     maxDensity = max(maxDensity, s.density);
     if (s.density > 0.001) {
-      let sigmaT = s.density * U.optical.y;
+      // HP uses a dedicated high-cloud view absorption and weather-A weight;
+      // sharing the low-cloud extinction makes long, thin slabs turn opaque.
+      let sigmaT = s.density * U.hpHighOptical.x * s.msWeight;
       let sigmaS = sigmaT * saturate(U.optical.x / max(1e-5, U.optical.y));
       let midPos = pos + rd * (stepLen * 0.5);
-      let tSun = max(0.12, highLightTransmittance(midPos, s.density));
+      let tSun = max(0.12, highLightTransmittance(midPos, s.coverage));
       let phase = dualLobeHG(dot(rd, U.sunDir));
       let ambient = vec3f(0.56, 0.66, 0.82) * mix(0.95, 1.25, s.height01);
       let sunCol = vec3f(1.05, 0.97, 0.9) * 1.8;

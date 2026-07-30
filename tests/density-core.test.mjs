@@ -207,3 +207,17 @@ test('HP high-cloud coverage raises the driven top while keeping density finite'
   assert.ok(Number.isFinite(high.density));
   assert.ok(high.density >= 0);
 });
+
+test('raising the HP high-cloud density threshold reduces effective visible coverage', () => {
+  const base = {
+    enabled: true, height: 0.35, typeMix: 0.4, asCellStrength: 0.25, acCellStrength: 0.8,
+    heightCurvePow: 0.8, bandBottom: 0.2, bandTop: 0.82, cell: 0.85, cellPow: 1.6,
+    bottomCoverageScale: 0.25, cloudSoftness: 0.055, densitySoftness: 0.2, hiA: 0.55,
+    hiASoftContrast: 1, wisp: 0, wispStrength: 0.28, densityMultiplier: 0.06,
+  };
+  const coverages = Array.from({ length: 20 }, (_, i) => (i + 1) / 20);
+  const visibleAt = (densityThreshold) => coverages.filter((coverage) => (
+    hpHighCloudReference({ ...base, coverage, densityThreshold }).density > 0.001
+  )).length;
+  assert.ok(visibleAt(0.5) < visibleAt(0.36));
+});

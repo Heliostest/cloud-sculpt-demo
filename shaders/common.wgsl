@@ -57,6 +57,7 @@ struct Uniforms {
   hpLighting0: vec4f,
   hpLighting1: vec4f,
   hpLighting2: vec4f,
+  hpHighOptical: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;

@@ -25,6 +25,14 @@ function hpMultiScatter(input) {
   return luminance;
 }
 
+function highViewTransmittance(density, viewAbsorption, msWeight, distance) {
+  return Math.exp(-density * viewAbsorption * msWeight * distance);
+}
+
+function highLightTransmittance(extinctionSum, lightAbsorption, coverage, coverAbsorptionStrength) {
+  return Math.exp(-Math.min(extinctionSum * lightAbsorption * (1 + coverage * coverAbsorptionStrength), 12));
+}
+
 test('HP phase is the sum of forward and backward lobes with per-octave eccentricity decay', () => {
   const cosTheta = 0.35;
   const phase0 = hpPhase(cosTheta, 0.85, 0.3, 1);
@@ -63,4 +71,24 @@ test('scatter-source response is bounded and rejects zero optical depth', () => 
   assert.ok(source(0.02, 0.08, 1) > 0);
   assert.ok(source(0.2, 0.08, 1) < 1);
   assert.ok(source(2, 0.08, 1) <= 1);
+});
+
+test('dedicated HP high-cloud view absorption prevents low-cloud extinction from making a thin slab opaque', () => {
+  const density = 0.02;
+  const msWeight = 0.6;
+  const distance = 4000;
+  const legacy = highViewTransmittance(density, 0.095, 1, distance);
+  const aligned = highViewTransmittance(density, 0.012, msWeight, distance);
+  assert.ok(legacy < 0.001, `legacy=${legacy}`);
+  assert.ok(aligned > 0.5, `aligned=${aligned}`);
+  assert.ok(aligned <= 1);
+});
+
+test('HP high-cloud light absorption and cover modulation are independent and monotonic', () => {
+  const clear = highLightTransmittance(80, 0.012, 0, 0.35);
+  const covered = highLightTransmittance(80, 0.012, 1, 0.35);
+  const stronger = highLightTransmittance(80, 0.024, 1, 0.35);
+  assert.ok(clear > covered);
+  assert.ok(covered > stronger);
+  assert.ok(stronger >= 0 && clear <= 1);
 });

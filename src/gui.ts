@@ -84,6 +84,9 @@ export function createGui(
   high.add(params, 'highDensitySoftness', 0.001, 1, 0.01);
   high.add(params, 'highCloudSoftness', 0.001, 0.3, 0.001);
   high.add(params, 'highDensityMultiplier', 0, 3, 0.01);
+  high.add(params, 'highViewAbsorption', 0, 0.1, 0.001).name('view absorption');
+  high.add(params, 'highLightAbsorption', 0, 0.1, 0.001).name('light absorption');
+  high.add(params, 'highCoverAbsorptionStrength', 0, 2, 0.01).name('cover shadow');
   const highCell = high.addFolder('Cell / Warp / Wisp');
   highCell.add(params, 'highCellScaleX', 0.1, 16, 0.1);
   highCell.add(params, 'highCellScaleZ', 0.1, 16, 0.1);

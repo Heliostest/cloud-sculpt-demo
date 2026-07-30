@@ -193,12 +193,21 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 
 - [x] 新建独立 high-weather 通道与 evaluator，不复用低云 3D shape/detail。
 - [x] 添加 cell、warp、wisp、coverage-driven top/bottom、horizon shift、band softness 和独立 density multiplier。
-- [x] 主 raymarch 为高空云建立可独立调节的密度采样区间，再与低云结果合成；高空云光步属于后续光照路线图，不在本文实施范围内。
+- [x] 主 raymarch 为高空云建立可独立调节的密度采样区间，再与低云结果合成；后续补入 HP 独立的 view/light absorption 语义。
 - [x] 原 demo 第三层可保留为通用 3D 层，但 UI 和命名必须与 HP high cloud 区分。
 
 实现记录：高空云使用独立 high-weather（R coverage、G As/Ac type、A Hi-A/MS weight）、cell、RG warp 与 wisp 四张 2D 纹理；`evaluateHighCloudDensity` 不调用低云 3D shape/detail。高云使用独立球壳区间和均匀步进，按相机位于高云底部上下选择前后合成顺序，并提供 `HighWeather`、`HighBand`、`HighDensity` 调试视图。当前 demo 仅提供轻量高云自阴影近似，未宣称复刻 HP 的完整 HDRP 高云光照。
 
 验收：关闭高空云路径时低云逐像素不变；Ac/As 不采样低云 shape/detail；高空云可单独 debug 和计时。
+
+#### 后续视觉调整 5：降低高空云覆盖与有效消光
+
+- [x] 可见覆盖不新增 demo 专用 weather remap，而是把 HP 原生 `highDensityThreshold` 从 `0.36` 提高到 `0.50`，并把 softness 调为 `0.20`，减少低 coverage 区进入密度积分。
+- [x] 对齐 HP 的独立 `_HP_Hi_ViewAbsorption`：视线消光改为 `density * highViewAbsorption * highWeather.a`，默认 `0.012`，不再复用低云全局 `extinction=0.095`。
+- [x] 对齐 `_HP_Hi_LightAbsorption` 与 `_HP_Hi_CoverAbsorptionStr`：太阳光路限制为 3 km，使用独立 light absorption `0.012` 与 coverage 调制 `0.35`。
+- [x] 固定 `hp-ocean-day&high=1` 做合成、仅高云和 `HighDensity` 三组检查；天空空隙恢复，高云仍可见，未再形成全屏灰幕。
+
+验收记录：`hpHigh-stage5-coverage-optical-before.png` 重放旧阈值与旧强吸收参数，`hpHigh-stage5-coverage-optical-after.png` 使用新默认；`hpHigh-stage5-isolated-after.png` 把低云密度归零以确认高云未被调没，`hpHigh-stage5-density-after.png` 记录最终密度覆盖。Chrome WebGPU 验证无 WGSL/运行时错误；固定合成场景 GPU 时间约 `53.8 ms`，只作为本机趋势值。
 
 ## 7. 建议的提交边界
 

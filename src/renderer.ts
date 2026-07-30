@@ -14,7 +14,7 @@ import { generateCloudLutRGBA } from './cloudLutGen';
 import { generateDetailRGBA, generateHpDetailRGBA, generateShapeRGBA, generateVolumeMipChainRGBA } from './noiseAtlasGen';
 import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, type DemoParams } from './params';
 
-const UNIFORM_SIZE = 784;
+const UNIFORM_SIZE = 800;
 
 export interface CameraState {
   position: [number, number, number];
@@ -589,6 +589,13 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[193] = params.scatterSourceODScale;
     f32[194] = params.scatterSourceCurvePow;
     f32[195] = 0;
+
+    // HP high-cloud optical controls: independent view/light absorption and
+    // coverage-driven light-path absorption. Do not reuse low-cloud extinction.
+    f32[196] = params.highViewAbsorption;
+    f32[197] = params.highLightAbsorption;
+    f32[198] = params.highCoverAbsorptionStrength;
+    f32[199] = 0;
 
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
   }

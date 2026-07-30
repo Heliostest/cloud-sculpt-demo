@@ -119,6 +119,9 @@ export interface DemoParams {
   highWispScaleZ: number;
   highWispStrength: number;
   highDensityMultiplier: number;
+  highViewAbsorption: number;
+  highLightAbsorption: number;
+  highCoverAbsorptionStrength: number;
   highHorizonStartKm: number;
   highHorizonEndKm: number;
   detailOff: boolean;
@@ -236,13 +239,16 @@ export function createDefaultParams(): DemoParams {
     highBandTop: 0.82,
     highBottomCoverageScale: 0.25,
     highHeightCurvePow: 0.8,
-    highDensityThreshold: 0.36,
-    highDensitySoftness: 0.18,
+    highDensityThreshold: 0.5,
+    highDensitySoftness: 0.2,
     highCloudSoftness: 0.055,
     highWispScaleX: 7.0,
     highWispScaleZ: 7.0,
     highWispStrength: 0.28,
     highDensityMultiplier: 0.06,
+    highViewAbsorption: 0.012,
+    highLightAbsorption: 0.012,
+    highCoverAbsorptionStrength: 0.35,
     highHorizonStartKm: 35,
     highHorizonEndKm: 140,
     detailOff: false,

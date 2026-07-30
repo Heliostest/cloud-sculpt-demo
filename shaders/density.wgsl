@@ -10,13 +10,14 @@ struct DensitySample {
 struct HighCloudSample {
   density: f32,
   coverage: f32,
+  msWeight: f32,
   typeMix: f32,
   height01: f32,
   bandMask: f32,
 };
 
 fn emptyHighCloudSample() -> HighCloudSample {
-  return HighCloudSample(0.0, 0.0, 0.0, 0.0, 0.0);
+  return HighCloudSample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 }
 
 fn highWeatherUv(worldPos: vec3f) -> vec2f {
@@ -41,7 +42,7 @@ fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
   let weather = sampleHighWeather(worldPos);
   let coverage = saturate(weather.r);
   if (coverage < 0.001) {
-    return HighCloudSample(0.0, coverage, weather.g, normalizedHeight, 0.0);
+    return HighCloudSample(0.0, coverage, saturate(weather.a), weather.g, normalizedHeight, 0.0);
   }
   let typeMix = select(saturate(weather.g), saturate(U.hpHigh1.y), U.hpHigh1.y >= 0.0);
   let cellStrength = mix(U.hpHigh3.z, U.hpHigh3.y, typeMix);
@@ -80,7 +81,7 @@ fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
     density *= 1.0 - saturate(U.hpDensityPost0.z * darkWeight);
   }
   density = max(0.0, density * U.hpHigh1.z);
-  return HighCloudSample(density, coverage, typeMix, normalizedHeight, bandMask);
+  return HighCloudSample(density, coverage, saturate(weather.a), typeMix, normalizedHeight, bandMask);
 }
 
 fn sampleWeather(worldPos: vec3f) -> vec4f {

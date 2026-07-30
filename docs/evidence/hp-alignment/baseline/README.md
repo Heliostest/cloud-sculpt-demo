@@ -91,7 +91,16 @@ CloudLut 的 RGB 分别是 Cu/Tcu/Cb。由于 demo weather 采用 repeat、没�
 - `&high=1`：启用独立 Ac/As 路径；默认关闭，关闭时不改变低云结果。
 - `&highType=0|1`：强制 As 或 Ac；省略时使用 high-weather G。
 - `&highDensity=<value>&highSteps=<count>`：覆盖高云独立密度倍率与步数。
+- `&highThreshold=<value>&highSoftness=<value>`：控制 HP 高云的有效可见覆盖。
+- `&highViewAbsorption=<value>&highLightAbsorption=<value>&highCoverAbsorption=<value>`：分别覆盖 HP 高云视线吸收、太阳光吸收和 coverage 自阴影调制。
 - `&debug=HighWeather|HighBand|HighDensity`：分别检查 high-weather 通道、高度带和最终高云密度。
 - `hpHigh-stage8-ac-oblique.png` 与 `hpHigh-stage8-as-oblique.png` 记录 Ac/As 最终合成；`hpHigh-stage8-weather.png`、`hpHigh-stage8-band-side.png`、`hpHigh-stage8-density.png` 记录独立调试输出。
 
 高云关闭时，阶段 8 的 `current/side-cu` 与阶段 0 基线字节一致，`hpLowCloud/oblique-cb` 与阶段 7 LOD 0 基线字节一致。
+
+### 高空云覆盖 / 消光视觉调整 5
+
+- 旧路径把低云 `extinction=0.095` 直接用于 4 km 高云球壳，长视线路径会累计为近不透明灰幕。调整后按 HP 源码使用独立 view/light absorption，并在视线消光中乘 high-weather A。
+- 默认值为 `highDensityThreshold=0.50`、`highDensitySoftness=0.20`、`highViewAbsorption=0.012`、`highLightAbsorption=0.012`、`highCoverAbsorptionStrength=0.35`；原始 high-weather R 不被二次重映射。
+- `hpHigh-stage5-coverage-optical-before.png` / `hpHigh-stage5-coverage-optical-after.png` 是固定 `hp-ocean-day&high=1` 的旧参数重放与新默认对照。
+- `hpHigh-stage5-isolated-after.png` 使用 `densityMultiplier=0` 隔离高云；`hpHigh-stage5-density-after.png` 使用 `debug=HighDensity`，证明减少的是低 coverage 的有效占比和光学厚度，并非关闭高云。

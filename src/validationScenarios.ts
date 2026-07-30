@@ -20,6 +20,25 @@ type HpDensityFixture = Pick<
   'loCovCoverIntensity' | 'loCovCoverContrast' | 'densityMultiplier'
 >;
 
+type HpMorphologyFixture = Pick<
+  DemoParams,
+  | 'weatherRepeat'
+  | 'hpShapeScaleX'
+  | 'hpShapeScaleY'
+  | 'hpShapeScaleZ'
+  | 'hpDetailScaleX'
+  | 'hpDetailScaleY'
+  | 'hpDetailScaleZ'
+  | 'detailStrength'
+  | 'billowyLowWeight'
+  | 'billowyHighWeight'
+  | 'wispyLowWeight'
+  | 'wispyHighWeight'
+  | 'loCoverTopStrength'
+  | 'loCoverTopMax'
+  | 'loCoverTopCurvePow'
+>;
+
 export type ValidationScenarioName =
   | 'side-cu'
   | 'oblique-tcu'
@@ -42,6 +61,7 @@ export interface ValidationScenario {
   scStrength?: number;
   hpLighting?: HpLightingFixture;
   hpDensity?: HpDensityFixture;
+  hpMorphology?: HpMorphologyFixture;
 }
 
 export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScenario> = {
@@ -97,6 +117,23 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
       loCovCoverContrast: 1.5,
       densityMultiplier: 0.6,
     },
+    hpMorphology: {
+      weatherRepeat: 0.000032,
+      hpShapeScaleX: 0.000145,
+      hpShapeScaleY: 0.00009,
+      hpShapeScaleZ: 0.000145,
+      hpDetailScaleX: 0.0013,
+      hpDetailScaleY: 0.00095,
+      hpDetailScaleZ: 0.0013,
+      detailStrength: 0.56,
+      billowyLowWeight: 0.52,
+      billowyHighWeight: 0.48,
+      wispyLowWeight: 0.52,
+      wispyHighWeight: 0.48,
+      loCoverTopStrength: 0,
+      loCoverTopMax: 1.8,
+      loCoverTopCurvePow: 1,
+    },
     hpLighting: {
       hpLightingEnabled: true,
       forwardEccentricity: 0.85,
@@ -130,4 +167,5 @@ export function applyValidationScenario(params: DemoParams, scenario: Validation
   if (scenario.scStrength !== undefined) params.scStrength = scenario.scStrength;
   if (scenario.hpLighting !== undefined) Object.assign(params, scenario.hpLighting);
   if (scenario.hpDensity !== undefined) Object.assign(params, scenario.hpDensity);
+  if (scenario.hpMorphology !== undefined) Object.assign(params, scenario.hpMorphology);
 }

@@ -42,6 +42,15 @@
 
 上述四项可用同名 URL 参数独立覆盖；实际运行值也会写入 `body.dataset.cloudTypeOverride`、`loCovCoverIntensity`、`loCovCoverContrast` 和 `densityMultiplier`，便于自动截图核验。
 
+### HP 低云形态阶段 3 A/B
+
+- 阶段 2 基线保持 `weatherRepeat=0.000032`、shape scale `(0.00011, 0.00011, 0.00011)`、detail scale `(0.0009, 0.0009, 0.0009)`、detail strength `0.42`，四通道低/高频权重为 `0.65/0.35`。
+- 阶段 3 保持相同 weather、coverage、密度和 cloud-top 参数，只把 shape scale 调成 `(0.000145, 0.00009, 0.000145)`，detail scale 调成 `(0.0013, 0.00095, 0.0013)`，detail strength 调成 `0.56`，Billowy/Wispy 的低/高频权重均调成 `0.52/0.48`。
+- XZ 频率高于 Y，使水平连成片的体块更容易被拆开，同时保留纵向发展的云柱；提高 detail 高频占比后，近景轮廓和内部空洞更清晰。阶段 3 没有改变 weatherRepeat，也没有启用 coverage-driven top stretch，因此不会用天气相位漂移或增厚云顶伪造形态改善。
+- 本机 1280×720 WebGPU 证据为 `hp-ocean-day-morphology-before.png` / `hp-ocean-day-morphology-after.png`。after 中近景连续云墙被分解为独立主云，中部天空形成连续负空间，地平线附近可辨认出分层云列。
+
+形态 A/B 可用 `weatherRepeat`、`shapeScaleX/Y/Z`、`detailScaleX/Y/Z`、`detailStrength`、`billowyLow/High`、`wispyLow/High` 和 `topStrength/topMax/topCurve` URL 参数复现；对应实际值写入 `body.dataset.weatherRepeat`、`hpShapeScale`、`hpDetailScale`、`detailStrength`、`hpDetailWeights` 与 `hpCoverTop`。
+
 本机 1280×720 WebGPU 证据命名为 `hp-ocean-day-lighting-before.png` / `hp-ocean-day-lighting-after.png`。上方 70% 区域的平均 RGB 从约 `(126,132,139)` 提升到 `(157,162,168)`，平均绝对差约 `(21,21,20)`；HP 配对参考图的对应绝对差约 `(31,25,16)`，变化幅度处于同一量级。关闭 HP 光照后的 `current/side-cu` 与旧基线平均每通道漂移低于 1 个 8-bit 码值。
 
 截图命名约定：`<density-model>-<scenario>.png`。

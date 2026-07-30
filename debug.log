@@ -1,0 +1,2 @@
+[0729/233002.817:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0729/233258.526:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.

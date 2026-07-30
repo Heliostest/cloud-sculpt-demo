@@ -52,6 +52,19 @@
         "loCovCoverContrast": 1.5,
         "densityMultiplier": 0.6
       },
+      "hpMorphology": {
+        "weatherRepeat": 0.000032,
+        "hpShapeScale": [0.000145, 0.00009, 0.000145],
+        "hpDetailScale": [0.0013, 0.00095, 0.0013],
+        "detailStrength": 0.56,
+        "detailWeights": {
+          "billowyLow": 0.52,
+          "billowyHigh": 0.48,
+          "wispyLow": 0.52,
+          "wispyHigh": 0.48
+        },
+        "coverTop": [0, 1.8, 1]
+      },
       "sunAzimuthDeg": 210,
       "sunElevationDeg": 35,
       "exposure": 1.05,

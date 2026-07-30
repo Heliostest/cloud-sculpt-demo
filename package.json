@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test:density": "node --test tests/density-core.test.mjs",
+    "test:noise": "node --test tests/noise-atlas.test.mjs",
     "test:lighting": "node --test tests/lighting-core.test.mjs",
     "preview": "vite preview"
   },

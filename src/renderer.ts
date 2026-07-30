@@ -11,10 +11,16 @@ import {
   generateWeatherRGBA,
 } from './weatherGen';
 import { generateCloudLutRGBA } from './cloudLutGen';
-import { generateDetailRGBA, generateHpDetailRGBA, generateShapeRGBA, generateVolumeMipChainRGBA } from './noiseAtlasGen';
-import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, type DemoParams } from './params';
+import {
+  DETAIL_VOLUME_SIZE,
+  generateDetailRGBA,
+  generateHpDetailRGBA,
+  generateShapeRGBA,
+  generateVolumeMipChainRGBA,
+} from './noiseAtlasGen';
+import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, TONE_MAPPER_INDEX, type DemoParams } from './params';
 
-const UNIFORM_SIZE = 800;
+const UNIFORM_SIZE = 864;
 
 export interface CameraState {
   position: [number, number, number];
@@ -148,8 +154,8 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
 
   const weatherData = generateWeatherRGBA(512);
   const shapeData = generateShapeRGBA(128);
-  const detailData = generateDetailRGBA(32);
-  const hpDetailData = generateHpDetailRGBA(32);
+  const detailData = generateDetailRGBA();
+  const hpDetailData = generateHpDetailRGBA();
   const cloudLutData = generateCloudLutRGBA(256, 32);
   const scCellData = generateScCellRGBA(256);
   const highWeatherData = generateHighWeatherRGBA(512);
@@ -157,8 +163,8 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   const highWarpData = generateHighWarpRGBA(256);
   const highWispData = generateHighWispRGBA(256);
   const shapeMips = generateVolumeMipChainRGBA(shapeData, 128);
-  const detailMips = generateVolumeMipChainRGBA(detailData, 32);
-  const hpDetailMips = generateVolumeMipChainRGBA(hpDetailData, 32);
+  const detailMips = generateVolumeMipChainRGBA(detailData, DETAIL_VOLUME_SIZE);
+  const hpDetailMips = generateVolumeMipChainRGBA(hpDetailData, DETAIL_VOLUME_SIZE);
 
   const weatherTex = device.createTexture({
     size: [512, 512],
@@ -237,7 +243,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   );
 
   const hpDetailTex = device.createTexture({
-    size: [32, 32, 32],
+    size: [DETAIL_VOLUME_SIZE, DETAIL_VOLUME_SIZE, DETAIL_VOLUME_SIZE],
     dimension: '3d',
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -254,7 +260,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   }
 
   const detailTex = device.createTexture({
-    size: [32, 32, 32],
+    size: [DETAIL_VOLUME_SIZE, DETAIL_VOLUME_SIZE, DETAIL_VOLUME_SIZE],
     dimension: '3d',
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
@@ -271,6 +277,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   }
 
   const weatherSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat' });
+  const weatherClampSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
   const shapeSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', addressModeW: 'repeat' });
   const detailSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', addressModeW: 'repeat' });
 
@@ -326,6 +333,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       { binding: 11, resource: highCellTex.createView() },
       { binding: 12, resource: highWarpTex.createView() },
       { binding: 13, resource: highWispTex.createView() },
+      { binding: 14, resource: weatherClampSamp },
     ],
   });
 
@@ -338,7 +346,6 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     camera: CameraState,
     aspect: number,
     time: number,
-    weatherOffset: [number, number],
     windOffset: [number, number],
     shapeOffset: [number, number, number],
     detailOffset: [number, number, number],
@@ -365,9 +372,9 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[22] = sunZ / sl;
     f32[23] = params.coverage;
 
-    f32[24] = weatherOffset[0];
-    f32[25] = weatherOffset[1];
-    f32[26] = params.weatherRepeat;
+    f32[24] = params.weatherMapCenterX;
+    f32[25] = params.weatherMapCenterZ;
+    f32[26] = params.weatherMapWorldSizeKm * 1000;
     f32[27] = params.weatherExponent;
 
     f32[28] = params.mesoStrength;
@@ -597,6 +604,28 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[198] = params.highCoverAbsorptionStrength;
     f32[199] = 0;
 
+    // HP/HDRP-style final color pipeline. Exposure applies to the composed
+    // linear HDR radiance before grading and tone mapping.
+    f32[200] = params.exposure;
+    f32[201] = TONE_MAPPER_INDEX[params.toneMapper];
+    f32[202] = params.colorSaturation;
+    f32[203] = params.colorContrast;
+    f32[204] = params.skyZenithR;
+    f32[205] = params.skyZenithG;
+    f32[206] = params.skyZenithB;
+    f32[207] = params.skyHorizonExponent;
+    f32[208] = params.skyHorizonR;
+    f32[209] = params.skyHorizonG;
+    f32[210] = params.skyHorizonB;
+    f32[211] = params.skyIntensity;
+
+    // Base-shape de-tiling: Y rotation, inverse low-frequency warp scale,
+    // displacement in metres. Kept separate from the HP sampling scale.
+    f32[212] = (params.hpShapeRotationDeg * Math.PI) / 180;
+    f32[213] = 1 / Math.max(1000, params.hpShapeWarpScaleKm * 1000);
+    f32[214] = params.hpShapeWarpStrengthM;
+    f32[215] = 0;
+
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
   }
 
@@ -614,7 +643,6 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     params: DemoParams,
     camera: CameraState,
     time: number,
-    weatherOffset: [number, number],
     windOffset: [number, number],
     shapeOffset: [number, number, number],
     detailOffset: [number, number, number],
@@ -622,7 +650,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   ): void {
     resizeCanvas();
     const aspect = canvas.width / Math.max(1, canvas.height);
-    writeUniforms(params, camera, aspect, time, weatherOffset, windOffset, shapeOffset, detailOffset, detailMorph);
+    writeUniforms(params, camera, aspect, time, windOffset, shapeOffset, detailOffset, detailMorph);
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
     const sampleTimestamp = timestampQuerySet !== null

@@ -26,6 +26,9 @@ export function createGui(
   hpNoise.add(params, 'hpShapeScaleX', 0.00001, 0.003, 0.00001);
   hpNoise.add(params, 'hpShapeScaleY', 0.00001, 0.003, 0.00001);
   hpNoise.add(params, 'hpShapeScaleZ', 0.00001, 0.003, 0.00001);
+  hpNoise.add(params, 'hpShapeRotationDeg', -90, 90, 1);
+  hpNoise.add(params, 'hpShapeWarpScaleKm', 8, 200, 1);
+  hpNoise.add(params, 'hpShapeWarpStrengthM', 0, 5000, 50);
   hpNoise.add(params, 'hpDetailScaleX', 0.0001, 0.02, 0.0001);
   hpNoise.add(params, 'hpDetailScaleY', 0.0001, 0.02, 0.0001);
   hpNoise.add(params, 'hpDetailScaleZ', 0.0001, 0.02, 0.0001);
@@ -65,7 +68,7 @@ export function createGui(
   hpPost.add(params, 'densityModContrast', 0.01, 4, 0.01);
   const hpLod = alignment.addFolder('HP LOD');
   hpLod.add(params, 'noiseMipOffset', 0, 7, 0.1);
-  hpLod.add(params, 'erosionMipOffset', 0, 5, 0.1);
+  hpLod.add(params, 'erosionMipOffset', 0, 6, 0.1);
   hpLod.add(params, 'forceSimpleMode');
   hpLod.add(params, 'detailFadeEnabled');
 
@@ -108,7 +111,9 @@ export function createGui(
   weather.add(params, 'weatherExponent', 0.5, 3.0, 0.01);
   weather.add(params, 'mesoStrength', 0, 1, 0.01);
   weather.add(params, 'mesoContrast', 0.5, 3, 0.01);
-  weather.add(params, 'weatherRepeat', 0.00002, 0.0003, 0.00001);
+  weather.add(params, 'weatherMapCenterX', -500000, 500000, 1000).name('map center X (m)');
+  weather.add(params, 'weatherMapCenterZ', -500000, 500000, 1000).name('map center Z (m)');
+  weather.add(params, 'weatherMapWorldSizeKm', 20, 1000, 10).name('map world size (km)');
   weather.add(params, 'windSpeed', 0, 40, 0.1);
   weather.add(params, 'windAngleDeg', 0, 360, 1);
   weather.add(params, 'cloudTypeOverride', -1, 1, 0.01).name('type override');
@@ -124,6 +129,22 @@ export function createGui(
   const sun = gui.addFolder('Sun');
   sun.add(params, 'sunAzimuthDeg', 0, 360, 1);
   sun.add(params, 'sunElevationDeg', 5, 80, 1);
+
+  const post = gui.addFolder('HP Sky / HDR Post');
+  post.add(params, 'toneMapper', ['aces', 'reinhard']);
+  post.add(params, 'exposure', 0.05, 4, 0.01);
+  post.add(params, 'skyIntensity', 0, 3, 0.01);
+  post.add(params, 'skyHorizonExponent', 0.05, 3, 0.01);
+  post.add(params, 'colorSaturation', 0, 2, 0.01);
+  post.add(params, 'colorContrast', 0.5, 2, 0.01);
+  const skyZenith = post.addFolder('Zenith RGB (linear)');
+  skyZenith.add(params, 'skyZenithR', 0, 2, 0.001);
+  skyZenith.add(params, 'skyZenithG', 0, 2, 0.001);
+  skyZenith.add(params, 'skyZenithB', 0, 2, 0.001);
+  const skyHorizon = post.addFolder('Horizon RGB (linear)');
+  skyHorizon.add(params, 'skyHorizonR', 0, 2, 0.001);
+  skyHorizon.add(params, 'skyHorizonG', 0, 2, 0.001);
+  skyHorizon.add(params, 'skyHorizonB', 0, 2, 0.001);
 
   const hpLighting = gui.addFolder('HP Low-Cloud Lighting');
   hpLighting.add(params, 'hpLightingEnabled');

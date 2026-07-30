@@ -1,13 +1,15 @@
 fn skyColor(rd: vec3f, sunDir: vec3f) -> vec3f {
-  let up = saturate(rd.y * 0.5 + 0.5);
-  let zenith = vec3f(0.18, 0.38, 0.72);
-  let horizon = vec3f(0.62, 0.74, 0.88);
-  var col = mix(horizon, zenith, pow(up, 1.25));
+  // Linear HDR input, like HDRP's sky before post processing. rd.y=0 must
+  // select the horizon anchor; the legacy 0.5 bias washed the gradient out.
+  let up = saturate(rd.y);
+  let zenith = max(U.hpSky0.rgb, vec3f(0.0));
+  let horizon = max(U.hpSky1.rgb, vec3f(0.0));
+  var col = mix(horizon, zenith, pow(up, max(U.hpSky0.w, 0.01)));
   let sun = pow(saturate(dot(rd, sunDir)), 1800.0);
   let glow = pow(saturate(dot(rd, sunDir)), 24.0);
   col += vec3f(1.0, 0.92, 0.75) * sun * 4.0;
-  col += vec3f(1.0, 0.7, 0.35) * glow * 0.35;
-  return col;
+  col += vec3f(1.0, 0.72, 0.42) * glow * 0.22;
+  return col * U.hpSky1.w;
 }
 
 fn groundColor(ro: vec3f, rd: vec3f) -> vec3f {

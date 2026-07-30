@@ -71,7 +71,7 @@ HP 低云在一个球形 slab 内得到全局 normalized height，再做 coverag
 
 - HP：R 通道、可各轴缩放、显式 noise mip、风偏移，无 `shapeAmount`。
 - demo：RGB 固定加权、单一 repeat、LOD 0、额外垂直时间相位，并按全局/层/type 的 shape amount 把结果混回 1。
-- demo CPU 已按 `shapeRepeat` 累积 `shapeOffset`，shader 又叠加按 `weatherRepeat` 累积的 `U.windOffset * 0.35`；这两项单位/频率不同，需要在对齐前拆清，不能笼统视为一个 HP 风偏移。
+- [已处理] 低云天气图不再按 `weatherRepeat` 累积 UV 风偏移；它现在是固定的有限世界场。shape/detail 继续使用各自独立的 HP 风速语义，高空云保留独立天气运动。
 
 demo 的 shape generator 虽然写入了 RGBA 多频数据，但这套 RGB 合成不是 HP 的 R-only base shape。
 
@@ -208,6 +208,26 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 固定 `hp-ocean-day&high=1` 做合成、仅高云和 `HighDensity` 三组检查；天空空隙恢复，高云仍可见，未再形成全屏灰幕。
 
 验收记录：`hpHigh-stage5-coverage-optical-before.png` 重放旧阈值与旧强吸收参数，`hpHigh-stage5-coverage-optical-after.png` 使用新默认；`hpHigh-stage5-isolated-after.png` 把低云密度归零以确认高云未被调没，`hpHigh-stage5-density-after.png` 记录最终密度覆盖。Chrome WebGPU 验证无 WGSL/运行时错误；固定合成场景 GPU 时间约 `53.8 ms`，只作为本机趋势值。
+
+#### 后续视觉调整 6：曝光、天空颜色与 HDR tone mapping
+
+- [x] 明确 HP 云 shader 只输出乘过 `GetCurrentExposureMultiplier()` 的线性 HDR 辐亮度；最终 tone mapping 属于 HDRP 后处理，不在 `VolumetricClouds.hlsl` 内。
+- [x] demo 保持“天空 + 云散射 + 背景透射”在线性 HDR 空间先合成，再统一曝光、色彩调整、tone mapping 和 linear-to-sRGB；不在密度或光照中补偿最终亮度。
+- [x] 用 ACES fitted 取代默认简单 Reinhard，并保留 `toneMap=reinhard` 对照入口。固定场景曝光从旧乘数 `1.05` 降为 `0.45`，避免白云过早进入肩部而丢失内部灰阶。
+- [x] 天空梯度修正为 `rd.y=0` 精确使用 horizon anchor，不再使用旧的 `rd.y*0.5+0.5` 偏置；线性天顶色 `(0.008, 0.10, 0.70)`、地平线色 `(0.06, 0.24, 0.72)`、强度 `1.6`，最终饱和度 `1.08`、对比度 `1.0`。
+
+验收记录：阶段 5 的 `hpHigh-stage5-coverage-optical-after.png` 是旧 Reinhard/浅青天空基线；`hpPost-stage6-aces-after.png` 是最终 ACES 合成，`hpPost-stage6-reinhard-control.png` 固定所有参数只切回 Reinhard，`hpPost-stage6-sky-after.png` 关闭云密度检查天空锚点。本机 Chrome WebGPU 固定合成场景约 `54.7 ms`，未出现 WGSL 或页面运行错误。这里对齐的是 HP/HDRP 的线性 HDR 与 ACES 风格显示流程；由于仓库不含 Unity Volume 的具体 Tonemapping/Exposure 配置，不宣称逐像素复刻 HDRP 后处理。
+
+#### 后续形态改进 2：提高 detail 体积质量
+
+- [x] current 与 HP detail 从 `32³` 提升为 `64³`，生成完整 `64→1` mip chain。
+- [x] HP RGBA 四通道使用独立 seed、频率配方和可平铺 domain warp，并增加确定性与通道相关性测试。
+
+#### 后续形态改进 3：降低基础 shape 的短周期重复
+
+- [x] 在 HP base-shape 采样前增加可调 Y 轴旋转和低频世界坐标扭曲，继续只采样一次 3D shape texture。
+- [x] 低频扭曲在世界原点归零，避免启用时整体平移已经调好的近景噪声相位；默认关闭旋转，仅使用 `52 km / 1000 m` 的低频扭曲。
+- [x] 增加纹理周期位移随世界位置变化的 CPU 回归测试，并用 `hp-ocean-day` 与俯视 FinalDensity 做开关 A/B；无 WGSL/WebGPU 错误。
 
 ## 7. 建议的提交边界
 

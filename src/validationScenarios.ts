@@ -22,10 +22,15 @@ type HpDensityFixture = Pick<
 
 type HpMorphologyFixture = Pick<
   DemoParams,
-  | 'weatherRepeat'
+  | 'weatherMapCenterX'
+  | 'weatherMapCenterZ'
+  | 'weatherMapWorldSizeKm'
   | 'hpShapeScaleX'
   | 'hpShapeScaleY'
   | 'hpShapeScaleZ'
+  | 'hpShapeRotationDeg'
+  | 'hpShapeWarpScaleKm'
+  | 'hpShapeWarpStrengthM'
   | 'hpDetailScaleX'
   | 'hpDetailScaleY'
   | 'hpDetailScaleZ'
@@ -111,7 +116,7 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     densityModel: 'hpLowCloud',
     sunAzimuthDeg: 210,
     sunElevationDeg: 35,
-    exposure: 1.05,
+    exposure: 0.45,
     highCloudEnabled: false,
     scStrength: 0,
     hpDensity: {
@@ -120,10 +125,15 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
       densityMultiplier: 0.6,
     },
     hpMorphology: {
-      weatherRepeat: 0.000032,
+      weatherMapCenterX: 210000,
+      weatherMapCenterZ: 210000,
+      weatherMapWorldSizeKm: 500,
       hpShapeScaleX: 0.000145,
       hpShapeScaleY: 0.00009,
       hpShapeScaleZ: 0.000145,
+      hpShapeRotationDeg: 0,
+      hpShapeWarpScaleKm: 52,
+      hpShapeWarpStrengthM: 1000,
       hpDetailScaleX: 0.0013,
       hpDetailScaleY: 0.00095,
       hpDetailScaleZ: 0.0013,

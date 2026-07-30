@@ -2,6 +2,8 @@ export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'W
 
 export type DensityModel = 'current' | 'hpCore' | 'hpLowCloud';
 
+export type ToneMapper = 'reinhard' | 'aces';
+
 export type CameraPreset = 'side' | 'oblique45' | 'top' | 'hpOcean';
 
 export interface LayerParams {
@@ -32,7 +34,9 @@ export interface DemoParams {
   weatherExponent: number;
   mesoStrength: number;
   mesoContrast: number;
-  weatherRepeat: number;
+  weatherMapCenterX: number;
+  weatherMapCenterZ: number;
+  weatherMapWorldSizeKm: number;
   windSpeed: number;
   windAngleDeg: number;
   shapeAmount: number;
@@ -55,6 +59,9 @@ export interface DemoParams {
   hpShapeScaleX: number;
   hpShapeScaleY: number;
   hpShapeScaleZ: number;
+  hpShapeRotationDeg: number;
+  hpShapeWarpScaleKm: number;
+  hpShapeWarpStrengthM: number;
   hpDetailScaleX: number;
   hpDetailScaleY: number;
   hpDetailScaleZ: number;
@@ -150,6 +157,17 @@ export interface DemoParams {
   extinction: number;
   debugMode: DebugMode;
   exposure: number;
+  toneMapper: ToneMapper;
+  skyZenithR: number;
+  skyZenithG: number;
+  skyZenithB: number;
+  skyHorizonR: number;
+  skyHorizonG: number;
+  skyHorizonB: number;
+  skyHorizonExponent: number;
+  skyIntensity: number;
+  colorSaturation: number;
+  colorContrast: number;
 }
 
 export function createDefaultParams(): DemoParams {
@@ -159,7 +177,11 @@ export function createDefaultParams(): DemoParams {
     weatherExponent: 0.85,
     mesoStrength: 0.16,
     mesoContrast: 1.0,
-    weatherRepeat: 0.000032,
+    // Places the demo cameras inside the southwest portion of the finite map,
+    // preserving the established hp-ocean-day weather phase without tiling.
+    weatherMapCenterX: 210000,
+    weatherMapCenterZ: 210000,
+    weatherMapWorldSizeKm: 500,
     windSpeed: 8,
     windAngleDeg: 35,
     shapeAmount: 0.55,
@@ -182,6 +204,9 @@ export function createDefaultParams(): DemoParams {
     hpShapeScaleX: 0.00011,
     hpShapeScaleY: 0.00011,
     hpShapeScaleZ: 0.00011,
+    hpShapeRotationDeg: 0,
+    hpShapeWarpScaleKm: 52,
+    hpShapeWarpStrengthM: 1000,
     hpDetailScaleX: 0.0009,
     hpDetailScaleY: 0.0009,
     hpDetailScaleZ: 0.0009,
@@ -312,7 +337,18 @@ export function createDefaultParams(): DemoParams {
     scattering: 0.09,
     extinction: 0.095,
     debugMode: 'Final',
-    exposure: 1.2,
+    exposure: 0.5,
+    toneMapper: 'aces',
+    skyZenithR: 0.008,
+    skyZenithG: 0.10,
+    skyZenithB: 0.70,
+    skyHorizonR: 0.06,
+    skyHorizonG: 0.24,
+    skyHorizonB: 0.72,
+    skyHorizonExponent: 0.65,
+    skyIntensity: 1.6,
+    colorSaturation: 1.08,
+    colorContrast: 1.0,
   };
 }
 
@@ -340,4 +376,13 @@ export const DENSITY_MODEL_INDEX: Record<DensityModel, number> = {
 
 export function isDensityModel(value: string | null): value is DensityModel {
   return value !== null && value in DENSITY_MODEL_INDEX;
+}
+
+export const TONE_MAPPER_INDEX: Record<ToneMapper, number> = {
+  reinhard: 0,
+  aces: 1,
+};
+
+export function isToneMapper(value: string | null): value is ToneMapper {
+  return value !== null && value in TONE_MAPPER_INDEX;
 }

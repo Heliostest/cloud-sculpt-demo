@@ -172,6 +172,13 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   let minStep = U.quality.x;
   let maxStep = U.quality.y;
   let maxIter = u32(U.quality.z);
+  // HP derives its fine step from the complete shell interval: with a 4x
+  // iteration budget, even an all-cloud ray can still reach the far exit.
+  // The demo previously used an absolute minStep * 0.35 here. A translucent
+  // foreground edge could therefore consume every iteration after only a few
+  // kilometres; the unvisited remainder was then composited as clear sky,
+  // which looked like a transparent proxy shell hiding all clouds behind it.
+  let traversalStepFloor = (t1 - t0) / f32(max(maxIter, 1u));
   // 刚离开云面后若干步保持小步长，避免大步跳过后方云体
   var exitHold = 0u;
 
@@ -198,6 +205,9 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
         stepLen = leap;
       }
     }
+    // Do not spend the whole finite iteration budget inside a near translucent
+    // edge. This is the demo equivalent of HP's stepSmall = totalDist/maxIter.
+    stepLen = max(stepLen, traversalStepFloor);
     stepLen = min(stepLen, t1 - t);
     let s = evaluateSculpted(pos, stepLen, false);
     dbgSupport = max(dbgSupport, s.support);
@@ -268,6 +278,35 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   return vec4f(radiance, transmittance);
 }
 
+fn acesFitted(color: vec3f) -> vec3f {
+  // Compact ACES-style curve for the final HDRP-like display transform.
+  let a = 2.51;
+  let b = 0.03;
+  let c = 2.43;
+  let d = 0.59;
+  let e = 0.14;
+  return saturate3((color * (a * color + vec3f(b))) / (color * (c * color + vec3f(d)) + vec3f(e)));
+}
+
+fn linearToSrgb(color: vec3f) -> vec3f {
+  let lo = color * 12.92;
+  let hi = 1.055 * pow(max(color, vec3f(0.0)), vec3f(1.0 / 2.4)) - vec3f(0.055);
+  return select(hi, lo, color <= vec3f(0.0031308));
+}
+
+fn hpFinalColor(linearHdr: vec3f) -> vec3f {
+  var color = max(linearHdr * U.hpPost0.x, vec3f(0.0));
+  let luminance = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  color = mix(vec3f(luminance), color, max(U.hpPost0.z, 0.0));
+  color = max((color - vec3f(0.18)) * U.hpPost0.w + vec3f(0.18), vec3f(0.0));
+  if (U.hpPost0.y >= 0.5) {
+    color = acesFitted(color);
+  } else {
+    color = color / (color + vec3f(1.0));
+  }
+  return linearToSrgb(saturate3(color));
+}
+
 @fragment
 fn fs(inp: VSOut) -> @location(0) vec4f {
   let ndc = vec2f(inp.uv.x * 2.0 - 1.0, 1.0 - inp.uv.y * 2.0);
@@ -296,7 +335,5 @@ fn fs(inp: VSOut) -> @location(0) vec4f {
   } else if (U.debugFlags.x >= 6u && U.debugFlags.x <= 8u) {
     color = highCloud.rgb;
   }
-  color *= U.hero2.z;
-  color = color / (color + vec3f(1.0));
-  return vec4f(pow(saturate3(color), vec3f(1.0 / 2.2)), 1.0);
+  return vec4f(hpFinalColor(color), 1.0);
 }

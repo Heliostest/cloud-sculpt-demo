@@ -1,6 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+function traverseWithIterationBudget(totalDistance, maxIterations, requestedStep) {
+  const traversalStepFloor = totalDistance / Math.max(maxIterations, 1);
+  let distance = 0;
+  let iterations = 0;
+  while (distance < totalDistance && iterations < maxIterations) {
+    distance += Math.min(Math.max(requestedStep, traversalStepFloor), totalDistance - distance);
+    iterations++;
+  }
+  return { distance, iterations, traversalStepFloor };
+}
+
+test('thin foreground edges cannot exhaust the ray budget before the far cloud interval', () => {
+  const totalDistance = 13_800;
+  const maxIterations = 512;
+  const oldThinEdgeStep = 16 * 0.35;
+  assert.ok(oldThinEdgeStep * maxIterations < totalDistance);
+
+  const result = traverseWithIterationBudget(totalDistance, maxIterations, oldThinEdgeStep);
+  assert.equal(result.distance, totalDistance);
+  assert.equal(result.iterations, maxIterations);
+  assert.ok(result.traversalStepFloor > oldThinEdgeStep);
+});
+
 const saturate = (x) => Math.min(1, Math.max(0, x));
 const smoothstep = (a, b, x) => {
   const t = saturate((x - a) / (b - a));
@@ -21,6 +44,47 @@ function hpDetailChannels(d, weights) {
     billowy: d.b * weights.billowyLow + d.a * weights.billowyHigh,
     wispy: d.r * weights.wispyLow + d.g * weights.wispyHigh,
   };
+}
+
+function finiteWeatherUv(worldXZ, centerXZ, worldSize) {
+  return [
+    (worldXZ[0] - centerXZ[0]) / Math.max(worldSize, 1) + 0.5,
+    (worldXZ[1] - centerXZ[1]) / Math.max(worldSize, 1) + 0.5,
+  ];
+}
+
+function isInsideWeatherMap(uv) {
+  return uv[0] >= 0 && uv[0] <= 1 && uv[1] >= 0 && uv[1] <= 1;
+}
+
+function shearNoiseXZ(position, xFromZ, zFromX) {
+  return [
+    position[0] + position[2] * xFromZ,
+    position[1],
+    position[2] + position[0] * zFromX,
+  ];
+}
+
+function transformBaseShapePosition(position, rotationDeg, warpScaleKm, warpStrengthM) {
+  const qx = position[0] / (warpScaleKm * 1000) * Math.PI * 2;
+  const qz = position[2] / (warpScaleKm * 1000) * Math.PI * 2;
+  const warpX = Math.sin(qx + qz * 0.73 + 0.91)
+    + 0.45 * Math.sin(qx * 0.41 - qz * 1.37 + 2.1)
+    - (Math.sin(0.91) + 0.45 * Math.sin(2.1));
+  const warpZ = Math.sin(qz - qx * 0.61 + 1.77)
+    + 0.4 * Math.sin(qz * 0.47 + qx * 1.21 - 0.4)
+    - (Math.sin(1.77) + 0.4 * Math.sin(-0.4));
+  const warpY = Math.sin(qx * 0.52 + qz * 0.38 + 2.73) - Math.sin(2.73);
+  const warped = [
+    position[0] + warpX * warpStrengthM / 1.45,
+    position[1] + warpY * warpStrengthM * 0.12,
+    position[2] + warpZ * warpStrengthM / 1.4,
+  ];
+  const angle = rotationDeg * Math.PI / 180;
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const rotated = [c * warped[0] - s * warped[2], warped[1], s * warped[0] + c * warped[2]];
+  return shearNoiseXZ(rotated, 0.23, 0.17);
 }
 
 function hpCoreReference(input) {
@@ -77,6 +141,44 @@ test('safe two-argument remap matches saturated HP DensityRemap on its intended 
       assert.ok(Math.abs(hp - safe) <= 1e-12, `x=${x}, low=${low}, hp=${hp}, safe=${safe}`);
     }
   }
+});
+
+test('low-cloud weather map is finite, centered in world space, and inclusive at its border', () => {
+  const center = [12000, -4000];
+  const size = 500000;
+  assert.deepEqual(finiteWeatherUv(center, center, size), [0.5, 0.5]);
+  assert.equal(isInsideWeatherMap(finiteWeatherUv([center[0] - size * 0.5, center[1]], center, size)), true);
+  assert.equal(isInsideWeatherMap(finiteWeatherUv([center[0] + size * 0.5, center[1]], center, size)), true);
+  assert.equal(isInsideWeatherMap(finiteWeatherUv([center[0] + size * 0.5 + 1, center[1]], center, size)), false);
+});
+
+test('HP demo noise shear breaks exact repetition along a world-axis texture period', () => {
+  const baseScale = 0.000145;
+  const basePeriodM = 1 / baseScale;
+  const p0 = shearNoiseXZ([0, 0, 0], 0.23, 0.17);
+  const p1 = shearNoiseXZ([basePeriodM, 0, 0], 0.23, 0.17);
+  const baseWrappedZDelta = ((p1[2] - p0[2]) * baseScale) % 1;
+  assert.ok(baseWrappedZDelta > 0.1 && baseWrappedZDelta < 0.9);
+
+  const detailScale = 0.0013;
+  const detailPeriodM = 1 / detailScale;
+  const d0 = shearNoiseXZ([0, 0, 0], -0.31, 0.27);
+  const d1 = shearNoiseXZ([detailPeriodM, 0, 0], -0.31, 0.27);
+  const detailWrappedZDelta = ((d1[2] - d0[2]) * detailScale) % 1;
+  assert.ok(detailWrappedZDelta > 0.1 && detailWrappedZDelta < 0.9);
+});
+
+test('low-frequency base-shape warp makes the atlas-period displacement vary across the world', () => {
+  const periodM = 1 / 0.000145;
+  const deltaAt = (origin) => {
+    const p0 = transformBaseShapePosition(origin, 0, 52, 1000);
+    const p1 = transformBaseShapePosition([origin[0] + periodM, origin[1], origin[2]], 0, 52, 1000);
+    return p1.map((value, index) => value - p0[index]);
+  };
+  const nearDelta = deltaAt([0, 1200, 0]);
+  const farDelta = deltaAt([83_000, 1200, -47_000]);
+  const deltaVariation = Math.hypot(...nearDelta.map((value, index) => value - farDelta[index]));
+  assert.ok(deltaVariation > 100, `period displacement variation=${deltaVariation}`);
 });
 
 test('safe remap defines low >= 1 as empty instead of producing NaN or a reversed interval', () => {

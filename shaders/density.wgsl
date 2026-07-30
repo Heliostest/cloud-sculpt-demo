@@ -21,7 +21,7 @@ fn emptyHighCloudSample() -> HighCloudSample {
 }
 
 fn highWeatherUv(worldPos: vec3f) -> vec2f {
-  return worldPos.xz * U.hpHigh1.x + U.weatherOffset;
+  return worldPos.xz * U.hpHigh1.x;
 }
 
 fn sampleHighWeather(worldPos: vec3f) -> vec4f {
@@ -85,12 +85,19 @@ fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
 }
 
 fn sampleWeather(worldPos: vec3f) -> vec4f {
-  let uv = worldPos.xz * U.weatherRepeat + U.weatherOffset + U.windOffset;
-  return textureSampleLevel(weatherTex, weatherSamp, uv, 0.0);
+  let uv = weatherUv(worldPos);
+  if (!isInsideWeatherMap(uv)) {
+    return vec4f(0.0);
+  }
+  return textureSampleLevel(weatherTex, weatherClampSamp, uv, 0.0);
 }
 
 fn weatherUv(worldPos: vec3f) -> vec2f {
-  return worldPos.xz * U.weatherRepeat + U.weatherOffset + U.windOffset;
+  return (worldPos.xz - U.weatherMapCenter) / max(U.weatherMapWorldSize, 1.0) + vec2f(0.5);
+}
+
+fn isInsideWeatherMap(uv: vec2f) -> bool {
+  return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0));
 }
 
 fn coverageSignal(w: vec4f) -> f32 {
@@ -124,14 +131,42 @@ fn hpTypeValue(values: vec3f, typeMix: f32) -> f32 {
   return mix(values.y, values.z, (typeMix - 0.5) * 2.0);
 }
 
-fn hpProfiles(localHeight: f32) -> vec3f {
-  // This demo keeps radialDist at zero because its weather map repeats and has
-  // no finite HP weather-map center. The LUT's second dimension is reserved.
-  return textureSampleLevel(cloudLutTex, weatherSamp, vec2f(localHeight, 0.0), 0.0).rgb;
+fn shearNoiseXZ(p: vec3f, xFromZ: f32, zFromX: f32) -> vec3f {
+  return vec3f(
+    p.x + p.z * xFromZ,
+    p.y,
+    p.z + p.x * zFromX
+  );
 }
 
-fn hpProfile(localHeight: f32, typeMix: f32) -> f32 {
-  return hpTypeValue(hpProfiles(localHeight), typeMix);
+fn rotateNoiseXZ(p: vec3f, angle: f32) -> vec3f {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3f(c * p.x - s * p.z, p.y, s * p.x + c * p.z);
+}
+
+fn lowFrequencyShapeWarp(p: vec3f) -> vec3f {
+  let q = p.xz * U.hpShapeWarp0.y * 6.2831853;
+  // Subtract the value at the world origin so enabling de-tiling does not
+  // globally phase-shift the already tuned reference camera neighbourhood.
+  let warpX = sin(q.x + q.y * 0.73 + 0.91)
+    + 0.45 * sin(q.x * 0.41 - q.y * 1.37 + 2.1)
+    - (sin(0.91) + 0.45 * sin(2.1));
+  let warpZ = sin(q.y - q.x * 0.61 + 1.77)
+    + 0.4 * sin(q.y * 0.47 + q.x * 1.21 - 0.4)
+    - (sin(1.77) + 0.4 * sin(-0.4));
+  let warpY = sin(q.x * 0.52 + q.y * 0.38 + 2.73) - sin(2.73);
+  let strength = U.hpShapeWarp0.z;
+  return p + vec3f(warpX * strength / 1.45, warpY * strength * 0.12, warpZ * strength / 1.4);
+}
+
+fn hpProfiles(localHeight: f32, weatherUV: vec2f) -> vec3f {
+  let radialDist = saturate(length(weatherUV - vec2f(0.5)) * 2.0);
+  return textureSampleLevel(cloudLutTex, weatherClampSamp, vec2f(localHeight, radialDist), 0.0).rgb;
+}
+
+fn hpProfile(localHeight: f32, typeMix: f32, weatherUV: vec2f) -> f32 {
+  return hpTypeValue(hpProfiles(localHeight, weatherUV), typeMix);
 }
 
 fn cuDomeProfile(h01: f32) -> f32 {
@@ -217,7 +252,16 @@ fn sampleBaseShape(worldPos: vec3f, typeMix: f32, shapeAmt: f32) -> f32 {
     return mix(1.0, current, amount);
   }
   let windMeters = vec3f(U.hpDetailMotion.y, 0.0, U.hpDetailMotion.z) * U.time * U.hpShapeScale.w;
-  let p = (worldPos + windMeters) * U.hpShapeScale.xyz;
+  // HP's source asset has substantially richer, less obvious repetition than
+  // this demo's generated atlas. Rotate the lattice and bend it with a much
+  // lower-frequency world-space field before applying the existing shear.
+  // Adjacent 3D texture periods therefore no longer repeat at a fixed world
+  // displacement while the local noise character and single-sample cost stay.
+  let movingPos = worldPos + windMeters;
+  let warpedPos = lowFrequencyShapeWarp(movingPos);
+  let rotatedPos = rotateNoiseXZ(warpedPos, U.hpShapeWarp0.x);
+  let baseNoisePos = shearNoiseXZ(rotatedPos, 0.23, 0.17);
+  let p = baseNoisePos * U.hpShapeScale.xyz;
   let r = textureSampleLevel(shapeTex, shapeSamp, p, max(U.hpLod0.x, 0.0)).r;
   return pow(abs(r), 0.6);
 }
@@ -233,7 +277,8 @@ fn sampleDetailHp(worldPos: vec3f) -> vec2f {
   let horizontalWind = vec3f(U.hpDetailMotion.y, 0.0, U.hpDetailMotion.z) * U.time * U.hpDetailScale.w;
   let verticalWind = vec3f(0.0, U.time * U.hpDetailMotion.x, 0.0);
   let hpPos = vec3f(worldPos.x, -worldPos.y, worldPos.z) + horizontalWind + verticalWind;
-  let d = textureSampleLevel(hpDetailTex, detailSamp, hpPos * U.hpDetailScale.xyz, max(U.hpLod0.y, 0.0));
+  let detailNoisePos = shearNoiseXZ(hpPos, -0.31, 0.27);
+  let d = textureSampleLevel(hpDetailTex, detailSamp, detailNoisePos * U.hpDetailScale.xyz, max(U.hpLod0.y, 0.0));
   let billowy = d.b * U.hpDetailWeights.x + d.a * U.hpDetailWeights.y;
   let wispy = d.r * U.hpDetailWeights.z + d.g * U.hpDetailWeights.w;
   return vec2f(billowy, wispy);
@@ -418,7 +463,7 @@ fn evaluateLayer(
     let heightForLut = h01 / (1.0 + (topScale - 1.0) * h01);
     let scCompressedHeight = saturate(h01 / max(U.hpSc0.y, 0.01));
     localHeight = mix(heightForLut, scCompressedHeight, scStrength);
-    let profiles = hpProfiles(localHeight);
+    let profiles = hpProfiles(localHeight, weatherUv(worldPos));
     profile = mix(hpTypeValue(profiles, typeMix), profiles.r, scStrength);
   }
   let modelSupportCoverage = select(supportCoverage, densityCoverage, U.debugFlags.w == 2u);
@@ -459,6 +504,10 @@ fn distanceFade(worldPos: vec3f) -> f32 {
 fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensitySample {
   let edgeFade = distanceFade(worldPos);
   if (edgeFade <= 0.0) {
+    return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+  }
+  let lowWeatherUv = weatherUv(worldPos);
+  if (!isInsideWeatherMap(lowWeatherUv)) {
     return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
   }
   let w = sampleWeather(worldPos);
@@ -504,7 +553,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
     let h01 = hs.z;
     var profile = verticalProfile(h01, typeMix);
     if (U.debugFlags.w != 0u) {
-      profile = hpProfile(h01, typeMix);
+      profile = hpProfile(h01, typeMix, lowWeatherUv);
     }
     let baseShape = sampleBaseShape(worldPos, typeMix, 1.0);
     bestSupport = hs.x;

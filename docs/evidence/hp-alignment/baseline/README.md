@@ -1,5 +1,9 @@
 # HP density alignment baseline
 
+> 2026-07-30 更新：低云 weather 已从 `weatherRepeat` 无限平铺迁移到 HP 式有限地图。当前固定场景使用中心 `(210000, 210000)m`、尺寸 `500km`；旧截图中的 `weatherRepeat=0.000032` 只描述迁移前历史基线。
+
+> 低云 shape/detail 的生成式周期纹理增加轻微 XZ 错切。它补偿 demo atlas 相比 HP 原始资源更明显的轴向重复，避免相机轴向上前后云层的低密度孔洞精确重合；核心 DensityRemap、阈值、消光与散射公式不变。
+
 固定场景由 `src/validationScenarios.ts` 定义，参数快照见 `scenarios.json`。
 
 启动 demo 后可用以下 URL 复现：
@@ -49,7 +53,7 @@
 - XZ 频率高于 Y，使水平连成片的体块更容易被拆开，同时保留纵向发展的云柱；提高 detail 高频占比后，近景轮廓和内部空洞更清晰。阶段 3 没有改变 weatherRepeat，也没有启用 coverage-driven top stretch，因此不会用天气相位漂移或增厚云顶伪造形态改善。
 - 本机 1280×720 WebGPU 证据为 `hp-ocean-day-morphology-before.png` / `hp-ocean-day-morphology-after.png`。after 中近景连续云墙被分解为独立主云，中部天空形成连续负空间，地平线附近可辨认出分层云列。
 
-形态 A/B 可用 `weatherRepeat`、`shapeScaleX/Y/Z`、`detailScaleX/Y/Z`、`detailStrength`、`billowyLow/High`、`wispyLow/High` 和 `topStrength/topMax/topCurve` URL 参数复现；对应实际值写入 `body.dataset.weatherRepeat`、`hpShapeScale`、`hpDetailScale`、`detailStrength`、`hpDetailWeights` 与 `hpCoverTop`。
+当前形态 A/B 使用 `weatherCenterX`、`weatherCenterZ`、`weatherSizeKm`、`shapeScaleX/Y/Z`、`detailScaleX/Y/Z`、`detailStrength`、`billowyLow/High`、`wispyLow/High` 和 `topStrength/topMax/topCurve` URL 参数复现；天气图实际值写入 `body.dataset.weatherMapCenter` 与 `weatherMapWorldSizeKm`。
 
 ### HP detail 原生路径校正
 
@@ -71,7 +75,7 @@ HP detail 纹理使用独立资源，通道为 R WispyLow、G WispyHigh、B Bill
 
 Sc 验证使用 `&model=hpLowCloud&sc=1`；省略 `sc` 时默认关闭，必须与非 Sc 基线一致。
 
-CloudLut 的 RGB 分别是 Cu/Tcu/Cb。由于 demo weather 采用 repeat、没有 HP 的有限地图中心，当前 `radialDist` 固定为 0；这是有意保留差异。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
+CloudLut 的 RGB 分别是 Cu/Tcu/Cb。低云 weather 现在具有有限地图中心，`radialDist` 与 HP 一样由 `length(weatherUV - 0.5) * 2` 计算。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
 
 `&mod=<0..1>` 可覆盖低云 darkness modulation 强度；0 会在 shader 中完全旁路该计算，作为无变化基线。
 
@@ -104,3 +108,11 @@ CloudLut 的 RGB 分别是 Cu/Tcu/Cb。由于 demo weather 采用 repeat、没�
 - 默认值为 `highDensityThreshold=0.50`、`highDensitySoftness=0.20`、`highViewAbsorption=0.012`、`highLightAbsorption=0.012`、`highCoverAbsorptionStrength=0.35`；原始 high-weather R 不被二次重映射。
 - `hpHigh-stage5-coverage-optical-before.png` / `hpHigh-stage5-coverage-optical-after.png` 是固定 `hp-ocean-day&high=1` 的旧参数重放与新默认对照。
 - `hpHigh-stage5-isolated-after.png` 使用 `densityMultiplier=0` 隔离高云；`hpHigh-stage5-density-after.png` 使用 `debug=HighDensity`，证明减少的是低 coverage 的有效占比和光学厚度，并非关闭高云。
+
+### 曝光、天空颜色与 HDR tone mapping 视觉调整 6
+
+- HP 的 `VolumetricClouds.hlsl` 在太阳光和环境光输入处乘 `GetCurrentExposureMultiplier()`，输出仍是线性 HDR；最终 tone mapping 由 HDRP 后处理负责。demo 现在同样先在线性空间合成背景、低云和高云，再统一应用曝光与显示变换。
+- 默认显示变换从简单 Reinhard 改为 ACES fitted，并使用精确 linear-to-sRGB。`&toneMap=aces|reinhard` 可固定其他参数做曲线 A/B。
+- `hp-ocean-day` 固定曝光为 `0.45`；天空线性天顶/地平线色为 `(0.008, 0.10, 0.70)` / `(0.06, 0.24, 0.72)`，sky intensity `1.6`、gradient exponent `0.65`、saturation `1.08`、contrast `1.0`。
+- `hpPost-stage6-aces-after.png` 是最终合成；`hpPost-stage6-reinhard-control.png` 只切换 tone mapper；`hpPost-stage6-sky-after.png` 使用 `densityMultiplier=0&high=0` 检查天空。旧显示基线沿用 `hpHigh-stage5-coverage-optical-after.png`。
+- URL 可覆盖 `exposure`、`toneMap`、`skyIntensity`、`saturation`、`contrast`；完整天空 RGB 参数在 `HP Sky / HDR Post` GUI 中调节。仓库没有 HP 场景对应的 Unity Volume Profile，因此该步骤对齐 HDR 合成职责、显示曲线类别和参考图视觉范围，不声称恢复未知的 HDRP Volume 数值。

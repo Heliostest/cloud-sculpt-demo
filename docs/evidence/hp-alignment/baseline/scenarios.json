@@ -53,7 +53,8 @@
         "densityMultiplier": 0.6
       },
       "hpMorphology": {
-        "weatherRepeat": 0.000032,
+        "weatherMapCenterM": [210000, 210000],
+        "weatherMapWorldSizeKm": 500,
         "hpShapeScale": [0.000145, 0.00009, 0.000145],
         "hpDetailScale": [0.0013, 0.00095, 0.0013],
         "detailStrength": 0.5,
@@ -69,7 +70,16 @@
       },
       "sunAzimuthDeg": 210,
       "sunElevationDeg": 35,
-      "exposure": 1.05,
+      "exposure": 0.45,
+      "postProcess": {
+        "toneMapper": "aces",
+        "skyZenithLinear": [0.008, 0.1, 0.7],
+        "skyHorizonLinear": [0.06, 0.24, 0.72],
+        "skyHorizonExponent": 0.65,
+        "skyIntensity": 1.6,
+        "saturation": 1.08,
+        "contrast": 1.0
+      },
       "highCloudEnabled": false,
       "scStrength": 0,
       "hpLighting": {

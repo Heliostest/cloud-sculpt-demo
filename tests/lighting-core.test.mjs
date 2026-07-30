@@ -33,6 +33,10 @@ function highLightTransmittance(extinctionSum, lightAbsorption, coverage, coverA
   return Math.exp(-Math.min(extinctionSum * lightAbsorption * (1 + coverage * coverAbsorptionStrength), 12));
 }
 
+function acesFitted(x) {
+  return Math.min(1, Math.max(0, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14)));
+}
+
 test('HP phase is the sum of forward and backward lobes with per-octave eccentricity decay', () => {
   const cosTheta = 0.35;
   const phase0 = hpPhase(cosTheta, 0.85, 0.3, 1);
@@ -91,4 +95,24 @@ test('HP high-cloud light absorption and cover modulation are independent and mo
   assert.ok(clear > covered);
   assert.ok(covered > stronger);
   assert.ok(stronger >= 0 && clear <= 1);
+});
+
+test('ACES fitted tone mapping is finite, monotonic and bounded for HDR radiance', () => {
+  const samples = [0, 0.01, 0.18, 1, 4, 16, 100];
+  let previous = -1;
+  for (const sample of samples) {
+    const mapped = acesFitted(sample);
+    assert.ok(Number.isFinite(mapped));
+    assert.ok(mapped >= previous);
+    assert.ok(mapped >= 0 && mapped <= 1);
+    previous = mapped;
+  }
+  assert.equal(acesFitted(0), 0);
+  assert.ok(acesFitted(4) < 1);
+});
+
+test('HP sky gradient keeps exact horizon and zenith anchors', () => {
+  const gradient = (up, horizon, zenith, exponent) => horizon + (zenith - horizon) * Math.pow(Math.min(1, Math.max(0, up)), exponent);
+  assert.equal(gradient(0, 0.12, 0.62, 0.65), 0.12);
+  assert.equal(gradient(1, 0.12, 0.62, 0.65), 0.62);
 });

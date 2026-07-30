@@ -5,8 +5,8 @@ struct Uniforms {
   time: f32,
   sunDir: vec3f,
   coverage: f32,
-  weatherOffset: vec2f,
-  weatherRepeat: f32,
+  weatherMapCenter: vec2f,
+  weatherMapWorldSize: f32,
   weatherExponent: f32,
   mesoStrength: f32,
   mesoContrast: f32,
@@ -58,6 +58,10 @@ struct Uniforms {
   hpLighting1: vec4f,
   hpLighting2: vec4f,
   hpHighOptical: vec4f,
+  hpPost0: vec4f,
+  hpSky0: vec4f,
+  hpSky1: vec4f,
+  hpShapeWarp0: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
@@ -74,6 +78,7 @@ struct Uniforms {
 @group(0) @binding(11) var highCellTex: texture_2d<f32>;
 @group(0) @binding(12) var highWarpTex: texture_2d<f32>;
 @group(0) @binding(13) var highWispTex: texture_2d<f32>;
+@group(0) @binding(14) var weatherClampSamp: sampler;
 
 fn saturate(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn saturate3(x: vec3f) -> vec3f { return clamp(x, vec3f(0.0), vec3f(1.0)); }

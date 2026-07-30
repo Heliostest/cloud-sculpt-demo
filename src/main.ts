@@ -1,5 +1,5 @@
 import { createGui } from './gui';
-import { createDefaultParams, isDebugMode, isDensityModel, type CameraPreset } from './params';
+import { createDefaultParams, isDebugMode, isDensityModel, isToneMapper, type CameraPreset } from './params';
 import { createRenderer, type CameraState } from './renderer';
 import { applyValidationScenario, isValidationScenarioName, VALIDATION_SCENARIOS } from './validationScenarios';
 
@@ -87,14 +87,24 @@ async function main(): Promise<void> {
   if (query.has('densityMultiplier') && Number.isFinite(densityMultiplier)) params.densityMultiplier = Math.max(0, Math.min(4, densityMultiplier));
   const cloudType = Number(query.get('cloudType'));
   if (query.has('cloudType') && Number.isFinite(cloudType)) params.cloudTypeOverride = Math.max(-1, Math.min(1, cloudType));
-  const weatherRepeat = Number(query.get('weatherRepeat'));
-  if (query.has('weatherRepeat') && Number.isFinite(weatherRepeat)) params.weatherRepeat = Math.max(0.000001, Math.min(0.001, weatherRepeat));
+  const weatherMapCenterX = Number(query.get('weatherCenterX'));
+  if (query.has('weatherCenterX') && Number.isFinite(weatherMapCenterX)) params.weatherMapCenterX = Math.max(-1000000, Math.min(1000000, weatherMapCenterX));
+  const weatherMapCenterZ = Number(query.get('weatherCenterZ'));
+  if (query.has('weatherCenterZ') && Number.isFinite(weatherMapCenterZ)) params.weatherMapCenterZ = Math.max(-1000000, Math.min(1000000, weatherMapCenterZ));
+  const weatherMapWorldSizeKm = Number(query.get('weatherSizeKm'));
+  if (query.has('weatherSizeKm') && Number.isFinite(weatherMapWorldSizeKm)) params.weatherMapWorldSizeKm = Math.max(1, Math.min(2000, weatherMapWorldSizeKm));
   const shapeScaleX = Number(query.get('shapeScaleX'));
   if (query.has('shapeScaleX') && Number.isFinite(shapeScaleX)) params.hpShapeScaleX = Math.max(0.000001, Math.min(0.01, shapeScaleX));
   const shapeScaleY = Number(query.get('shapeScaleY'));
   if (query.has('shapeScaleY') && Number.isFinite(shapeScaleY)) params.hpShapeScaleY = Math.max(0.000001, Math.min(0.01, shapeScaleY));
   const shapeScaleZ = Number(query.get('shapeScaleZ'));
   if (query.has('shapeScaleZ') && Number.isFinite(shapeScaleZ)) params.hpShapeScaleZ = Math.max(0.000001, Math.min(0.01, shapeScaleZ));
+  const shapeRotationDeg = Number(query.get('shapeRotationDeg'));
+  if (query.has('shapeRotationDeg') && Number.isFinite(shapeRotationDeg)) params.hpShapeRotationDeg = Math.max(-180, Math.min(180, shapeRotationDeg));
+  const shapeWarpScaleKm = Number(query.get('shapeWarpScaleKm'));
+  if (query.has('shapeWarpScaleKm') && Number.isFinite(shapeWarpScaleKm)) params.hpShapeWarpScaleKm = Math.max(1, Math.min(500, shapeWarpScaleKm));
+  const shapeWarpStrengthM = Number(query.get('shapeWarpStrengthM'));
+  if (query.has('shapeWarpStrengthM') && Number.isFinite(shapeWarpStrengthM)) params.hpShapeWarpStrengthM = Math.max(0, Math.min(10000, shapeWarpStrengthM));
   const detailScaleX = Number(query.get('detailScaleX'));
   if (query.has('detailScaleX') && Number.isFinite(detailScaleX)) params.hpDetailScaleX = Math.max(0.000001, Math.min(0.02, detailScaleX));
   const detailScaleY = Number(query.get('detailScaleY'));
@@ -124,7 +134,7 @@ async function main(): Promise<void> {
   const noiseMipOffset = Number(query.get('noiseMip'));
   if (Number.isFinite(noiseMipOffset)) params.noiseMipOffset = Math.max(0, Math.min(7, noiseMipOffset));
   const erosionMipOffset = Number(query.get('erosionMip'));
-  if (Number.isFinite(erosionMipOffset)) params.erosionMipOffset = Math.max(0, Math.min(5, erosionMipOffset));
+  if (Number.isFinite(erosionMipOffset)) params.erosionMipOffset = Math.max(0, Math.min(6, erosionMipOffset));
   const forceSimpleMode = query.get('simple');
   if (forceSimpleMode !== null) params.forceSimpleMode = forceSimpleMode === '1' || forceSimpleMode === 'true';
   const detailFade = query.get('detailFade');
@@ -149,6 +159,16 @@ async function main(): Promise<void> {
   if (query.has('highSteps') && Number.isFinite(highSteps)) params.highSteps = Math.max(4, Math.min(256, Math.round(highSteps)));
   const hpLighting = query.get('hpLighting');
   if (hpLighting !== null) params.hpLightingEnabled = hpLighting === '1' || hpLighting === 'true';
+  const exposure = Number(query.get('exposure'));
+  if (query.has('exposure') && Number.isFinite(exposure)) params.exposure = Math.max(0.05, Math.min(8, exposure));
+  const toneMapper = query.get('toneMap');
+  if (isToneMapper(toneMapper)) params.toneMapper = toneMapper;
+  const skyIntensity = Number(query.get('skyIntensity'));
+  if (query.has('skyIntensity') && Number.isFinite(skyIntensity)) params.skyIntensity = Math.max(0, Math.min(4, skyIntensity));
+  const saturation = Number(query.get('saturation'));
+  if (query.has('saturation') && Number.isFinite(saturation)) params.colorSaturation = Math.max(0, Math.min(2, saturation));
+  const contrast = Number(query.get('contrast'));
+  if (query.has('contrast') && Number.isFinite(contrast)) params.colorContrast = Math.max(0.5, Math.min(2, contrast));
   const detailChannel = query.get('detailChannel');
   if (detailChannel) {
     params.billowyLowWeight = detailChannel === 'billowyLow' ? 1 : 0;
@@ -180,14 +200,23 @@ async function main(): Promise<void> {
   document.body.dataset.highViewAbsorption = String(params.highViewAbsorption);
   document.body.dataset.highLightAbsorption = String(params.highLightAbsorption);
   document.body.dataset.highCoverAbsorption = String(params.highCoverAbsorptionStrength);
+  document.body.dataset.toneMapper = params.toneMapper;
+  document.body.dataset.skyIntensity = String(params.skyIntensity);
+  document.body.dataset.skyZenith = [params.skyZenithR, params.skyZenithG, params.skyZenithB].join(',');
+  document.body.dataset.skyHorizon = [params.skyHorizonR, params.skyHorizonG, params.skyHorizonB].join(',');
+  document.body.dataset.skyHorizonExponent = String(params.skyHorizonExponent);
+  document.body.dataset.colorSaturation = String(params.colorSaturation);
+  document.body.dataset.colorContrast = String(params.colorContrast);
   document.body.dataset.densityModel = params.densityModel;
   document.body.dataset.scStrength = String(params.scStrength);
   document.body.dataset.cloudTypeOverride = String(params.cloudTypeOverride);
   document.body.dataset.loCovCoverIntensity = String(params.loCovCoverIntensity);
   document.body.dataset.loCovCoverContrast = String(params.loCovCoverContrast);
   document.body.dataset.densityMultiplier = String(params.densityMultiplier);
-  document.body.dataset.weatherRepeat = String(params.weatherRepeat);
+  document.body.dataset.weatherMapCenter = [params.weatherMapCenterX, params.weatherMapCenterZ].join(',');
+  document.body.dataset.weatherMapWorldSizeKm = String(params.weatherMapWorldSizeKm);
   document.body.dataset.hpShapeScale = [params.hpShapeScaleX, params.hpShapeScaleY, params.hpShapeScaleZ].join(',');
+  document.body.dataset.hpShapeTransform = [params.hpShapeRotationDeg, params.hpShapeWarpScaleKm, params.hpShapeWarpStrengthM].join(',');
   document.body.dataset.hpDetailScale = [params.hpDetailScaleX, params.hpDetailScaleY, params.hpDetailScaleZ].join(',');
   document.body.dataset.detailStrength = String(params.detailStrength);
   document.body.dataset.hpDetailWeights = [params.billowyLowWeight, params.billowyHighWeight, params.wispyLowWeight, params.wispyHighWeight].join(',');
@@ -242,7 +271,6 @@ async function main(): Promise<void> {
   });
   if (scenario) gui.hide();
 
-  let weatherOffset: [number, number] = [0, 0];
   let windOffset: [number, number] = [0, 0];
   let shapeOffset: [number, number, number] = [0, 0, 0];
   let detailOffset: [number, number, number] = [0, 0, 0];
@@ -260,8 +288,10 @@ async function main(): Promise<void> {
     const ang = (params.windAngleDeg * Math.PI) / 180;
     const wx = Math.cos(ang) * params.windSpeed;
     const wz = Math.sin(ang) * params.windSpeed;
-    windOffset[0] += wx * animationDt * params.weatherRepeat;
-    windOffset[1] += wz * animationDt * params.weatherRepeat;
+    // High clouds keep their independent repeating weather motion. The low
+    // cloud weather map is a fixed, finite world field like HP's cloud map.
+    windOffset[0] += wx * animationDt * params.highWeatherRepeat;
+    windOffset[1] += wz * animationDt * params.highWeatherRepeat;
     shapeOffset[0] += wx * animationDt * params.shapeRepeat * 0.35;
     shapeOffset[2] += wz * animationDt * params.shapeRepeat * 0.35;
     detailOffset[0] += wx * animationDt * params.detailRepeat * 0.8;
@@ -281,7 +311,7 @@ async function main(): Promise<void> {
     document.body.dataset.sunAzimuthDeg = params.sunAzimuthDeg.toFixed(2);
     document.body.dataset.sunElevationDeg = params.sunElevationDeg.toFixed(2);
     document.body.dataset.exposure = params.exposure.toFixed(3);
-    renderer.render(params, cam, time, weatherOffset, windOffset, shapeOffset, detailOffset, detailMorph);
+    renderer.render(params, cam, time, windOffset, shapeOffset, detailOffset, detailMorph);
     const gpuTiming = renderer.getGpuTimingInfo();
     document.body.dataset.gpuTimingSupported = String(gpuTiming.supported);
     document.body.dataset.gpuSampleCount = String(gpuTiming.sampleCount);

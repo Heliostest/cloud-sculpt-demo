@@ -72,20 +72,25 @@ function worleyTile(x: number, y: number, period: number): number {
 
 export function generateWeatherRGBA(size = 512): Uint8Array {
   const data = new Uint8Array(size * size * 4);
-  const macroP = 3;
-  const mesoP = 6;
-  const typeP = 2;
+  // The old repeating map covered 31.25 km with 3/6/2 feature cells. The
+  // finite 500 km HP-style field keeps approximately the same world-space
+  // feature sizes while providing many unique cells inside one map.
+  const macroP = 48;
+  const mesoP = 96;
+  const typeP = 32;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const u = x / size;
       const v = y / size;
+      const edgeDistance = Math.min(u, 1 - u, v, 1 - v);
+      const edgeFade = fade(Math.min(1, Math.max(0, edgeDistance / 0.04)));
       const macro = Math.pow(fbmTile(u * macroP, v * macroP, macroP, 5), 0.9);
       const meso = 1 - worleyTile(u * mesoP, v * mesoP, mesoP);
       const typeBase = fbmTile(u * typeP + 0.37, v * typeP + 0.11, typeP, 3);
       const type = Math.min(1, Math.max(0, typeBase * 0.85 + meso * 0.15));
       const scMask = Math.min(1, Math.max(0, (typeBase - 0.38) / 0.42));
       const i = (y * size + x) * 4;
-      data[i] = Math.round(Math.min(1, Math.max(0, macro * 1.12)) * 255);
+      data[i] = Math.round(Math.min(1, Math.max(0, macro * 1.12 * edgeFade)) * 255);
       data[i + 1] = Math.round(Math.min(1, Math.max(0, meso * 0.92 + 0.08)) * 255);
       data[i + 2] = Math.round(type * 255);
       data[i + 3] = Math.round(scMask * 255);

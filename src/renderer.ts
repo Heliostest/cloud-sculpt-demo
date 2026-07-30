@@ -20,7 +20,7 @@ import {
 } from './noiseAtlasGen';
 import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, TONE_MAPPER_INDEX, type DemoParams } from './params';
 
-const UNIFORM_SIZE = 864;
+const UNIFORM_SIZE = 880;
 
 export interface CameraState {
   position: [number, number, number];
@@ -625,6 +625,13 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[213] = 1 / Math.max(1000, params.hpShapeWarpScaleKm * 1000);
     f32[214] = params.hpShapeWarpStrengthM;
     f32[215] = 0;
+
+    // Far-field secondary base-shape sample: non-integer scale ratio,
+    // independent rotation, and maximum blend weight.
+    f32[216] = params.hpShapeSecondaryScaleRatio;
+    f32[217] = (params.hpShapeSecondaryRotationDeg * Math.PI) / 180;
+    f32[218] = params.hpShapeSecondaryWeight;
+    f32[219] = 0;
 
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
   }

@@ -153,8 +153,8 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   if (debugMode == 4u) {
     let p = ro + rd * ((t0 + t1) * 0.5);
     let w = sampleWeather(p);
-    let cov = coverageSignal(w);
-    return vec4f(cov, w.g, w.b, 0.0);
+    // Show the HP low-weather RGB layout directly: coverage / type / Sc.
+    return vec4f(w.rgb, 0.0);
   }
   if (debugMode == 5u) {
     let p = ro + rd * ((t0 + t1) * 0.5);

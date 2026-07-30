@@ -2,9 +2,9 @@
 
 HP 低云 detail 使用 `64³ RGBA8` 体积纹理：`R=WispyLow`、`G=WispyHigh`、`B=BillowyLow`、`A=BillowyHigh`。四通道分别采用独立 seed、频率组合与可平铺 domain warp；current 兼容路径也提升为 `64³`，但继续保留原有 RG 语义。
 
-HP 基础 shape 在采样前使用可调 Y 轴旋转和低频世界坐标扭曲，降低 128³ 纹理在短距离内的规则复现。GUI 参数为 `hpShapeRotationDeg`、`hpShapeWarpScaleKm`、`hpShapeWarpStrengthM`；URL 可用同名参数进行 A/B。
+HP 基础 shape 在采样前使用可调 Y 轴旋转和低频世界坐标扭曲，降低 128³ 纹理在短距离内的规则复现。18–90 km 远场还会渐入第二次旋转采样；默认频率比 `1.618034`、额外旋转 `37°`、最大权重 `0.24`，近场保持原始单采样不变。GUI 提供相关 `hpShape*` 参数；URL 可用 `shapeRotationDeg`、`shapeWarpScaleKm`、`shapeWarpStrengthM`、`shapeSecondRatio`、`shapeSecondRotationDeg` 和 `shapeSecondWeight` 进行 A/B。
 
-低云天气图按 HP 的有限世界区域采样：默认中心为 `(210000, 210000)m`、世界尺寸为 `500km`，区域外密度为零，并使用 clamp sampler 避免边界回卷。URL 可用 `weatherCenterX`、`weatherCenterZ` 和 `weatherSizeKm` 覆盖；高空云仍保留独立的周期天气路径。
+低云天气图按 HP 的有限世界区域采样：默认中心为 `(205000, 205000)m`、世界尺寸为 `500km`，区域外密度为零，并使用 clamp sampler 避免边界回卷。RGB 恢复 HP 布局 `R=coverage`、`G=cloud type`、`B=Sc mask`，A 仅保留给 demo 原有 support 路径的 meso 信号。`hp-ocean-day` 默认直接读取空间 cloud type、以 `0.35 × ScMask` 启用 Sc，并用同一 weather UV 的中心距离采样 Cu/Tcu/Cb 径向 LUT。URL 可用 `weatherCenterX`、`weatherCenterZ` 和 `weatherSizeKm` 覆盖；高空云仍保留独立的周期天气路径。
 
 独立 WebGPU 云雕原型（阶段 A）。
 
@@ -19,6 +19,7 @@ npm run dev
 npm run typecheck
 npm run build
 npm run test:density
+npm run test:weather
 ```
 
 需要支持 WebGPU 的浏览器（Chrome / Edge）。

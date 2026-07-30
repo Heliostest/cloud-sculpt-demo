@@ -70,6 +70,13 @@ function worleyTile(x: number, y: number, period: number): number {
   return Math.min(1, Math.sqrt(minD));
 }
 
+export const LOW_WEATHER_CHANNELS = {
+  coverage: 0,
+  cloudType: 1,
+  scMask: 2,
+  meso: 3,
+} as const;
+
 export function generateWeatherRGBA(size = 512): Uint8Array {
   const data = new Uint8Array(size * size * 4);
   // The old repeating map covered 31.25 km with 3/6/2 feature cells. The
@@ -80,8 +87,8 @@ export function generateWeatherRGBA(size = 512): Uint8Array {
   const typeP = 32;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const u = x / size;
-      const v = y / size;
+      const u = x / Math.max(1, size - 1);
+      const v = y / Math.max(1, size - 1);
       const edgeDistance = Math.min(u, 1 - u, v, 1 - v);
       const edgeFade = fade(Math.min(1, Math.max(0, edgeDistance / 0.04)));
       const macro = Math.pow(fbmTile(u * macroP, v * macroP, macroP, 5), 0.9);
@@ -90,10 +97,13 @@ export function generateWeatherRGBA(size = 512): Uint8Array {
       const type = Math.min(1, Math.max(0, typeBase * 0.85 + meso * 0.15));
       const scMask = Math.min(1, Math.max(0, (typeBase - 0.38) / 0.42));
       const i = (y * size + x) * 4;
-      data[i] = Math.round(Math.min(1, Math.max(0, macro * 1.12 * edgeFade)) * 255);
-      data[i + 1] = Math.round(Math.min(1, Math.max(0, meso * 0.92 + 0.08)) * 255);
-      data[i + 2] = Math.round(type * 255);
-      data[i + 3] = Math.round(scMask * 255);
+      // HP low-weather layout: R coverage, G cloud type, B Sc mask.
+      // A remains a demo-only meso signal for the legacy support path; HP
+      // density never consumes it as coverage, type, or Sc.
+      data[i + LOW_WEATHER_CHANNELS.coverage] = Math.round(Math.min(1, Math.max(0, macro * 1.12 * edgeFade)) * 255);
+      data[i + LOW_WEATHER_CHANNELS.cloudType] = Math.round(type * 255);
+      data[i + LOW_WEATHER_CHANNELS.scMask] = Math.round(scMask * 255);
+      data[i + LOW_WEATHER_CHANNELS.meso] = Math.round(Math.min(1, Math.max(0, meso * 0.92 + 0.08)) * 255);
     }
   }
   return data;

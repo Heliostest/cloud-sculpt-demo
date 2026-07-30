@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   const densityModel = query.get('model');
   if (isDensityModel(densityModel)) params.densityModel = densityModel;
   const scStrength = Number(query.get('sc'));
-  if (Number.isFinite(scStrength)) params.scStrength = Math.max(0, Math.min(1, scStrength));
+  if (query.has('sc') && Number.isFinite(scStrength)) params.scStrength = Math.max(0, Math.min(1, scStrength));
   const debugMode = query.get('debug');
   if (isDebugMode(debugMode)) params.debugMode = debugMode;
   const densityModIntensity = Number(query.get('mod'));
@@ -105,6 +105,12 @@ async function main(): Promise<void> {
   if (query.has('shapeWarpScaleKm') && Number.isFinite(shapeWarpScaleKm)) params.hpShapeWarpScaleKm = Math.max(1, Math.min(500, shapeWarpScaleKm));
   const shapeWarpStrengthM = Number(query.get('shapeWarpStrengthM'));
   if (query.has('shapeWarpStrengthM') && Number.isFinite(shapeWarpStrengthM)) params.hpShapeWarpStrengthM = Math.max(0, Math.min(10000, shapeWarpStrengthM));
+  const shapeSecondRatio = Number(query.get('shapeSecondRatio'));
+  if (query.has('shapeSecondRatio') && Number.isFinite(shapeSecondRatio)) params.hpShapeSecondaryScaleRatio = Math.max(0.1, Math.min(4, shapeSecondRatio));
+  const shapeSecondRotationDeg = Number(query.get('shapeSecondRotationDeg'));
+  if (query.has('shapeSecondRotationDeg') && Number.isFinite(shapeSecondRotationDeg)) params.hpShapeSecondaryRotationDeg = Math.max(-180, Math.min(180, shapeSecondRotationDeg));
+  const shapeSecondWeight = Number(query.get('shapeSecondWeight'));
+  if (query.has('shapeSecondWeight') && Number.isFinite(shapeSecondWeight)) params.hpShapeSecondaryWeight = Math.max(0, Math.min(1, shapeSecondWeight));
   const detailScaleX = Number(query.get('detailScaleX'));
   if (query.has('detailScaleX') && Number.isFinite(detailScaleX)) params.hpDetailScaleX = Math.max(0.000001, Math.min(0.02, detailScaleX));
   const detailScaleY = Number(query.get('detailScaleY'));
@@ -217,6 +223,7 @@ async function main(): Promise<void> {
   document.body.dataset.weatherMapWorldSizeKm = String(params.weatherMapWorldSizeKm);
   document.body.dataset.hpShapeScale = [params.hpShapeScaleX, params.hpShapeScaleY, params.hpShapeScaleZ].join(',');
   document.body.dataset.hpShapeTransform = [params.hpShapeRotationDeg, params.hpShapeWarpScaleKm, params.hpShapeWarpStrengthM].join(',');
+  document.body.dataset.hpShapeSecondary = [params.hpShapeSecondaryScaleRatio, params.hpShapeSecondaryRotationDeg, params.hpShapeSecondaryWeight].join(',');
   document.body.dataset.hpDetailScale = [params.hpDetailScaleX, params.hpDetailScaleY, params.hpDetailScaleZ].join(',');
   document.body.dataset.detailStrength = String(params.detailStrength);
   document.body.dataset.hpDetailWeights = [params.billowyLowWeight, params.billowyHighWeight, params.wispyLowWeight, params.wispyHighWeight].join(',');

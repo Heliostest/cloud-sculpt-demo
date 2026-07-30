@@ -59,7 +59,7 @@ HP 低云 weather 通道是 `R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask, A=reserve
 - Cover 路径：`pow(raw, contrast) × intensity`，参与密度阈值。
 - Height 路径：另一组 contrast/intensity，参与 coverage 驱动的云顶拉伸。
 
-demo 的 weather 是 `R=macro, G=meso, B=Cu/Cb type, A=1`。`coverageSignal` 先合成 R/G，随后又经过全局 `U.coverage`、高度半圆、type filter width、remap 和 smooth，才得到传入侵蚀核心的 `cov`。这不是参数名差异，而是函数域和视觉响应曲线都不同。
+demo 的 low weather 已恢复 HP RGB 布局：`R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask`；A 仅作为 current/support 兼容路径的 meso 扩展。`coverageSignal` 在兼容路径合成 R/A，随后又经过全局 `U.coverage`、高度半圆、type filter width、remap 和 smooth；HP 路径则保持从 R 读取独立 density coverage。
 
 ### 4.2 高度体系与云型体系不同
 
@@ -161,7 +161,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 
 ### 阶段 5：增加 Sc，但与普通低云分开验收
 
-- [x] 重新定义或扩充 weather 数据，提供独立 Sc mask；当前 B 已被 Cu/Cb type 占用，不能直接照抄 HP swizzle。
+- [x] 重新定义 weather 数据并恢复 HP swizzle：R coverage、G cloud type、B Sc mask；demo meso 移到 A。
 - [x] 增加 Sc coverage contrast/intensity、height scale、detail strength、cell scale/noise/thickness 参数。
 - [x] 实现 Sc coverage 空隙、localHeight 压缩、LUT R 通道混合和最终 `heightClip`。
 - [x] Sc 关闭时必须与阶段 4 的低云结果完全一致。
@@ -228,6 +228,22 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 在 HP base-shape 采样前增加可调 Y 轴旋转和低频世界坐标扭曲，继续只采样一次 3D shape texture。
 - [x] 低频扭曲在世界原点归零，避免启用时整体平移已经调好的近景噪声相位；默认关闭旋转，仅使用 `52 km / 1000 m` 的低频扭曲。
 - [x] 增加纹理周期位移随世界位置变化的 CPU 回归测试，并用 `hp-ocean-day` 与俯视 FinalDensity 做开关 A/B；无 WGSL/WebGPU 错误。
+
+#### 后续形态改进 4：恢复天气图径向 LUT、cloud type 和 Sc 空间变化
+
+- [x] low weather 通道恢复为 HP 的 `R=coverage / G=cloud type / B=Sc mask`；demo 原有 meso 移到 A，且只由 current/support 路径消费。
+- [x] 取消 `hp-ocean-day` 的固定 `cloudType=0.2`，改为逐像素读取 weather G；Sc 改为 `0.35 × weather B`，mask 为 0 的位置保持无变化。
+- [x] CloudLut 继续按 `(localHeight, saturate(length(weatherUV-0.5)*2))` 采样。天气中心从旧基线 `(210km,210km)` 微调为 `(205km,205km)`，保留天气相位，并让长视线进入径向坐标的未饱和区间。
+- [x] `Weather` 调试视图直接显示 HP RGB，并增加天气通道、Cu/Tcu/Cb 插值、Sc mask 乘法和径向坐标范围测试。
+
+#### 后续形态改进 5：用非整数比例与双层旋转采样掩盖远距离重复
+
+- [x] 保留阶段 3 的低频坐标扭曲与主采样；第二次 base-shape 采样采用独立错切、`37°` 额外旋转、`1.618034` 非整数频率比和固定相位偏移。
+- [x] 第二层仅在相机水平距离 `18–90 km` 渐入，默认最大权重 `0.24`；近场与权重为 0 时严格保持原单采样路径，并跳过第二次纹理读取。
+- [x] 增加 GUI、URL 和运行时 dataset 参数，允许单独调整比例、旋转和最大权重；增加主纹理周期无法同时命中第二层周期、远场渐入边界的 CPU 回归测试。
+- [x] 固定 `hp-ocean-day` 和 `top-density&model=hpLowCloud` 对比 `shapeSecondWeight=0/0.24`：变化集中在远处云带，近景构图保持；无 WGSL/WebGPU 错误。俯视压力场景约由 `64.0 ms` 增至 `68.1 ms`，主场景保持在 `48–49 ms` 样本波动范围。
+
+实现边界：这是为了补偿 demo 生成式 128³ shape atlas 的远场重复而加入的显式扩展，不是 `VolumetricClouds.hlsl` 原公式。它不改变天气图、HP DensityRemap、detail 侵蚀、Sc 或光学积分。
 
 ## 7. 建议的提交边界
 

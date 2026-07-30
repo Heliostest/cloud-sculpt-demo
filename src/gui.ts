@@ -29,6 +29,9 @@ export function createGui(
   hpNoise.add(params, 'hpShapeRotationDeg', -90, 90, 1);
   hpNoise.add(params, 'hpShapeWarpScaleKm', 8, 200, 1);
   hpNoise.add(params, 'hpShapeWarpStrengthM', 0, 5000, 50);
+  hpNoise.add(params, 'hpShapeSecondaryScaleRatio', 0.25, 3, 0.001).name('shape second ratio');
+  hpNoise.add(params, 'hpShapeSecondaryRotationDeg', -180, 180, 1).name('shape second rotation');
+  hpNoise.add(params, 'hpShapeSecondaryWeight', 0, 0.6, 0.01).name('shape second weight');
   hpNoise.add(params, 'hpDetailScaleX', 0.0001, 0.02, 0.0001);
   hpNoise.add(params, 'hpDetailScaleY', 0.0001, 0.02, 0.0001);
   hpNoise.add(params, 'hpDetailScaleZ', 0.0001, 0.02, 0.0001);

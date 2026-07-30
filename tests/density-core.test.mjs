@@ -57,6 +57,15 @@ function isInsideWeatherMap(uv) {
   return uv[0] >= 0 && uv[0] <= 1 && uv[1] >= 0 && uv[1] <= 1;
 }
 
+function hpWeatherRadial(uv) {
+  return saturate(Math.hypot(uv[0] - 0.5, uv[1] - 0.5) * 2);
+}
+
+function hpTypeValue(values, typeMix) {
+  if (typeMix < 0.5) return values[0] + (values[1] - values[0]) * typeMix * 2;
+  return values[1] + (values[2] - values[1]) * (typeMix - 0.5) * 2;
+}
+
 function shearNoiseXZ(position, xFromZ, zFromX) {
   return [
     position[0] + position[2] * xFromZ,
@@ -85,6 +94,18 @@ function transformBaseShapePosition(position, rotationDeg, warpScaleKm, warpStre
   const s = Math.sin(angle);
   const rotated = [c * warped[0] - s * warped[2], warped[1], s * warped[0] + c * warped[2]];
   return shearNoiseXZ(rotated, 0.23, 0.17);
+}
+
+function secondaryShapePeriodDelta(baseScale, scaleRatio, rotationDeg) {
+  const periodM = 1 / baseScale;
+  const angle = rotationDeg * Math.PI / 180;
+  const rotated = [Math.cos(angle) * periodM, 0, Math.sin(angle) * periodM];
+  const sheared = shearNoiseXZ(rotated, -0.19, 0.31);
+  return [sheared[0] * baseScale * scaleRatio, sheared[2] * baseScale * scaleRatio];
+}
+
+function secondaryShapeWeight(distanceM, maximumWeight) {
+  return maximumWeight * smoothstep(18000, 90000, distanceM);
 }
 
 function hpCoreReference(input) {
@@ -152,6 +173,36 @@ test('low-cloud weather map is finite, centered in world space, and inclusive at
   assert.equal(isInsideWeatherMap(finiteWeatherUv([center[0] + size * 0.5 + 1, center[1]], center, size)), false);
 });
 
+test('hp-ocean weather placement keeps the radial LUT coordinate spatially active', () => {
+  const center = [205000, 205000];
+  const size = 500000;
+  const nearUv = finiteWeatherUv([0, 0], center, size);
+  const midUv = finiteWeatherUv([120000, 0], center, size);
+  const nearRadial = hpWeatherRadial(nearUv);
+  const midRadial = hpWeatherRadial(midUv);
+  assert.equal(nearRadial, 1);
+  assert.ok(midRadial > 0 && midRadial < 1, `mid radial=${midRadial}`);
+  assert.ok(Math.abs(nearRadial - midRadial) > 0.1);
+});
+
+test('HP cloud type reaches the Cu, Tcu, and Cb LUT channels', () => {
+  const profiles = [0.2, 0.6, 0.9];
+  assert.equal(hpTypeValue(profiles, 0), profiles[0]);
+  assert.equal(hpTypeValue(profiles, 0.5), profiles[1]);
+  assert.equal(hpTypeValue(profiles, 1), profiles[2]);
+  assert.ok(hpTypeValue(profiles, 0.25) > profiles[0]);
+  assert.ok(hpTypeValue(profiles, 0.75) > profiles[1]);
+});
+
+test('HP Sc strength is the weather B mask multiplied by the global control', () => {
+  const globalStrength = 0.35;
+  const strengths = [0, 0.4, 1].map((mask) => saturate(globalStrength * mask));
+  assert.equal(strengths[0], 0);
+  assert.ok(Math.abs(strengths[1] - 0.14) < 1e-12);
+  assert.equal(strengths[2], 0.35);
+  assert.equal(saturate(0 * 1), 0);
+});
+
 test('HP demo noise shear breaks exact repetition along a world-axis texture period', () => {
   const baseScale = 0.000145;
   const basePeriodM = 1 / baseScale;
@@ -179,6 +230,24 @@ test('low-frequency base-shape warp makes the atlas-period displacement vary acr
   const farDelta = deltaAt([83_000, 1200, -47_000]);
   const deltaVariation = Math.hypot(...nearDelta.map((value, index) => value - farDelta[index]));
   assert.ok(deltaVariation > 100, `period displacement variation=${deltaVariation}`);
+});
+
+test('non-integer rotated secondary shape does not repeat on the primary texture period', () => {
+  const delta = secondaryShapePeriodDelta(0.000145, 1.618034, 37);
+  for (const component of delta) {
+    const distanceToInteger = Math.abs(component - Math.round(component));
+    assert.ok(distanceToInteger > 0.05, `secondary period component=${component}`);
+  }
+});
+
+test('secondary base-shape sampling preserves near field and fades in only at long range', () => {
+  const maximum = 0.24;
+  assert.equal(secondaryShapeWeight(0, maximum), 0);
+  assert.equal(secondaryShapeWeight(18000, maximum), 0);
+  assert.ok(secondaryShapeWeight(54000, maximum) > 0);
+  assert.ok(secondaryShapeWeight(54000, maximum) < maximum);
+  assert.equal(secondaryShapeWeight(90000, maximum), maximum);
+  assert.equal(secondaryShapeWeight(150000, maximum), maximum);
 });
 
 test('safe remap defines low >= 1 as empty instead of producing NaN or a reversed interval', () => {

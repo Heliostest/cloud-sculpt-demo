@@ -31,6 +31,9 @@ type HpMorphologyFixture = Pick<
   | 'hpShapeRotationDeg'
   | 'hpShapeWarpScaleKm'
   | 'hpShapeWarpStrengthM'
+  | 'hpShapeSecondaryScaleRatio'
+  | 'hpShapeSecondaryRotationDeg'
+  | 'hpShapeSecondaryWeight'
   | 'hpDetailScaleX'
   | 'hpDetailScaleY'
   | 'hpDetailScaleZ'
@@ -111,22 +114,22 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     camera: 'hpOcean',
     debugMode: 'Final',
     detailOff: false,
-    cloudTypeOverride: 0.2,
+    cloudTypeOverride: -1,
     frozenTime: 6,
     densityModel: 'hpLowCloud',
     sunAzimuthDeg: 210,
     sunElevationDeg: 35,
     exposure: 0.45,
     highCloudEnabled: false,
-    scStrength: 0,
+    scStrength: 0.35,
     hpDensity: {
       loCovCoverIntensity: 0.62,
       loCovCoverContrast: 1.5,
       densityMultiplier: 0.6,
     },
     hpMorphology: {
-      weatherMapCenterX: 210000,
-      weatherMapCenterZ: 210000,
+      weatherMapCenterX: 205000,
+      weatherMapCenterZ: 205000,
       weatherMapWorldSizeKm: 500,
       hpShapeScaleX: 0.000145,
       hpShapeScaleY: 0.00009,
@@ -134,6 +137,9 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
       hpShapeRotationDeg: 0,
       hpShapeWarpScaleKm: 52,
       hpShapeWarpStrengthM: 1000,
+      hpShapeSecondaryScaleRatio: 1.618034,
+      hpShapeSecondaryRotationDeg: 37,
+      hpShapeSecondaryWeight: 0.24,
       hpDetailScaleX: 0.0013,
       hpDetailScaleY: 0.00095,
       hpDetailScaleZ: 0.0013,

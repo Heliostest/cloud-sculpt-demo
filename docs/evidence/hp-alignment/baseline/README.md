@@ -1,8 +1,10 @@
 # HP density alignment baseline
 
-> 2026-07-30 更新：低云 weather 已从 `weatherRepeat` 无限平铺迁移到 HP 式有限地图。当前固定场景使用中心 `(210000, 210000)m`、尺寸 `500km`；旧截图中的 `weatherRepeat=0.000032` 只描述迁移前历史基线。
+> 2026-07-30 更新：低云 weather 已从 `weatherRepeat` 无限平铺迁移到 HP 式有限地图。当前固定场景使用中心 `(205000, 205000)m`、尺寸 `500km`；它保留旧基线附近的天气相位，同时让长视线进入径向 LUT 的未饱和区间。旧截图中的 `weatherRepeat=0.000032` 只描述迁移前历史基线。
 
 > 低云 shape/detail 的生成式周期纹理增加轻微 XZ 错切。它补偿 demo atlas 相比 HP 原始资源更明显的轴向重复，避免相机轴向上前后云层的低密度孔洞精确重合；核心 DensityRemap、阈值、消光与散射公式不变。
+
+> 远场 base shape 进一步使用双层旋转采样：第二层为 `1.618034×` 非整数频率、额外 `37°` 旋转、最大权重 `0.24`，只在 `18–90km` 渐入。该项是生成式 atlas 的去周期补偿，不属于 HP 密度公式。
 
 固定场景由 `src/validationScenarios.ts` 定义，参数快照见 `scenarios.json`。
 
@@ -21,7 +23,7 @@
 
 - 相机位置约 `(-3.69, 282.80, 0)` m，目标 `(10000, 2000, 0)` m，垂直 FOV `55°`
 - 太阳方位角 `210°`、高度角 `35°`，曝光 `1.05`
-- Cu/Tcu 混合类型 `0.2`、低云 detail 开启、Sc 和高空云关闭
+- cloud type 直接读取 weather G，低云 detail 开启，Sc 使用 `0.35 × weather B`，高空云关闭
 - Lo coverage 强度 `0.62`、对比度 `1.5`，最终密度倍率 `0.6`
 - HP 低云光照开启：前/后双叶 HG、三阶 Hillaire MS、上下环境光和 upward AO
 - 参考图：`HPVolumeCloud/compare/Snipaste_2026-07-05_10-31-41.png`
@@ -40,8 +42,8 @@
 ### HP 低云云量 A/B
 
 - 原始云量：`/?scenario=hp-ocean-day&loCovIntensity=1&loCovContrast=1&densityMultiplier=1&cloudType=0.5`
-- 收敛后的固定场景：`/?scenario=hp-ocean-day`，对应 `loCovIntensity=0.62`、`loCovContrast=1.5`、`densityMultiplier=0.6`、`cloudType=0.2`
-- `loCovIntensity` 与 `loCovContrast` 直接作用于 HP Lo weather coverage；`densityMultiplier` 只调节保留下来的云体厚度，`cloudType` 则把垂直轮廓从 Tcu 略微移向较低矮的 Cu。普通 `coverage` 参数不负责 `hpLowCloud` 的最终 coverage，不能用它完成这次云量校准。
+- 收敛后的固定场景：`/?scenario=hp-ocean-day`，对应 `loCovIntensity=0.62`、`loCovContrast=1.5`、`densityMultiplier=0.6`、`cloudType=-1`、`sc=0.35`
+- `loCovIntensity` 与 `loCovContrast` 直接作用于 HP Lo weather coverage；`densityMultiplier` 只调节保留下来的云体厚度；`cloudType=-1` 表示从 weather G 读取空间类型，而不是固定覆盖。普通 `coverage` 参数不负责 `hpLowCloud` 的最终 coverage，不能用它完成这次云量校准。
 - 本机 1280×720 WebGPU 证据为 `hp-ocean-day-density-before.png` / `hp-ocean-day-density-after.png`。调整后保留近景主云，但中央天空与中远景云列之间出现连续断口，地平线不再被同一层高密云毯完全封闭。
 
 上述四项可用同名 URL 参数独立覆盖；实际运行值也会写入 `body.dataset.cloudTypeOverride`、`loCovCoverIntensity`、`loCovCoverContrast` 和 `densityMultiplier`，便于自动截图核验。
@@ -54,6 +56,10 @@
 - 本机 1280×720 WebGPU 证据为 `hp-ocean-day-morphology-before.png` / `hp-ocean-day-morphology-after.png`。after 中近景连续云墙被分解为独立主云，中部天空形成连续负空间，地平线附近可辨认出分层云列。
 
 当前形态 A/B 使用 `weatherCenterX`、`weatherCenterZ`、`weatherSizeKm`、`shapeScaleX/Y/Z`、`detailScaleX/Y/Z`、`detailStrength`、`billowyLow/High`、`wispyLow/High` 和 `topStrength/topMax/topCurve` URL 参数复现；天气图实际值写入 `body.dataset.weatherMapCenter` 与 `weatherMapWorldSizeKm`。
+
+远场双采样可用 `shapeSecondWeight=0` 回放单采样基线；默认参数为 `shapeSecondRatio=1.618034&shapeSecondRotationDeg=37&shapeSecondWeight=0.24`，实际值写入 `body.dataset.hpShapeSecondary`。近于 18 km 的采样不受影响，超过 90 km 后达到最大混合权重。
+
+固定浏览器 A/B 中，`hp-ocean-day` 的近景主云和天空缺口保持稳定，变化主要位于地平线远云带；`top-density&model=hpLowCloud` 的近场俯视结果保持不变。俯视压力场景 GPU 时间样本约从 `64.0 ms` 增至 `68.1 ms`，主场景仍在 `48–49 ms` 波动范围，未出现 WGSL/WebGPU 错误。
 
 ### HP detail 原生路径校正
 
@@ -73,9 +79,9 @@
 
 HP detail 纹理使用独立资源，通道为 R WispyLow、G WispyHigh、B BillowyLow、A BillowyHigh。当前生成器只保证通道与频率角色，不宣称复现 HP 原始噪声资产。
 
-Sc 验证使用 `&model=hpLowCloud&sc=1`；省略 `sc` 时默认关闭，必须与非 Sc 基线一致。
+Sc 强对照使用 `&model=hpLowCloud&sc=1`；`hp-ocean-day` 默认用 `sc=0.35`，局部强度仍逐像素乘 weather B。可用 `&sc=0` 验证关闭时回退到非 Sc 低云。
 
-CloudLut 的 RGB 分别是 Cu/Tcu/Cb。低云 weather 现在具有有限地图中心，`radialDist` 与 HP 一样由 `length(weatherUV - 0.5) * 2` 计算。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
+低云 weather 的 RGB 已恢复 HP 布局：R coverage、G cloud type、B Sc mask；A 是仅供 demo current/support 兼容路径使用的 meso 扩展。CloudLut 的 RGB 分别是 Cu/Tcu/Cb，`radialDist` 与 HP 一样由 `saturate(length(weatherUV - 0.5) * 2)` 计算。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
 
 `&mod=<0..1>` 可覆盖低云 darkness modulation 强度；0 会在 shader 中完全旁路该计算，作为无变化基线。
 

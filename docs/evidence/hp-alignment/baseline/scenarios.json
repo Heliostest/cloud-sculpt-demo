@@ -45,7 +45,7 @@
       "verticalFovDeg": 55,
       "debugMode": "Final",
       "detailOff": false,
-      "cloudTypeOverride": 0.2,
+      "cloudTypeOverride": -1,
       "densityModel": "hpLowCloud",
       "hpDensity": {
         "loCovCoverIntensity": 0.62,
@@ -53,9 +53,15 @@
         "densityMultiplier": 0.6
       },
       "hpMorphology": {
-        "weatherMapCenterM": [210000, 210000],
+        "weatherMapCenterM": [205000, 205000],
         "weatherMapWorldSizeKm": 500,
         "hpShapeScale": [0.000145, 0.00009, 0.000145],
+        "hpShapeSecondary": {
+          "scaleRatio": 1.618034,
+          "rotationDeg": 37,
+          "maxWeight": 0.24,
+          "fadeDistanceKm": [18, 90]
+        },
         "hpDetailScale": [0.0013, 0.00095, 0.0013],
         "detailStrength": 0.5,
         "detailWeights": {
@@ -81,7 +87,7 @@
         "contrast": 1.0
       },
       "highCloudEnabled": false,
-      "scStrength": 0,
+      "scStrength": 0.35,
       "hpLighting": {
         "enabled": true,
         "forwardEccentricity": 0.85,

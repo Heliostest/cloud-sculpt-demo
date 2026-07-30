@@ -62,6 +62,9 @@ export interface DemoParams {
   hpShapeRotationDeg: number;
   hpShapeWarpScaleKm: number;
   hpShapeWarpStrengthM: number;
+  hpShapeSecondaryScaleRatio: number;
+  hpShapeSecondaryRotationDeg: number;
+  hpShapeSecondaryWeight: number;
   hpDetailScaleX: number;
   hpDetailScaleY: number;
   hpDetailScaleZ: number;
@@ -177,10 +180,10 @@ export function createDefaultParams(): DemoParams {
     weatherExponent: 0.85,
     mesoStrength: 0.16,
     mesoContrast: 1.0,
-    // Places the demo cameras inside the southwest portion of the finite map,
-    // preserving the established hp-ocean-day weather phase without tiling.
-    weatherMapCenterX: 210000,
-    weatherMapCenterZ: 210000,
+    // Keep the tuned southwest weather phase while allowing the long view
+    // rays to enter the active (non-saturated) HP radial-LUT range.
+    weatherMapCenterX: 205000,
+    weatherMapCenterZ: 205000,
     weatherMapWorldSizeKm: 500,
     windSpeed: 8,
     windAngleDeg: 35,
@@ -207,6 +210,9 @@ export function createDefaultParams(): DemoParams {
     hpShapeRotationDeg: 0,
     hpShapeWarpScaleKm: 52,
     hpShapeWarpStrengthM: 1000,
+    hpShapeSecondaryScaleRatio: 1.618034,
+    hpShapeSecondaryRotationDeg: 37,
+    hpShapeSecondaryWeight: 0.24,
     hpDetailScaleX: 0.0009,
     hpDetailScaleY: 0.0009,
     hpDetailScaleZ: 0.0009,

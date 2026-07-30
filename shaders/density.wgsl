@@ -102,13 +102,14 @@ fn isInsideWeatherMap(uv: vec2f) -> bool {
 
 fn coverageSignal(w: vec4f) -> f32 {
   let macroCov = pow(saturate(w.r), U.weatherExponent);
-  let meso = saturate(w.g * U.mesoContrast);
+  // Alpha is a demo-only meso signal. RGB follows HP low-weather semantics.
+  let meso = saturate(w.a * U.mesoContrast);
   // meso 只做轻破碎，避免斑块被撕成碎末
   return macroCov * mix(1.0, meso, U.mesoStrength * 0.55);
 }
 
 fn selectedCloudType(w: vec4f) -> f32 {
-  return select(saturate(w.b), saturate(U.hpCore1.w), U.hpCore1.w >= 0.0);
+  return select(saturate(w.g), saturate(U.hpCore1.w), U.hpCore1.w >= 0.0);
 }
 
 fn hpLoCoverage(rawCoverage: f32) -> f32 {
@@ -253,17 +254,29 @@ fn sampleBaseShape(worldPos: vec3f, typeMix: f32, shapeAmt: f32) -> f32 {
   }
   let windMeters = vec3f(U.hpDetailMotion.y, 0.0, U.hpDetailMotion.z) * U.time * U.hpShapeScale.w;
   // HP's source asset has substantially richer, less obvious repetition than
-  // this demo's generated atlas. Rotate the lattice and bend it with a much
-  // lower-frequency world-space field before applying the existing shear.
-  // Adjacent 3D texture periods therefore no longer repeat at a fixed world
-  // displacement while the local noise character and single-sample cost stay.
+  // this demo's generated atlas. First rotate and bend the primary lattice.
+  // A second independently rotated, non-integer-scale sample fades in only at
+  // long range, where atlas repetition is visible but local shape fidelity is
+  // less sensitive to the extra blend.
   let movingPos = worldPos + windMeters;
   let warpedPos = lowFrequencyShapeWarp(movingPos);
   let rotatedPos = rotateNoiseXZ(warpedPos, U.hpShapeWarp0.x);
   let baseNoisePos = shearNoiseXZ(rotatedPos, 0.23, 0.17);
   let p = baseNoisePos * U.hpShapeScale.xyz;
-  let r = textureSampleLevel(shapeTex, shapeSamp, p, max(U.hpLod0.x, 0.0)).r;
-  return pow(abs(r), 0.6);
+  let lod = max(U.hpLod0.x, 0.0);
+  let primary = pow(abs(textureSampleLevel(shapeTex, shapeSamp, p, lod).r), 0.6);
+
+  let distanceXZ = distance(worldPos.xz, U.cameraPos.xz);
+  let secondaryWeight = saturate(U.hpShapeBlend0.z) * softstep(18000.0, 90000.0, distanceXZ);
+  if (secondaryWeight <= 0.0001) {
+    return primary;
+  }
+  let secondaryRotated = rotateNoiseXZ(warpedPos, U.hpShapeWarp0.x + U.hpShapeBlend0.y);
+  let secondaryNoisePos = shearNoiseXZ(secondaryRotated, -0.19, 0.31);
+  let ratio = max(U.hpShapeBlend0.x, 0.01);
+  let secondaryP = secondaryNoisePos * U.hpShapeScale.xyz * ratio + vec3f(0.173, 0.071, -0.114);
+  let secondary = pow(abs(textureSampleLevel(shapeTex, shapeSamp, secondaryP, lod).r), 0.6);
+  return mix(primary, secondary, secondaryWeight);
 }
 
 fn sampleDetailCurrent(worldPos: vec3f) -> vec2f {
@@ -446,7 +459,7 @@ fn evaluateLayer(
   var scCell = 1.0;
   if (U.debugFlags.w == 2u) {
     densityCoverage = hpLoCoverage(w.r);
-    scStrength = saturate(U.hpSc0.x * w.a);
+    scStrength = saturate(U.hpSc0.x * w.b);
     if (scStrength > 0.0) {
       scCell = saturate(textureSampleLevel(scCellTex, weatherSamp, weatherUv(worldPos) * U.hpSc2.xy, 0.0).r * U.hpSc1.y);
       let scCoverage = saturate(pow(saturate(w.r), max(U.hpSc1.w, 0.001)) * U.hpSc1.z);
@@ -514,7 +527,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   var bestSupport = 0.0;
   var bestAfter = 0.0;
   var bestDens = 0.0;
-  var bestType = w.b;
+  var bestType = w.g;
   var bestH = 0.0;
   var bestDensityCoverage = 0.0;
 

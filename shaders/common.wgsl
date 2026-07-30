@@ -62,6 +62,7 @@ struct Uniforms {
   hpSky0: vec4f,
   hpSky1: vec4f,
   hpShapeWarp0: vec4f,
+  hpShapeBlend0: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;

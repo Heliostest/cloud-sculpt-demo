@@ -56,13 +56,15 @@
         "weatherRepeat": 0.000032,
         "hpShapeScale": [0.000145, 0.00009, 0.000145],
         "hpDetailScale": [0.0013, 0.00095, 0.0013],
-        "detailStrength": 0.56,
+        "detailStrength": 0.5,
         "detailWeights": {
-          "billowyLow": 0.52,
-          "billowyHigh": 0.48,
-          "wispyLow": 0.52,
-          "wispyHigh": 0.48
+          "billowyLow": 0.75,
+          "billowyHigh": 0.25,
+          "wispyLow": 0.55,
+          "wispyHigh": 0.45
         },
+        "wispyEdgeWidth": 0.2,
+        "wispyReach": 0.22,
         "coverTop": [0, 1.8, 1]
       },
       "sunAzimuthDeg": 210,

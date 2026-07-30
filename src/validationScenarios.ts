@@ -34,6 +34,8 @@ type HpMorphologyFixture = Pick<
   | 'billowyHighWeight'
   | 'wispyLowWeight'
   | 'wispyHighWeight'
+  | 'wispyEdgeWidth'
+  | 'wispyReach'
   | 'loCoverTopStrength'
   | 'loCoverTopMax'
   | 'loCoverTopCurvePow'
@@ -125,11 +127,13 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
       hpDetailScaleX: 0.0013,
       hpDetailScaleY: 0.00095,
       hpDetailScaleZ: 0.0013,
-      detailStrength: 0.56,
-      billowyLowWeight: 0.52,
-      billowyHighWeight: 0.48,
-      wispyLowWeight: 0.52,
-      wispyHighWeight: 0.48,
+      detailStrength: 0.5,
+      billowyLowWeight: 0.75,
+      billowyHighWeight: 0.25,
+      wispyLowWeight: 0.55,
+      wispyHighWeight: 0.45,
+      wispyEdgeWidth: 0.2,
+      wispyReach: 0.22,
       loCoverTopStrength: 0,
       loCoverTopMax: 1.8,
       loCoverTopCurvePow: 1,

@@ -111,6 +111,10 @@ async function main(): Promise<void> {
   if (query.has('wispyLow') && Number.isFinite(wispyLow)) params.wispyLowWeight = Math.max(0, Math.min(2, wispyLow));
   const wispyHigh = Number(query.get('wispyHigh'));
   if (query.has('wispyHigh') && Number.isFinite(wispyHigh)) params.wispyHighWeight = Math.max(0, Math.min(2, wispyHigh));
+  const wispyEdgeWidth = Number(query.get('wispyEdgeWidth'));
+  if (query.has('wispyEdgeWidth') && Number.isFinite(wispyEdgeWidth)) params.wispyEdgeWidth = Math.max(0.001, Math.min(1, wispyEdgeWidth));
+  const wispyReach = Number(query.get('wispyReach'));
+  if (query.has('wispyReach') && Number.isFinite(wispyReach)) params.wispyReach = Math.max(0, Math.min(1, wispyReach));
   const topStrength = Number(query.get('topStrength'));
   if (query.has('topStrength') && Number.isFinite(topStrength)) params.loCoverTopStrength = Math.max(0, Math.min(1, topStrength));
   const topMax = Number(query.get('topMax'));
@@ -172,6 +176,7 @@ async function main(): Promise<void> {
   document.body.dataset.hpDetailScale = [params.hpDetailScaleX, params.hpDetailScaleY, params.hpDetailScaleZ].join(',');
   document.body.dataset.detailStrength = String(params.detailStrength);
   document.body.dataset.hpDetailWeights = [params.billowyLowWeight, params.billowyHighWeight, params.wispyLowWeight, params.wispyHighWeight].join(',');
+  document.body.dataset.hpWispyBlend = [params.wispyEdgeWidth, params.wispyReach].join(',');
   document.body.dataset.hpCoverTop = [params.loCoverTopStrength, params.loCoverTopMax, params.loCoverTopCurvePow].join(',');
   document.body.dataset.hpLightingEnabled = String(params.hpLightingEnabled);
   document.body.dataset.hpForwardEccentricity = String(params.forwardEccentricity);

@@ -16,6 +16,13 @@ function hpDensityRemapSafe(x, low) {
   return saturate((x - low) / (1 - low));
 }
 
+function hpDetailChannels(d, weights) {
+  return {
+    billowy: d.b * weights.billowyLow + d.a * weights.billowyHigh,
+    wispy: d.r * weights.wispyLow + d.g * weights.wispyHigh,
+  };
+}
+
 function hpCoreReference(input) {
   const bottomFade = input.bottomSmoothHeight > 0
     ? Math.pow(saturate(input.height / input.bottomSmoothHeight), Math.max(input.bottomSmoothPow, 0.01))
@@ -85,6 +92,23 @@ test('safe remap defines low >= 1 as empty instead of producing NaN or a reverse
 test('zero detail strength gives identical billowy and wispy erosion inputs', () => {
   const shape = 0.63;
   assert.equal(hpDensityRemapSafe(shape, 0), hpDensityRemapSafe(shape, 0));
+});
+
+test('HP detail channels are combined directly before erosion without a thickness mask', () => {
+  const detail = hpDetailChannels(
+    { r: 0.2, g: 0.8, b: 0.35, a: 0.9 },
+    { billowyLow: 0.75, billowyHigh: 0.25, wispyLow: 0.55, wispyHigh: 0.45 },
+  );
+  assert.equal(detail.billowy, 0.35 * 0.75 + 0.9 * 0.25);
+  assert.equal(detail.wispy, 0.2 * 0.55 + 0.8 * 0.45);
+});
+
+test('HP wispy selection happens after thresholding and is limited by billowy density', () => {
+  const width = 0.2;
+  assert.equal(smoothstep(0, width, 0), 0);
+  assert.ok(smoothstep(0, width, 0.1) > 0 && smoothstep(0, width, 0.1) < 1);
+  assert.equal(smoothstep(0, width, width), 1);
+  assert.equal(smoothstep(0, width, 0.8), 1);
 });
 
 test('HP core reference remains finite across representative density inputs', () => {

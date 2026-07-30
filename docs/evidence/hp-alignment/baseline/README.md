@@ -51,6 +51,15 @@
 
 形态 A/B 可用 `weatherRepeat`、`shapeScaleX/Y/Z`、`detailScaleX/Y/Z`、`detailStrength`、`billowyLow/High`、`wispyLow/High` 和 `topStrength/topMax/topCurve` URL 参数复现；对应实际值写入 `body.dataset.weatherRepeat`、`hpShapeScale`、`hpDetailScale`、`detailStrength`、`hpDetailWeights` 与 `hpCoverTop`。
 
+### HP detail 原生路径校正
+
+- 被否决的“按 `baseShape × heightGradient` 给实体核心屏蔽高频”方案已完整撤销。`VolumetricClouds.hlsl` 没有这层遮罩；保留它会在 `DensityRemap` 前改变侵蚀拓扑，把云体补厚成块。
+- 当前重新严格采用 HP 顺序：四通道直接合成 Billowy/Wispy → 分别执行 `DensityRemap` → 乘 heightGradient → coverage threshold → 以 `smoothstep(0, WispyEdgeWidth, densityBillowy)` 在薄边选择 Wispy。
+- 为减弱实体表面的均匀高频，只使用 HP 已有参数职责：Billowy 低/高频权重 `0.75/0.25`，Wispy 低/高频权重 `0.55/0.45`，detail strength `0.5`，`WispyEdgeWidth=0.2`，`WispyReach=0.22`。因此核心 Billowy 以低频为主，而保留较多高频的 Wispy 由 HP 的后阈值混合自然限制在边缘。
+- A/B 使用阶段 3 参数 `detailStrength=0.56`、四通道权重 `0.52/0.48`、`WispyEdgeWidth=0.28`、`WispyReach=0.252`，对比当前 `/?scenario=hp-ocean-day`。证据为 `hp-ocean-day-hp-detail-before.png` / `hp-ocean-day-hp-detail-after.png`。
+
+`wispyEdgeWidth` 与 `wispyReach` 也可通过同名 URL 参数覆盖；实际值写入 `body.dataset.hpWispyBlend`。HP 工程目录没有包含原始 `_ErosionNoise` 资产或 RenderDriver 默认参数，因此这里只宣称公式、通道职责和混合位置对齐，不宣称噪声体素逐值一致。
+
 本机 1280×720 WebGPU 证据命名为 `hp-ocean-day-lighting-before.png` / `hp-ocean-day-lighting-after.png`。上方 70% 区域的平均 RGB 从约 `(126,132,139)` 提升到 `(157,162,168)`，平均绝对差约 `(21,21,20)`；HP 配对参考图的对应绝对差约 `(31,25,16)`，变化幅度处于同一量级。关闭 HP 光照后的 `current/side-cu` 与旧基线平均每通道漂移低于 1 个 8-bit 码值。
 
 截图命名约定：`<density-model>-<scenario>.png`。

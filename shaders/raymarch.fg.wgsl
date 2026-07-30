@@ -13,7 +13,7 @@ fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
   return o;
 }
 
-fn lightTransmittance(pos: vec3f, dens0: f32) -> f32 {
+fn lowCloudLightOptics(pos: vec3f, dens0: f32) -> vec2f {
   let steps = max(1u, U.debugFlags.z);
   let sun = U.sunDir;
   var t = 0.0;
@@ -27,7 +27,29 @@ fn lightTransmittance(pos: vec3f, dens0: f32) -> f32 {
     tau += s.density * U.optical.y * stepLen;
     stepLen *= 1.6;
   }
-  return exp(-min(tau, 16.0));
+  let opticalDepth = min(tau, 16.0);
+  return vec2f(exp(-opticalDepth), opticalDepth);
+}
+
+fn hpPhaseFunction(cosTheta: f32, eccentricityScale: f32) -> f32 {
+  let forward = U.hpLighting0.y * eccentricityScale;
+  let backward = -U.hpLighting0.z * eccentricityScale;
+  return henyeyGreenstein(cosTheta, forward) + henyeyGreenstein(cosTheta, backward);
+}
+
+fn hpMultiScatterSun(cosTheta: f32, opticalDepth: f32) -> f32 {
+  var luminance = 0.0;
+  var attenuation = 1.0;
+  var contribution = 1.0;
+  var eccentricityScale = 1.0;
+  for (var octave = 0u; octave < 3u; octave++) {
+    let lightT = exp(-min(opticalDepth * attenuation, 16.0));
+    luminance += lightT * hpPhaseFunction(cosTheta, eccentricityScale) * contribution;
+    attenuation *= U.hpLighting1.x;
+    contribution *= U.hpLighting1.y;
+    eccentricityScale *= U.hpLighting0.w;
+  }
+  return luminance;
 }
 
 fn highLightTransmittance(pos: vec3f, dens0: f32) -> f32 {
@@ -181,25 +203,45 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
       let sigmaT = dens * U.optical.y * typeW;
       let sigmaS = sigmaT * saturate(U.optical.x / max(1e-5, U.optical.y));
       let midPos = pos + rd * (stepLen * 0.5);
-      var tSun = lightTransmittance(midPos, dens);
-      let powder = 1.0 - exp(-dens * 2.0);
-      tSun *= mix(1.2, powder, softstep(0.08, 0.4, dens));
-      tSun = max(tSun, 0.06);
+      let light = lowCloudLightOptics(midPos, dens);
       let cosTheta = dot(rd, U.sunDir);
-      let phase = dualLobeHG(cosTheta);
-      let ambient = vec3f(0.58, 0.66, 0.78) * mix(0.9, 1.2, s.height01);
       let sunCol = vec3f(1.05, 0.96, 0.88) * 2.1;
-      var multi = 0.22;
-      var mAmp = 0.5;
-      var mTau = -log(max(1e-4, tSun));
-      for (var o: i32 = 0; o < 3; o++) {
-        multi += mAmp * exp(-mTau);
-        mTau *= 0.45;
-        mAmp *= 0.55;
-      }
-      let inScatter = (sunCol * tSun * phase + ambient * multi) * sigmaS;
       let absorb = exp(-sigmaT * stepLen);
-      radiance += transmittance * inScatter * ((1.0 - absorb) / max(1e-4, sigmaT));
+      if (U.hpLighting0.x > 0.5) {
+        // HP/HDRP low-cloud path: three Hillaire octaves use independent
+        // attenuation, contribution and eccentricity decay.
+        let directional = sunCol * hpMultiScatterSun(cosTheta, light.y);
+        let sinElevation = max(U.sunDir.y, 0.05);
+        let upwardAO = exp(-light.y * sinElevation * max(U.hpLighting2.x, 0.0));
+        let ambientTop = vec3f(0.58, 0.66, 0.78) * U.hpLighting1.z * upwardAO;
+        let ambientBottom = vec3f(0.42, 0.47, 0.55) * U.hpLighting1.w * (1.0 - s.height01);
+        let scatterOD = sigmaS * stepLen;
+        var scatterSource = 1.0 - exp(-scatterOD / max(U.hpLighting2.y, 0.001));
+        scatterSource = pow(saturate(scatterSource), max(U.hpLighting2.z, 0.01));
+        // Unlike the legacy demo path, HP does not multiply low-cloud
+        // directional scattering by powder; this preserves the silver edge.
+        // Keep the demo's analytic segment integration so energy stays bounded
+        // when its adaptive view steps are much shorter than HP/HDRP steps.
+        let segmentScatter = sigmaS * ((1.0 - absorb) / max(1e-4, sigmaT));
+        radiance += transmittance * (directional + ambientTop + ambientBottom) * segmentScatter * scatterSource;
+      } else {
+        var tSun = light.x;
+        let powder = 1.0 - exp(-dens * 2.0);
+        tSun *= mix(1.2, powder, softstep(0.08, 0.4, dens));
+        tSun = max(tSun, 0.06);
+        let phase = dualLobeHG(cosTheta);
+        let ambient = vec3f(0.58, 0.66, 0.78) * mix(0.9, 1.2, s.height01);
+        var multi = 0.22;
+        var mAmp = 0.5;
+        var mTau = -log(max(1e-4, tSun));
+        for (var o: i32 = 0; o < 3; o++) {
+          multi += mAmp * exp(-mTau);
+          mTau *= 0.45;
+          mAmp *= 0.55;
+        }
+        let inScatter = (sunCol * tSun * phase + ambient * multi) * sigmaS;
+        radiance += transmittance * inScatter * ((1.0 - absorb) / max(1e-4, sigmaT));
+      }
       transmittance *= absorb;
     }
     t += stepLen;

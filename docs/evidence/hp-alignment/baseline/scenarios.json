@@ -1,5 +1,5 @@
 {
-  "baselineDate": "2026-07-29",
+  "baselineDate": "2026-07-30",
   "queryFormat": "?scenario=<name>&model=<current|hpCore|hpLowCloud>",
   "shared": {
     "densityModel": "current",
@@ -36,6 +36,40 @@
       "debugMode": "Final",
       "detailOff": true,
       "cloudTypeOverride": -1
+    },
+    "hp-ocean-day": {
+      "reference": "HPVolumeCloud/compare/Snipaste_2026-07-05_10-31-41.png",
+      "camera": "hpOcean",
+      "cameraPositionM": [-3.69, 282.8, 0],
+      "cameraTargetM": [10000, 2000, 0],
+      "verticalFovDeg": 55,
+      "debugMode": "Final",
+      "detailOff": false,
+      "cloudTypeOverride": 0.2,
+      "densityModel": "hpLowCloud",
+      "hpDensity": {
+        "loCovCoverIntensity": 0.62,
+        "loCovCoverContrast": 1.5,
+        "densityMultiplier": 0.6
+      },
+      "sunAzimuthDeg": 210,
+      "sunElevationDeg": 35,
+      "exposure": 1.05,
+      "highCloudEnabled": false,
+      "scStrength": 0,
+      "hpLighting": {
+        "enabled": true,
+        "forwardEccentricity": 0.85,
+        "backwardEccentricity": 0.3,
+        "msAttenuation": 0.5,
+        "msContribution": 0.5,
+        "msEccentricity": 0.5,
+        "ambientTopMultiplier": 2.0,
+        "ambientBottomMultiplier": 1.4,
+        "aoUpwardScale": 1.0,
+        "scatterSourceODScale": 0.02,
+        "scatterSourceCurvePow": 1.0
+      }
     }
   }
 }

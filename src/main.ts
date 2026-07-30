@@ -10,6 +10,7 @@ type Orbit = {
   targetX: number;
   targetY: number;
   targetZ: number;
+  fovYDeg: number;
 };
 
 function applyPreset(preset: CameraPreset, cam: Orbit): void {
@@ -21,6 +22,7 @@ function applyPreset(preset: CameraPreset, cam: Orbit): void {
     cam.yaw = Math.PI * 0.5;
     cam.pitch = 0.06;
     cam.dist = 9000;
+    cam.fovYDeg = 55;
   } else if (preset === 'oblique45') {
     cam.targetX = 0;
     cam.targetY = 1800;
@@ -28,6 +30,17 @@ function applyPreset(preset: CameraPreset, cam: Orbit): void {
     cam.yaw = 0.7;
     cam.pitch = Math.PI / 4;
     cam.dist = 14000;
+    cam.fovYDeg = 55;
+  } else if (preset === 'hpOcean') {
+    // Below the low-cloud base, looking slightly upward at the weather-ring band.
+    // Framing is matched to compare/Snipaste_2026-07-05_10-31-41.png.
+    cam.targetX = 10000;
+    cam.targetY = 2000;
+    cam.targetZ = 0;
+    cam.yaw = -Math.PI * 0.5;
+    cam.pitch = -0.17;
+    cam.dist = 10150;
+    cam.fovYDeg = 55;
   } else {
     cam.targetX = 0;
     cam.targetY = 1800;
@@ -35,10 +48,11 @@ function applyPreset(preset: CameraPreset, cam: Orbit): void {
     cam.yaw = 0.2;
     cam.pitch = 1.45;
     cam.dist = 18000;
+    cam.fovYDeg = 55;
   }
 }
 
-function orbitToCamera(yaw: number, pitch: number, dist: number, target: [number, number, number]): CameraState {
+function orbitToCamera(yaw: number, pitch: number, dist: number, target: [number, number, number], fovYDeg: number): CameraState {
   const cp = Math.cos(pitch);
   const sp = Math.sin(pitch);
   const cy = Math.cos(yaw);
@@ -46,7 +60,7 @@ function orbitToCamera(yaw: number, pitch: number, dist: number, target: [number
   return {
     position: [target[0] + dist * cp * sy, target[1] + dist * sp, target[2] + dist * cp * cy],
     target,
-    fovY: (55 * Math.PI) / 180,
+    fovY: (fovYDeg * Math.PI) / 180,
   };
 }
 
@@ -65,6 +79,14 @@ async function main(): Promise<void> {
   if (isDebugMode(debugMode)) params.debugMode = debugMode;
   const densityModIntensity = Number(query.get('mod'));
   if (Number.isFinite(densityModIntensity)) params.densityModIntensity = Math.max(0, Math.min(1, densityModIntensity));
+  const loCovIntensity = Number(query.get('loCovIntensity'));
+  if (query.has('loCovIntensity') && Number.isFinite(loCovIntensity)) params.loCovCoverIntensity = Math.max(0, Math.min(3, loCovIntensity));
+  const loCovContrast = Number(query.get('loCovContrast'));
+  if (query.has('loCovContrast') && Number.isFinite(loCovContrast)) params.loCovCoverContrast = Math.max(0.01, Math.min(4, loCovContrast));
+  const densityMultiplier = Number(query.get('densityMultiplier'));
+  if (query.has('densityMultiplier') && Number.isFinite(densityMultiplier)) params.densityMultiplier = Math.max(0, Math.min(4, densityMultiplier));
+  const cloudType = Number(query.get('cloudType'));
+  if (query.has('cloudType') && Number.isFinite(cloudType)) params.cloudTypeOverride = Math.max(-1, Math.min(1, cloudType));
   const noiseMipOffset = Number(query.get('noiseMip'));
   if (Number.isFinite(noiseMipOffset)) params.noiseMipOffset = Math.max(0, Math.min(7, noiseMipOffset));
   const erosionMipOffset = Number(query.get('erosionMip'));
@@ -81,6 +103,8 @@ async function main(): Promise<void> {
   if (query.has('highDensity') && Number.isFinite(highDensity)) params.highDensityMultiplier = Math.max(0, Math.min(3, highDensity));
   const highSteps = Number(query.get('highSteps'));
   if (query.has('highSteps') && Number.isFinite(highSteps)) params.highSteps = Math.max(4, Math.min(256, Math.round(highSteps)));
+  const hpLighting = query.get('hpLighting');
+  if (hpLighting !== null) params.hpLightingEnabled = hpLighting === '1' || hpLighting === 'true';
   const detailChannel = query.get('detailChannel');
   if (detailChannel) {
     params.billowyLowWeight = detailChannel === 'billowyLow' ? 1 : 0;
@@ -97,6 +121,7 @@ async function main(): Promise<void> {
     targetX: 0,
     targetY: 1400,
     targetZ: 0,
+    fovYDeg: 55,
   };
   applyPreset(scenario?.camera ?? 'oblique45', orbit);
   document.body.dataset.validationScenario = scenarioName ?? 'interactive';
@@ -108,6 +133,21 @@ async function main(): Promise<void> {
   document.body.dataset.highCloudType = String(params.highCloudTypeOverride);
   document.body.dataset.densityModel = params.densityModel;
   document.body.dataset.scStrength = String(params.scStrength);
+  document.body.dataset.cloudTypeOverride = String(params.cloudTypeOverride);
+  document.body.dataset.loCovCoverIntensity = String(params.loCovCoverIntensity);
+  document.body.dataset.loCovCoverContrast = String(params.loCovCoverContrast);
+  document.body.dataset.densityMultiplier = String(params.densityMultiplier);
+  document.body.dataset.hpLightingEnabled = String(params.hpLightingEnabled);
+  document.body.dataset.hpForwardEccentricity = String(params.forwardEccentricity);
+  document.body.dataset.hpBackwardEccentricity = String(params.backwardEccentricity);
+  document.body.dataset.hpMsAttenuation = String(params.msAttenuation);
+  document.body.dataset.hpMsContribution = String(params.msContribution);
+  document.body.dataset.hpMsEccentricity = String(params.msEccentricity);
+  document.body.dataset.hpAmbientTopMultiplier = String(params.ambientTopMultiplier);
+  document.body.dataset.hpAmbientBottomMultiplier = String(params.ambientBottomMultiplier);
+  document.body.dataset.hpAoUpwardScale = String(params.aoUpwardScale);
+  document.body.dataset.hpScatterSourceOdScale = String(params.scatterSourceODScale);
+  document.body.dataset.hpScatterSourceCurvePow = String(params.scatterSourceCurvePow);
 
   let dragging = false;
   let lastX = 0;
@@ -128,7 +168,7 @@ async function main(): Promise<void> {
     lastX = e.clientX;
     lastY = e.clientY;
     orbit.yaw += dx * 0.005;
-    orbit.pitch = Math.max(-0.08, Math.min(1.52, orbit.pitch + dy * 0.005));
+    orbit.pitch = Math.max(-0.5, Math.min(1.52, orbit.pitch + dy * 0.005));
   });
   canvas.addEventListener(
     'wheel',
@@ -172,7 +212,19 @@ async function main(): Promise<void> {
     detailOffset[2] += wz * animationDt * params.detailRepeat * 0.8;
     detailMorph += animationDt * 0.35;
 
-    const cam = orbitToCamera(orbit.yaw, orbit.pitch, orbit.dist, [orbit.targetX, orbit.targetY, orbit.targetZ]);
+    const cam = orbitToCamera(
+      orbit.yaw,
+      orbit.pitch,
+      orbit.dist,
+      [orbit.targetX, orbit.targetY, orbit.targetZ],
+      orbit.fovYDeg,
+    );
+    document.body.dataset.cameraPosition = cam.position.map((value) => value.toFixed(2)).join(',');
+    document.body.dataset.cameraTarget = cam.target.map((value) => value.toFixed(2)).join(',');
+    document.body.dataset.cameraFovYDeg = orbit.fovYDeg.toFixed(2);
+    document.body.dataset.sunAzimuthDeg = params.sunAzimuthDeg.toFixed(2);
+    document.body.dataset.sunElevationDeg = params.sunElevationDeg.toFixed(2);
+    document.body.dataset.exposure = params.exposure.toFixed(3);
     renderer.render(params, cam, time, weatherOffset, windOffset, shapeOffset, detailOffset, detailMorph);
     const gpuTiming = renderer.getGpuTimingInfo();
     document.body.dataset.gpuTimingSupported = String(gpuTiming.supported);

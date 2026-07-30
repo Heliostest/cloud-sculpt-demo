@@ -54,6 +54,9 @@ struct Uniforms {
   hpHigh5: vec4f,
   hpHigh6: vec4f,
   hpHigh7: vec4f,
+  hpLighting0: vec4f,
+  hpLighting1: vec4f,
+  hpLighting2: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;

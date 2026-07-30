@@ -2,7 +2,7 @@ export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'W
 
 export type DensityModel = 'current' | 'hpCore' | 'hpLowCloud';
 
-export type CameraPreset = 'side' | 'oblique45' | 'top';
+export type CameraPreset = 'side' | 'oblique45' | 'top' | 'hpOcean';
 
 export interface LayerParams {
   enabled: boolean;
@@ -124,6 +124,17 @@ export interface DemoParams {
   detailOff: boolean;
   sunAzimuthDeg: number;
   sunElevationDeg: number;
+  hpLightingEnabled: boolean;
+  forwardEccentricity: number;
+  backwardEccentricity: number;
+  msAttenuation: number;
+  msContribution: number;
+  msEccentricity: number;
+  ambientTopMultiplier: number;
+  ambientBottomMultiplier: number;
+  aoUpwardScale: number;
+  scatterSourceODScale: number;
+  scatterSourceCurvePow: number;
   layers: [LayerParams, LayerParams, LayerParams];
   hero: HeroParams;
   minPrimaryStep: number;
@@ -237,6 +248,17 @@ export function createDefaultParams(): DemoParams {
     detailOff: false,
     sunAzimuthDeg: 210,
     sunElevationDeg: 32,
+    hpLightingEnabled: false,
+    forwardEccentricity: 0.85,
+    backwardEccentricity: 0.3,
+    msAttenuation: 0.5,
+    msContribution: 0.5,
+    msEccentricity: 0.5,
+    ambientTopMultiplier: 2.0,
+    ambientBottomMultiplier: 1.4,
+    aoUpwardScale: 1.0,
+    scatterSourceODScale: 0.02,
+    scatterSourceCurvePow: 1.0,
     layers: [
       {
         enabled: true,

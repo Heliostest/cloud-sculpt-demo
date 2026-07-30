@@ -122,6 +122,19 @@ export function createGui(
   sun.add(params, 'sunAzimuthDeg', 0, 360, 1);
   sun.add(params, 'sunElevationDeg', 5, 80, 1);
 
+  const hpLighting = gui.addFolder('HP Low-Cloud Lighting');
+  hpLighting.add(params, 'hpLightingEnabled');
+  hpLighting.add(params, 'forwardEccentricity', 0, 0.95, 0.01);
+  hpLighting.add(params, 'backwardEccentricity', 0, 0.7, 0.01);
+  hpLighting.add(params, 'msAttenuation', 0.05, 1, 0.01);
+  hpLighting.add(params, 'msContribution', 0, 1, 0.01);
+  hpLighting.add(params, 'msEccentricity', 0.05, 1, 0.01);
+  hpLighting.add(params, 'ambientTopMultiplier', 0, 4, 0.05);
+  hpLighting.add(params, 'ambientBottomMultiplier', 0, 2, 0.05);
+  hpLighting.add(params, 'aoUpwardScale', 0, 3, 0.05);
+  hpLighting.add(params, 'scatterSourceODScale', 0.005, 0.3, 0.005);
+  hpLighting.add(params, 'scatterSourceCurvePow', 0.1, 4, 0.05);
+
   const layers = gui.addFolder('Generic 3D Layers (not HP High)');
   for (let i = 0; i < params.layers.length; i++) {
     const L = params.layers[i];
@@ -153,11 +166,13 @@ export function createGui(
     side: () => hooks.onPreset('side'),
     oblique45: () => hooks.onPreset('oblique45'),
     top: () => hooks.onPreset('top'),
+    hpOcean: () => hooks.onPreset('hpOcean'),
   };
   const camFolder = gui.addFolder('Camera');
   camFolder.add(cam, 'side').name('侧视');
   camFolder.add(cam, 'oblique45').name('斜俯45');
   camFolder.add(cam, 'top').name('正俯');
+  camFolder.add(cam, 'hpOcean').name('HP 海面基线');
 
   return gui;
 }

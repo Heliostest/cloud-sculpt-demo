@@ -9,8 +9,40 @@
 - `/?scenario=oblique-tcu`
 - `/?scenario=top-density`
 - `/?scenario=detail-off`
+- `/?scenario=hp-ocean-day`
 
 验证场景会停止 wind，并把 time 固定为 6。首帧 GPU 提交完成后，`body[data-render-ready="true"]` 可供截图工具等待。
+
+`hp-ocean-day` 是与 HP 海面日景对照的主基线，直接选择 `hpLowCloud`，并锁定：
+
+- 相机位置约 `(-3.69, 282.80, 0)` m，目标 `(10000, 2000, 0)` m，垂直 FOV `55°`
+- 太阳方位角 `210°`、高度角 `35°`，曝光 `1.05`
+- Cu/Tcu 混合类型 `0.2`、低云 detail 开启、Sc 和高空云关闭
+- Lo coverage 强度 `0.62`、对比度 `1.5`，最终密度倍率 `0.6`
+- HP 低云光照开启：前/后双叶 HG、三阶 Hillaire MS、上下环境光和 upward AO
+- 参考图：`HPVolumeCloud/compare/Snipaste_2026-07-05_10-31-41.png`
+
+运行时会把上述实际值写入 `body.dataset.cameraPosition`、`cameraTarget`、`cameraFovYDeg`、`sunAzimuthDeg`、`sunElevationDeg` 和 `exposure`，截图工具可据此检查场景是否漂移。demo 目前使用程序化地面而非 HP 海面材质，因此该基线先对齐近云压入上缘的视角、地平线位置和照明方向，不把水面外观计入云体差异。当前 demo 仍缺少 HP 参考图中的远处多层云列，这是此固定基线刻意保留下来的后续形态差异。
+
+### HP 低云光照 A/B
+
+- `/?scenario=hp-ocean-day&hpLighting=0`：原 demo 光照；固定双叶 HG 混合、powder 乘太阳透射、经验环境多散射。
+- `/?scenario=hp-ocean-day&hpLighting=1`：HP 光照骨架；前/后 HG 相加，三阶分别衰减 optical depth、能量贡献和偏心率；上方环境光使用太阳光路 OD 推导 upward AO，下方环境光按真实 slab 高度衰减。
+- HP 路径不再把 low-cloud powder 乘到方向性散射上，以保留 HP 源码注释要求的前向银边。视线段仍使用 demo 的解析积分，避免自适应短步进把光能重复累加到过曝。
+- 固定参数：`gForward=0.85`、`gBackward=0.3`、`MS=(attenuation 0.5, contribution 0.5, eccentricity 0.5)`、`ambient=(top 2.0, bottom 1.4)`、`AO=1.0`、`scatterSource=(OD scale 0.02, curve 1.0)`。
+
+这一步对齐的是 HP/HDRP 方向性与乘性多阶散射骨架；HP 项目独立的加性 `phi_fwd` 漫射场尚未移植，不能把当前结果称为完整 HP 光照复刻。
+
+### HP 低云云量 A/B
+
+- 原始云量：`/?scenario=hp-ocean-day&loCovIntensity=1&loCovContrast=1&densityMultiplier=1&cloudType=0.5`
+- 收敛后的固定场景：`/?scenario=hp-ocean-day`，对应 `loCovIntensity=0.62`、`loCovContrast=1.5`、`densityMultiplier=0.6`、`cloudType=0.2`
+- `loCovIntensity` 与 `loCovContrast` 直接作用于 HP Lo weather coverage；`densityMultiplier` 只调节保留下来的云体厚度，`cloudType` 则把垂直轮廓从 Tcu 略微移向较低矮的 Cu。普通 `coverage` 参数不负责 `hpLowCloud` 的最终 coverage，不能用它完成这次云量校准。
+- 本机 1280×720 WebGPU 证据为 `hp-ocean-day-density-before.png` / `hp-ocean-day-density-after.png`。调整后保留近景主云，但中央天空与中远景云列之间出现连续断口，地平线不再被同一层高密云毯完全封闭。
+
+上述四项可用同名 URL 参数独立覆盖；实际运行值也会写入 `body.dataset.cloudTypeOverride`、`loCovCoverIntensity`、`loCovCoverContrast` 和 `densityMultiplier`，便于自动截图核验。
+
+本机 1280×720 WebGPU 证据命名为 `hp-ocean-day-lighting-before.png` / `hp-ocean-day-lighting-after.png`。上方 70% 区域的平均 RGB 从约 `(126,132,139)` 提升到 `(157,162,168)`，平均绝对差约 `(21,21,20)`；HP 配对参考图的对应绝对差约 `(31,25,16)`，变化幅度处于同一量级。关闭 HP 光照后的 `current/side-cu` 与旧基线平均每通道漂移低于 1 个 8-bit 码值。
 
 截图命名约定：`<density-model>-<scenario>.png`。
 

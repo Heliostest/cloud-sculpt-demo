@@ -14,7 +14,7 @@ import { generateCloudLutRGBA } from './cloudLutGen';
 import { generateDetailRGBA, generateHpDetailRGBA, generateShapeRGBA, generateVolumeMipChainRGBA } from './noiseAtlasGen';
 import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, type DemoParams } from './params';
 
-const UNIFORM_SIZE = 736;
+const UNIFORM_SIZE = 784;
 
 export interface CameraState {
   position: [number, number, number];
@@ -573,6 +573,22 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[181] = 0;
     f32[182] = 0;
     f32[183] = 0;
+
+    // HP low-cloud lighting: enabled, forward/backward eccentricity, MS eccentricity.
+    f32[184] = params.hpLightingEnabled ? 1 : 0;
+    f32[185] = params.forwardEccentricity;
+    f32[186] = params.backwardEccentricity;
+    f32[187] = params.msEccentricity;
+    // Hillaire MS attenuation/contribution and environment top/bottom multipliers.
+    f32[188] = params.msAttenuation;
+    f32[189] = params.msContribution;
+    f32[190] = params.ambientTopMultiplier;
+    f32[191] = params.ambientBottomMultiplier;
+    // Upward AO and low-density scattering-source response.
+    f32[192] = params.aoUpwardScale;
+    f32[193] = params.scatterSourceODScale;
+    f32[194] = params.scatterSourceCurvePow;
+    f32[195] = 0;
 
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
   }

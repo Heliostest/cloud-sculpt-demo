@@ -1,6 +1,32 @@
-import type { CameraPreset, DebugMode, DemoParams } from './params';
+import type { CameraPreset, DebugMode, DemoParams, DensityModel } from './params';
 
-export type ValidationScenarioName = 'side-cu' | 'oblique-tcu' | 'oblique-cb' | 'top-density' | 'detail-off';
+type HpLightingFixture = Pick<
+  DemoParams,
+  | 'hpLightingEnabled'
+  | 'forwardEccentricity'
+  | 'backwardEccentricity'
+  | 'msAttenuation'
+  | 'msContribution'
+  | 'msEccentricity'
+  | 'ambientTopMultiplier'
+  | 'ambientBottomMultiplier'
+  | 'aoUpwardScale'
+  | 'scatterSourceODScale'
+  | 'scatterSourceCurvePow'
+>;
+
+type HpDensityFixture = Pick<
+  DemoParams,
+  'loCovCoverIntensity' | 'loCovCoverContrast' | 'densityMultiplier'
+>;
+
+export type ValidationScenarioName =
+  | 'side-cu'
+  | 'oblique-tcu'
+  | 'oblique-cb'
+  | 'top-density'
+  | 'detail-off'
+  | 'hp-ocean-day';
 
 export interface ValidationScenario {
   camera: CameraPreset;
@@ -8,6 +34,14 @@ export interface ValidationScenario {
   detailOff: boolean;
   cloudTypeOverride: number;
   frozenTime: number;
+  densityModel?: DensityModel;
+  sunAzimuthDeg?: number;
+  sunElevationDeg?: number;
+  exposure?: number;
+  highCloudEnabled?: boolean;
+  scStrength?: number;
+  hpLighting?: HpLightingFixture;
+  hpDensity?: HpDensityFixture;
 }
 
 export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScenario> = {
@@ -46,6 +80,37 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     cloudTypeOverride: -1,
     frozenTime: 6,
   },
+  'hp-ocean-day': {
+    camera: 'hpOcean',
+    debugMode: 'Final',
+    detailOff: false,
+    cloudTypeOverride: 0.2,
+    frozenTime: 6,
+    densityModel: 'hpLowCloud',
+    sunAzimuthDeg: 210,
+    sunElevationDeg: 35,
+    exposure: 1.05,
+    highCloudEnabled: false,
+    scStrength: 0,
+    hpDensity: {
+      loCovCoverIntensity: 0.62,
+      loCovCoverContrast: 1.5,
+      densityMultiplier: 0.6,
+    },
+    hpLighting: {
+      hpLightingEnabled: true,
+      forwardEccentricity: 0.85,
+      backwardEccentricity: 0.3,
+      msAttenuation: 0.5,
+      msContribution: 0.5,
+      msEccentricity: 0.5,
+      ambientTopMultiplier: 2.0,
+      ambientBottomMultiplier: 1.4,
+      aoUpwardScale: 1.0,
+      scatterSourceODScale: 0.02,
+      scatterSourceCurvePow: 1.0,
+    },
+  },
 };
 
 export function isValidationScenarioName(value: string | null): value is ValidationScenarioName {
@@ -57,4 +122,12 @@ export function applyValidationScenario(params: DemoParams, scenario: Validation
   params.detailOff = scenario.detailOff;
   params.cloudTypeOverride = scenario.cloudTypeOverride;
   params.windSpeed = 0;
+  if (scenario.densityModel !== undefined) params.densityModel = scenario.densityModel;
+  if (scenario.sunAzimuthDeg !== undefined) params.sunAzimuthDeg = scenario.sunAzimuthDeg;
+  if (scenario.sunElevationDeg !== undefined) params.sunElevationDeg = scenario.sunElevationDeg;
+  if (scenario.exposure !== undefined) params.exposure = scenario.exposure;
+  if (scenario.highCloudEnabled !== undefined) params.highCloudEnabled = scenario.highCloudEnabled;
+  if (scenario.scStrength !== undefined) params.scStrength = scenario.scStrength;
+  if (scenario.hpLighting !== undefined) Object.assign(params, scenario.hpLighting);
+  if (scenario.hpDensity !== undefined) Object.assign(params, scenario.hpDensity);
 }

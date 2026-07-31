@@ -279,9 +279,6 @@ async function main(): Promise<void> {
   if (scenario) gui.hide();
 
   let windOffset: [number, number] = [0, 0];
-  let shapeOffset: [number, number, number] = [0, 0, 0];
-  let detailOffset: [number, number, number] = [0, 0, 0];
-  let detailMorph = 0;
   let last = performance.now();
   let time = 0;
   let validationReady = false;
@@ -299,11 +296,6 @@ async function main(): Promise<void> {
     // cloud weather map is a fixed, finite world field like HP's cloud map.
     windOffset[0] += wx * animationDt * params.highWeatherRepeat;
     windOffset[1] += wz * animationDt * params.highWeatherRepeat;
-    shapeOffset[0] += wx * animationDt * params.shapeRepeat * 0.35;
-    shapeOffset[2] += wz * animationDt * params.shapeRepeat * 0.35;
-    detailOffset[0] += wx * animationDt * params.detailRepeat * 0.8;
-    detailOffset[2] += wz * animationDt * params.detailRepeat * 0.8;
-    detailMorph += animationDt * 0.35;
 
     const cam = orbitToCamera(
       orbit.yaw,
@@ -318,7 +310,7 @@ async function main(): Promise<void> {
     document.body.dataset.sunAzimuthDeg = params.sunAzimuthDeg.toFixed(2);
     document.body.dataset.sunElevationDeg = params.sunElevationDeg.toFixed(2);
     document.body.dataset.exposure = params.exposure.toFixed(3);
-    renderer.render(params, cam, time, windOffset, shapeOffset, detailOffset, detailMorph);
+    renderer.render(params, cam, time, windOffset);
     const gpuTiming = renderer.getGpuTimingInfo();
     document.body.dataset.gpuTimingSupported = String(gpuTiming.supported);
     document.body.dataset.gpuSampleCount = String(gpuTiming.sampleCount);

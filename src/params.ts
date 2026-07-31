@@ -1,6 +1,6 @@
 export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'Weather' | 'DensityCoverage' | 'HighWeather' | 'HighBand' | 'HighDensity';
 
-export type DensityModel = 'current' | 'hpCore' | 'hpLowCloud';
+export type DensityModel = 'hpCore' | 'hpLowCloud';
 
 export type ToneMapper = 'reinhard' | 'aces';
 
@@ -11,7 +11,6 @@ export interface LayerParams {
   baseKm: number;
   topKm: number;
   densityScale: number;
-  shapeAmount: number;
   detailAmount: number;
 }
 
@@ -39,8 +38,6 @@ export interface DemoParams {
   weatherMapWorldSizeKm: number;
   windSpeed: number;
   windAngleDeg: number;
-  shapeAmount: number;
-  shapeRepeat: number;
   detailStrength: number;
   detailRepeat: number;
   wispyEdgeWidth: number;
@@ -175,7 +172,7 @@ export interface DemoParams {
 
 export function createDefaultParams(): DemoParams {
   return {
-    densityModel: 'current',
+    densityModel: 'hpLowCloud',
     coverage: 0.62,
     weatherExponent: 0.85,
     mesoStrength: 0.16,
@@ -187,8 +184,6 @@ export function createDefaultParams(): DemoParams {
     weatherMapWorldSizeKm: 500,
     windSpeed: 8,
     windAngleDeg: 35,
-    shapeAmount: 0.55,
-    shapeRepeat: 0.00011,
     detailStrength: 0.42,
     detailRepeat: 0.0009,
     wispyEdgeWidth: 0.28,
@@ -302,7 +297,6 @@ export function createDefaultParams(): DemoParams {
         baseKm: 0.4,
         topKm: 2.8,
         densityScale: 0.85,
-        shapeAmount: 1.0,
         detailAmount: 1.0,
       },
       {
@@ -310,7 +304,6 @@ export function createDefaultParams(): DemoParams {
         baseKm: 3.0,
         topKm: 5.5,
         densityScale: 0.28,
-        shapeAmount: 0.5,
         detailAmount: 0.4,
       },
       {
@@ -318,7 +311,6 @@ export function createDefaultParams(): DemoParams {
         baseKm: 7.0,
         topKm: 9.0,
         densityScale: 0.25,
-        shapeAmount: 0.35,
         detailAmount: 0.0,
       },
     ],
@@ -375,9 +367,8 @@ export function isDebugMode(value: string | null): value is DebugMode {
 }
 
 export const DENSITY_MODEL_INDEX: Record<DensityModel, number> = {
-  current: 0,
-  hpCore: 1,
-  hpLowCloud: 2,
+  hpCore: 0,
+  hpLowCloud: 1,
 };
 
 export function isDensityModel(value: string | null): value is DensityModel {

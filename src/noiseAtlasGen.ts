@@ -149,28 +149,6 @@ export function generateShapeRGBA(size = 128): Uint8Array {
   return data;
 }
 
-export function generateDetailRGBA(size = DETAIL_VOLUME_SIZE): Uint8Array {
-  const data = new Uint8Array(size * size * size * 4);
-  const p3 = 3;
-  const p6 = 6;
-  const p12 = 12;
-  for (let z = 0; z < size; z++) {
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const billowy = 1 - worley3Tile((x / size) * p3, (y / size) * p3, (z / size) * p3, p3);
-        const wispy = 1 - worley3Tile((x / size) * p6 + 0.37, (y / size) * p6 + 0.11, (z / size) * p6 + 0.29, p6);
-        const fine = 1 - worley3Tile((x / size) * p12, (y / size) * p12, (z / size) * p12, p12);
-        const i = (z * size * size + y * size + x) * 4;
-        data[i] = Math.round(billowy * 255);
-        data[i + 1] = Math.round(wispy * 255);
-        data[i + 2] = Math.round(fine * 255);
-        data[i + 3] = 255;
-      }
-    }
-  }
-  return data;
-}
-
 // HP-compatible channel roles. Each channel owns a separate seed, frequency
 // recipe and tile-safe domain warp so channels do not expose the same repeated
 // cell field with only a phase offset. These procedural fields approximate the

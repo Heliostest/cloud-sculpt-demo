@@ -1,8 +1,8 @@
 {
   "baselineDate": "2026-07-30",
-  "queryFormat": "?scenario=<name>&model=<current|hpCore|hpLowCloud>",
+  "queryFormat": "?scenario=<name>&model=<hpCore|hpLowCloud>",
   "shared": {
-    "densityModel": "current",
+    "densityModel": "hpLowCloud",
     "windSpeed": 0,
     "frozenTime": 6
   },

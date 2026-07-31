@@ -240,18 +240,7 @@ fn heroSupport(worldPos: vec3f) -> vec4f {
   return vec4f(support, typeMix, h01, 1.0);
 }
 
-fn sampleShapeCurrent(worldPos: vec3f) -> f32 {
-  let p = worldPos * U.shapeRepeat + U.shapeOffset + vec3f(U.windOffset.x, U.time * 0.002, U.windOffset.y) * 0.35;
-  let s = textureSampleLevel(shapeTex, shapeSamp, p, 0.0);
-  return saturate(s.r * 0.88 + s.g * 0.1 + s.b * 0.02);
-}
-
-fn sampleBaseShape(worldPos: vec3f, typeMix: f32, shapeAmt: f32) -> f32 {
-  if (U.debugFlags.w == 0u) {
-    let amount = saturate(U.shapeAmount * shapeAmt * mix(0.85, 0.65, typeMix));
-    let current = pow(max(1e-4, sampleShapeCurrent(worldPos)), 0.6);
-    return mix(1.0, current, amount);
-  }
+fn sampleBaseShape(worldPos: vec3f) -> f32 {
   let windMeters = vec3f(U.hpDetailMotion.y, 0.0, U.hpDetailMotion.z) * U.time * U.hpShapeScale.w;
   // HP's source asset has substantially richer, less obvious repetition than
   // this demo's generated atlas. First rotate and bend the primary lattice.
@@ -279,13 +268,6 @@ fn sampleBaseShape(worldPos: vec3f, typeMix: f32, shapeAmt: f32) -> f32 {
   return mix(primary, secondary, secondaryWeight);
 }
 
-fn sampleDetailCurrent(worldPos: vec3f) -> vec2f {
-  let morph = vec3f(U.detailMorph * 0.37, U.detailMorph * 0.21, -U.detailMorph * 0.29);
-  let p = worldPos * U.detailRepeat + U.detailOffset + morph;
-  let d = textureSampleLevel(detailTex, detailSamp, p, 0.0);
-  return vec2f(d.r, d.g);
-}
-
 fn sampleDetailHp(worldPos: vec3f) -> vec2f {
   let horizontalWind = vec3f(U.hpDetailMotion.y, 0.0, U.hpDetailMotion.z) * U.time * U.hpDetailScale.w;
   let verticalWind = vec3f(0.0, U.time * U.hpDetailMotion.x, 0.0);
@@ -297,53 +279,9 @@ fn sampleDetailHp(worldPos: vec3f) -> vec2f {
   return vec2f(billowy, wispy);
 }
 
-// 对齐 HP：baseShape → detail erode → ×heightGradient → coverage threshold → billowy/wispy mix
-fn cloudFromShapeCurrent(
-  baseShape: f32,
-  worldPos: vec3f,
-  h01: f32,
-  typeMix: f32,
-  detailAmt: f32,
-  stepLen: f32,
-  cov: f32,
-  heightGradient: f32,
-  densScale: f32
-) -> f32 {
-  let bottomFade = pow(saturate(h01 / 0.14), 1.4);
-  var shape = mix(1.0, baseShape, bottomFade);
-
-  let detailOff = (U.debugFlags.y & 1u) != 0u;
-  let detailWave = 1.0 / max(1e-5, U.detailRepeat);
-  let detailFade = 1.0 - softstep(0.45 * detailWave, 1.1 * detailWave, stepLen);
-  var erodedB = shape;
-  var erodedW = shape;
-  if (!detailOff && detailAmt > 1e-4 && detailFade > 0.01) {
-    let topW = softstep(0.32, 0.88, h01);
-    let det = sampleDetailCurrent(worldPos);
-    let detailStr = U.detailStrength * detailAmt * mix(0.85, 1.2, typeMix)
-      * detailFade * bottomFade * mix(1.0, 1.35, topW);
-    erodedB = densityRemap(shape, det.x * detailStr);
-    erodedW = densityRemap(shape, det.y * detailStr);
-  }
-  erodedB *= heightGradient;
-  erodedW *= heightGradient;
-
-  let edgeSoft = mix(0.18, 0.32, typeMix);
-  let thr = 1.0 - saturate(cov);
-  let wispyReach = U.wispyEdgeWidth * 0.9;
-  var densB = remapClamped(erodedB, thr, thr + edgeSoft);
-  var densW = remapClamped(erodedW, thr - wispyReach, thr - wispyReach + edgeSoft);
-
-  let wispyT = saturate((h01 - 0.55) / 0.45);
-  densW *= pow(max(1e-4, 1.0 - wispyT), 2.2);
-
-  let coreMix = softstep(0.0, max(U.wispyEdgeWidth, 0.08), densB);
-  return min(1.0, mix(densW, densB, coreMix) * densScale);
-}
-
 // HP L1 core. Sampling-quality fade remains outside the mathematical core;
 // with detailFade=1 this follows EvaluateCloudProperties' erosion topology.
-fn cloudFromShapeHpCore(
+fn cloudFromShape(
   baseShape: f32,
   worldPos: vec3f,
   normalizedHeight: f32,
@@ -396,32 +334,11 @@ fn cloudFromShapeHpCore(
   return mix(densW, densB, coreMix) * densScale;
 }
 
-fn cloudFromShape(
-  baseShape: f32,
-  worldPos: vec3f,
-  h01: f32,
-  localHeight: f32,
-  typeMix: f32,
-  scStrength: f32,
-  simpleMode: bool,
-  detailAmt: f32,
-  stepLen: f32,
-  densityCoverage: f32,
-  heightGradient: f32,
-  densScale: f32
-) -> f32 {
-  if (U.debugFlags.w == 0u) {
-    return cloudFromShapeCurrent(baseShape, worldPos, h01, typeMix, detailAmt, stepLen, densityCoverage, heightGradient, densScale);
-  }
-  return cloudFromShapeHpCore(baseShape, worldPos, h01, localHeight, typeMix, scStrength, simpleMode, detailAmt, stepLen, densityCoverage, heightGradient, densScale);
-}
-
 fn evaluateLayer(
   worldPos: vec3f,
   baseM: f32,
   topM: f32,
   densScale: f32,
-  shapeAmt: f32,
   detailAmt: f32,
   w: vec4f,
   stepLen: f32,
@@ -439,11 +356,10 @@ fn evaluateLayer(
   }
   let alt = altitude(worldPos);
   let h01 = saturate((alt - baseM) / max(1.0, topM - baseM));
-  let hFade = softstep(0.0, 0.1, h01) * (1.0 - softstep(0.86, 1.0, h01));
   let typeMix = selectedCloudType(w);
   *outType = typeMix;
   *outH = h01;
-  if (alt < baseM || alt > topM || (U.debugFlags.w == 0u && hFade <= 0.0)) {
+  if (alt < baseM || alt > topM) {
     *outSupport = 0.0; *outAfterShape = 0.0; *outDensity = 0.0; *outDensityCoverage = 0.0;
     return;
   }
@@ -457,7 +373,7 @@ fn evaluateLayer(
   var densityCoverage = supportCoverage;
   var scStrength = 0.0;
   var scCell = 1.0;
-  if (U.debugFlags.w == 2u) {
+  if (U.debugFlags.w == 1u) {
     densityCoverage = hpLoCoverage(w.r);
     scStrength = saturate(U.hpSc0.x * w.b);
     if (scStrength > 0.0) {
@@ -467,22 +383,18 @@ fn evaluateLayer(
     }
   }
   *outDensityCoverage = densityCoverage;
-  var localHeight = h01;
-  var profile = verticalProfile(h01, typeMix) * hFade;
-  if (U.debugFlags.w != 0u) {
-    let heightCoverage = hpLoHeightCoverage(w.r);
-    let coverForTop = pow(saturate(heightCoverage), max(U.hpCoverTop.z, 0.01));
-    let topScale = mix(1.0, max(U.hpCoverTop.y, 1.0), coverForTop * U.hpCoverTop.x);
-    let heightForLut = h01 / (1.0 + (topScale - 1.0) * h01);
-    let scCompressedHeight = saturate(h01 / max(U.hpSc0.y, 0.01));
-    localHeight = mix(heightForLut, scCompressedHeight, scStrength);
-    let profiles = hpProfiles(localHeight, weatherUv(worldPos));
-    profile = mix(hpTypeValue(profiles, typeMix), profiles.r, scStrength);
-  }
-  let modelSupportCoverage = select(supportCoverage, densityCoverage, U.debugFlags.w == 2u);
+  let heightCoverage = hpLoHeightCoverage(w.r);
+  let coverForTop = pow(saturate(heightCoverage), max(U.hpCoverTop.z, 0.01));
+  let topScale = mix(1.0, max(U.hpCoverTop.y, 1.0), coverForTop * U.hpCoverTop.x);
+  let heightForLut = h01 / (1.0 + (topScale - 1.0) * h01);
+  let scCompressedHeight = saturate(h01 / max(U.hpSc0.y, 0.01));
+  let localHeight = mix(heightForLut, scCompressedHeight, scStrength);
+  let profiles = hpProfiles(localHeight, weatherUv(worldPos));
+  let profile = mix(hpTypeValue(profiles, typeMix), profiles.r, scStrength);
+  let modelSupportCoverage = select(supportCoverage, densityCoverage, U.debugFlags.w == 1u);
   let support = modelSupportCoverage * profile * densScale;
   *outSupport = support;
-  let coverageGate = select(0.001, 0.1, U.debugFlags.w == 2u);
+  let coverageGate = select(0.001, 0.1, U.debugFlags.w == 1u);
   if (densityCoverage < coverageGate || profile <= 0.0) {
     *outAfterShape = 0.0;
     *outDensity = 0.0;
@@ -490,19 +402,17 @@ fn evaluateLayer(
   }
 
   // HP: baseShape = pow(noise, 0.6)，与 coverage 解耦
-  let baseShape = sampleBaseShape(worldPos, typeMix, shapeAmt);
+  let baseShape = sampleBaseShape(worldPos);
   *outAfterShape = baseShape * profile;
   var density = cloudFromShape(baseShape, worldPos, h01, localHeight, typeMix, scStrength, simpleMode, detailAmt, stepLen, densityCoverage, profile, densScale);
-  if (U.debugFlags.w != 0u) {
-    density *= hpTypeValue(U.hpTypeDensity.xyz, typeMix) * U.hpTypeDensity.w;
-    if (scStrength > 0.0) {
-      let scCellShaped = pow(max(scCell, 0.001), max(U.hpSc0.w, 0.01));
-      let scCellFactor = mix(1.0, scCellShaped, U.hpSc1.x);
-      density *= mix(1.0, scCellFactor, scStrength);
-    }
-    if (U.hpDensityPost0.z > 0.0) {
-      density *= hpDensityDarkScale(densityCoverage);
-    }
+  density *= hpTypeValue(U.hpTypeDensity.xyz, typeMix) * U.hpTypeDensity.w;
+  if (scStrength > 0.0) {
+    let scCellShaped = pow(max(scCell, 0.001), max(U.hpSc0.w, 0.01));
+    let scCellFactor = mix(1.0, scCellShaped, U.hpSc1.x);
+    density *= mix(1.0, scCellFactor, scStrength);
+  }
+  if (U.hpDensityPost0.z > 0.0) {
+    density *= hpDensityDarkScale(densityCoverage);
   }
   *outDensity = density;
 }
@@ -533,7 +443,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
 
   if (U.layer0.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLayer(worldPos, U.layer0.x, U.layer0.y, U.layer0.z, U.layerShapeDetail0.x, U.layerShapeDetail0.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLayer(worldPos, U.layer0.x, U.layer0.y, U.layer0.z, U.layerShapeDetail0.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     if (d >= bestDens) {
       bestSupport = s; bestAfter = a; bestDens = d; bestType = t; bestH = h;
@@ -543,7 +453,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   }
   if (U.layer1.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLayer(worldPos, U.layer1.x, U.layer1.y, U.layer1.z, U.layerShapeDetail1.x, U.layerShapeDetail1.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLayer(worldPos, U.layer1.x, U.layer1.y, U.layer1.z, U.layerShapeDetail1.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     bestSupport = max(bestSupport, s);
     if (d > bestDens) {
@@ -552,7 +462,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   }
   if (U.layer2.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLayer(worldPos, U.layer2.x, U.layer2.y, U.layer2.z, U.layerShapeDetail2.x, U.layerShapeDetail2.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLayer(worldPos, U.layer2.x, U.layer2.y, U.layer2.z, U.layerShapeDetail2.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     bestSupport = max(bestSupport, s);
     if (d > bestDens) {
@@ -564,19 +474,14 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   if (hs.x > bestSupport) {
     let typeMix = hs.y;
     let h01 = hs.z;
-    var profile = verticalProfile(h01, typeMix);
-    if (U.debugFlags.w != 0u) {
-      profile = hpProfile(h01, typeMix, lowWeatherUv);
-    }
-    let baseShape = sampleBaseShape(worldPos, typeMix, 1.0);
+    let profile = hpProfile(h01, typeMix, lowWeatherUv);
+    let baseShape = sampleBaseShape(worldPos);
     bestSupport = hs.x;
     bestAfter = baseShape * profile;
     bestDens = cloudFromShape(baseShape, worldPos, h01, h01, typeMix, 0.0, simpleMode, 1.0, stepLen, U.hero2.x, profile, U.hero2.y);
-    if (U.debugFlags.w != 0u) {
-      bestDens *= hpTypeValue(U.hpTypeDensity.xyz, typeMix) * U.hpTypeDensity.w;
-      if (U.hpDensityPost0.z > 0.0) {
-        bestDens *= hpDensityDarkScale(U.hero2.x);
-      }
+    bestDens *= hpTypeValue(U.hpTypeDensity.xyz, typeMix) * U.hpTypeDensity.w;
+    if (U.hpDensityPost0.z > 0.0) {
+      bestDens *= hpDensityDarkScale(U.hero2.x);
     }
     bestType = typeMix;
     bestH = h01;

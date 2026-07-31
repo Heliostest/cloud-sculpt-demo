@@ -36,9 +36,8 @@ function channelCorrelation(data, a, b) {
   return covariance / Math.sqrt(varianceA * varianceB);
 }
 
-test('detail volumes default to 64 cubed', () => {
+test('HP detail volume defaults to 64 cubed', () => {
   assert.equal(noiseModule.DETAIL_VOLUME_SIZE, 64);
-  assert.equal(noiseModule.generateDetailRGBA().length, 64 ** 3 * 4);
   assert.equal(noiseModule.generateHpDetailRGBA().length, 64 ** 3 * 4);
 });
 

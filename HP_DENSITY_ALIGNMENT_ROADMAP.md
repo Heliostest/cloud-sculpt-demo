@@ -59,7 +59,7 @@ HP 低云 weather 通道是 `R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask, A=reserve
 - Cover 路径：`pow(raw, contrast) × intensity`，参与密度阈值。
 - Height 路径：另一组 contrast/intensity，参与 coverage 驱动的云顶拉伸。
 
-demo 的 low weather 已恢复 HP RGB 布局：`R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask`；A 仅作为 current/support 兼容路径的 meso 扩展。`coverageSignal` 在兼容路径合成 R/A，随后又经过全局 `U.coverage`、高度半圆、type filter width、remap 和 smooth；HP 路径则保持从 R 读取独立 density coverage。
+demo 的 low weather 已恢复 HP RGB 布局：`R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask`；A 仅作为 `hpCore` support 诊断路径的 meso 扩展。`coverageSignal` 在诊断路径合成 R/A，随后又经过全局 `U.coverage`、高度半圆、type filter width、remap 和 smooth；正式 `hpLowCloud` 路径保持从 R 读取独立 density coverage。
 
 ### 4.2 高度体系与云型体系不同
 
@@ -110,7 +110,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 固定至少四个相机/天气预设：侧视 Cu、斜视 Cb、正俯视、detail-off。
 - [x] 保存当前 Final、Support、AfterShape、FinalDensity 截图及参数 JSON。
 - [x] 增加纯数值 debug 输出或小型 CPU reference test，覆盖 `densityRemap`、阈值、wispy reach、混合和底部 fade。
-- [x] 明确对齐模式开关，例如 `densityModel = current | hpCore | hpLowCloud`；在 L2 完成前保留 `current` 回退路径。
+- [x] 对齐期间使用 `densityModel = hpCore | hpLowCloud` 分离核心公式与完整低云语义；L2 完成后删除旧 demo 内核，不再提供回退入口。
 
 验收：能判断一次改动发生在 weather/support、shape、detail、threshold 还是 post-density，而不是只看最终彩图猜原因。
 
@@ -120,28 +120,28 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 在 `hpCore` 路径中移除隐式耦合：`wispyReach = edgeWidth*0.9`、blend width 的 0.08 下限、写死的 0.55/2.2、type 驱动 edge softness。
 - [x] 明确 remap 边界约定：推荐保留 WebGPU 安全分母，但测试应验证常规域内与 HP `saturate(DensityRemap(...))` 一致；对 `low >= 1` 规定返回 0，避免 NaN。
 - [x] 暂时保留 demo 的 `detailFade`，但把它定义为核心外部的采样质量权重，确保设为 1 时可做 HP 数值对照。
-- [x] 暂时关闭 demo 特有 `topW` detail 加成和 type 线性加成，或放到 `current` 路径中。
+- [x] 从 HP 路径移除 demo 特有的 `topW` detail 加成和旧 type 线性加成；旧实现随 legacy 内核一起删除。
 
 验收：给定固定标量输入的 CPU reference 与 WGSL 公式误差不超过 `1e-5`；`detail=0` 时 Billowy/Wispy 均退化到相同 base path。
 
 ### 阶段 2：拆开 support coverage 与 HP density coverage
 
 - [x] 将当前 `cov` 重命名为 `supportCoverage`，避免继续把它误认为 HP coverage。
-- [x] 直接从 weather R 读取独立 `densityCoverageRaw`；不要从已经混入 G/meso 的 `coverageSignal` 旁路。`coverageSignal` 只保留给 current/support 路径。
+- [x] 直接从 weather R 读取独立 `densityCoverageRaw`；不要从已经混入 A/meso 的 `coverageSignal` 旁路。`coverageSignal` 只保留给 `hpCore` support 诊断路径。
 - [x] 添加 HP 风格 Cover contrast/intensity；另设 Height contrast/intensity，为后续 cloud-top 变换预留。
 - [x] `cloudFromShape`/新 `hpLowCloudCore` 只接收 `densityCoverage`，阈值使用 `(1-densityCoverage)+densityThreshold`。
-- [x] 保留 `supportCoverage` 供原有 debug、空域提示或 current 模式使用；确认它不再暗中进入 HP 核心。
+- [x] 保留 `supportCoverage` 供 debug、空域提示和 `hpCore` 诊断使用；确认它不再暗中进入正式 `hpLowCloud` 输入。
 - [x] 加入与 HP `CLOUD_DENSITY_TRESHOLD=0.1` 对应的低云 coverage 门控测试；若要测试整个函数早退，必须固定 `needHighCloud=false`。
 
 验收：扫描 raw coverage 从 0 到 1 时，阈值和最终密度曲线与 HP reference 同向且断点一致；改变 support filter width 不再改变 `hpCore` 的 density coverage。
 
 ### 阶段 3：对齐 base shape 与 detail 资源语义
 
-- [x] 为 shape 增加 `hpRChannelOnly` 路径；保留现有 RGB blend 作为 current 模式。
+- [x] shape 统一为 HP R-only 路径；旧 RGB blend 已随 legacy 内核删除。
 - [x] HP 路径按 `pow(abs(r),0.6)` 处理 R；若为了数值稳健保留 demo 的 `max(1e-4,...)` 底值，必须标成有意偏差并纳入零值测试。
 - [x] 将 scale 从标量扩为 `vec3`，显式区分 base/detail offset、水平风倍率和 detail 垂直风。
-- [x] 决定并记录 Y 翻转策略；HP 模式使用 `(x,-y,z)`，current 模式保持现状。
-- [x] detail generator 增加 `R=WispyLow, G=WispyHigh, B=BillowyLow, A=BillowyHigh` 的 HP 布局。为兑现 current 回退，迁移期必须使用双资源或版本化 layout；不能直接覆盖唯一纹理后仍声称 current 可逐像素回归。
+- [x] detail 统一使用 HP 的 `(x,-y,z)` 坐标策略。
+- [x] detail generator 使用 `R=WispyLow, G=WispyHigh, B=BillowyLow, A=BillowyHigh` 的 HP 布局；迁移期旧双资源已在 legacy 内核删除后收敛为唯一 HP detail 资源。
 - [x] 添加四个 detail blend weight，并按 HP 分别合成 Billowy/Wispy。
 - [x] 纹理布局迁移必须与 shader 消费在同一阶段完成，禁止出现“新资源 + 旧 swizzle”的中间提交。
 - [x] 明确本阶段只保证通道/频率角色对齐，还是要求噪声场视觉等价；若后者成立，需要 HP 等价源资产或经许可的生成方法，当前 Worley generator 只能算近似。
@@ -185,7 +185,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 增加 `simpleMode`，粗探测时跳过 detail；保留 step-length `detailFade` 作为抗闪烁扩展，但不要把它称为 HP mip LOD。
 - [x] 比较固定 LOD、mip LOD、detailFade 三种方式的稳定性和 GPU 时间。
 
-实现记录：shape、current detail 与 HP detail 均生成完整 3D box-filter mip chain；HP evaluator 使用独立 shape/detail LOD，raymarch 的 probe/ahead 路径使用 `simpleMode`，最终密度与光照采样仍使用完整模式。固定验证场景中，阶段 7 的 `current` LOD 0 截图与阶段 0 基线字节一致；HP 的 LOD 2 与强制 simple 截图均已保存且无 WGSL/WebGPU 错误。WebGPU timestamp-query 本机趋势值为固定 LOD 0 `81.553 ms`、mip LOD 2 `75.710 ms`、step detail fade `82.461 ms`；fixed 与 detail-fade 在当前步长范围内截图字节一致，mip LOD 2 会降低高频细节。具体记录见 evidence，不能外推为跨设备基准。
+实现记录：shape 与 HP detail 均生成完整 3D box-filter mip chain；HP evaluator 使用独立 shape/detail LOD，raymarch 的 probe/ahead 路径使用 `simpleMode`，最终密度与光照采样仍使用完整模式。HP 的 LOD 2 与强制 simple 截图均已保存且无 WGSL/WebGPU 错误。WebGPU timestamp-query 本机趋势值为固定 LOD 0 `81.553 ms`、mip LOD 2 `75.710 ms`、step detail fade `82.461 ms`；fixed 与 detail-fade 在当前步长范围内截图字节一致，mip LOD 2 会降低高频细节。具体记录见 evidence，不能外推为跨设备基准。
 
 验收：远距/大步长下细节不闪烁；simple mode 不采样 detail；完整模式在 LOD 0 与阶段 6 近景基线一致。
 
@@ -220,7 +220,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 
 #### 后续形态改进 2：提高 detail 体积质量
 
-- [x] current 与 HP detail 从 `32³` 提升为 `64³`，生成完整 `64→1` mip chain。
+- [x] HP detail 从 `32³` 提升为 `64³`，生成完整 `64→1` mip chain；旧 RG detail 资源已删除。
 - [x] HP RGBA 四通道使用独立 seed、频率配方和可平铺 domain warp，并增加确定性与通道相关性测试。
 
 #### 后续形态改进 3：降低基础 shape 的短周期重复
@@ -231,7 +231,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 
 #### 后续形态改进 4：恢复天气图径向 LUT、cloud type 和 Sc 空间变化
 
-- [x] low weather 通道恢复为 HP 的 `R=coverage / G=cloud type / B=Sc mask`；demo 原有 meso 移到 A，且只由 current/support 路径消费。
+- [x] low weather 通道恢复为 HP 的 `R=coverage / G=cloud type / B=Sc mask`；demo 原有 meso 移到 A，且只由 `hpCore` support 诊断路径消费。
 - [x] 取消 `hp-ocean-day` 的固定 `cloudType=0.2`，改为逐像素读取 weather G；Sc 改为 `0.35 × weather B`，mask 为 0 的位置保持无变化。
 - [x] CloudLut 继续按 `(localHeight, saturate(length(weatherUV-0.5)*2))` 采样。天气中心从旧基线 `(210km,210km)` 微调为 `(205km,205km)`，保留天气相位，并让长视线进入径向坐标的未饱和区间。
 - [x] `Weather` 调试视图直接显示 HP RGB，并增加天气通道、Cu/Tcu/Cb 插值、Sc mask 乘法和径向坐标范围测试。
@@ -275,7 +275,7 @@ npm run build
 L1 完成需同时满足：
 
 - 同输入下 remap、阈值、wispy mask、Billowy/Wispy mix 与 HP reference 一致；
-- current 与 hpCore 可明确切换；
+- `hpCore` 与 `hpLowCloud` 可明确切换，且不存在 legacy 密度入口；
 - 没有 NaN、support 外造云或纹理通道错接。
 
 L2 完成需额外满足：
@@ -292,4 +292,4 @@ L3 完成需额外满足：
 
 ## 9. 当前建议的下一步
 
-阶段 0–8 已完成。`current` 与高云关闭时的 HP 低云均保留字节级截图回归；剩余工作属于调参、更多硬件上的性能采样，或不在本路线图范围内的完整高云光照模型。
+阶段 0–8 已完成。所有正式场景统一使用 `hpLowCloud`，旧 demo 密度内核、shader 分支和专用 detail 资源已删除；剩余工作属于调参、更多硬件上的性能采样，或不在本路线图范围内的完整高云光照模型。

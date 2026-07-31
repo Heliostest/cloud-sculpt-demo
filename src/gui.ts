@@ -10,7 +10,7 @@ export function createGui(
   const gui = new GUI({ title: 'Cloud Sculpt' });
 
   const alignment = gui.addFolder('HP Alignment');
-  alignment.add(params, 'densityModel', ['current', 'hpCore', 'hpLowCloud']);
+  alignment.add(params, 'densityModel', ['hpLowCloud', 'hpCore']);
   alignment.add(params, 'densityThreshold', 0, 0.5, 0.005);
   alignment.add(params, 'wispyReach', 0, 0.5, 0.005);
   alignment.add(params, 'edgeSoftness', 0.001, 0.5, 0.005);
@@ -122,8 +122,6 @@ export function createGui(
   weather.add(params, 'cloudTypeOverride', -1, 1, 0.01).name('type override');
 
   const sculpt = gui.addFolder('Sculpt');
-  sculpt.add(params, 'shapeAmount', 0, 1.5, 0.01);
-  sculpt.add(params, 'shapeRepeat', 0.00005, 0.002, 0.00001);
   sculpt.add(params, 'detailStrength', 0, 1.5, 0.01);
   sculpt.add(params, 'detailRepeat', 0.0005, 0.01, 0.0001);
   sculpt.add(params, 'wispyEdgeWidth', 0.01, 0.4, 0.01);
@@ -170,7 +168,6 @@ export function createGui(
     f.add(L, 'baseKm', 0.2, 10, 0.05);
     f.add(L, 'topKm', 0.5, 12, 0.05);
     f.add(L, 'densityScale', 0, 2, 0.01);
-    f.add(L, 'shapeAmount', 0, 1.5, 0.01);
     f.add(L, 'detailAmount', 0, 1.5, 0.01);
   }
 

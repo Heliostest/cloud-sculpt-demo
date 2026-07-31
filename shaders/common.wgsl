@@ -11,14 +11,14 @@ struct Uniforms {
   mesoStrength: f32,
   mesoContrast: f32,
   windOffset: vec2f,
-  shapeOffset: vec3f,
-  shapeAmount: f32,
-  shapeRepeat: f32,
+  reserved0: vec3f,
+  reserved1: f32,
+  reserved2: f32,
   detailStrength: f32,
   detailRepeat: f32,
   wispyEdgeWidth: f32,
-  detailOffset: vec3f,
-  detailMorph: f32,
+  reserved3: vec3f,
+  reserved4: f32,
   layer0: vec4f,
   layer1: vec4f,
   layer2: vec4f,
@@ -70,7 +70,6 @@ struct Uniforms {
 @group(0) @binding(2) var weatherSamp: sampler;
 @group(0) @binding(3) var shapeTex: texture_3d<f32>;
 @group(0) @binding(4) var shapeSamp: sampler;
-@group(0) @binding(5) var detailTex: texture_3d<f32>;
 @group(0) @binding(6) var detailSamp: sampler;
 @group(0) @binding(7) var hpDetailTex: texture_3d<f32>;
 @group(0) @binding(8) var cloudLutTex: texture_2d<f32>;
@@ -85,9 +84,6 @@ fn saturate(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn saturate3(x: vec3f) -> vec3f { return clamp(x, vec3f(0.0), vec3f(1.0)); }
 fn remapClamped(v: f32, low: f32, high: f32) -> f32 {
   return saturate((v - low) / max(1e-5, high - low));
-}
-fn densityRemap(d: f32, low: f32) -> f32 {
-  return remapClamped(d, low, 1.0);
 }
 fn hpDensityRemapSafe(d: f32, low: f32) -> f32 {
   if (low >= 1.0) { return 0.0; }

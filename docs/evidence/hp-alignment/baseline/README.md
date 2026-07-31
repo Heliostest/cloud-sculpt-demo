@@ -70,18 +70,18 @@
 
 `wispyEdgeWidth` 与 `wispyReach` 也可通过同名 URL 参数覆盖；实际值写入 `body.dataset.hpWispyBlend`。HP 工程目录没有包含原始 `_ErosionNoise` 资产或 RenderDriver 默认参数，因此这里只宣称公式、通道职责和混合位置对齐，不宣称噪声体素逐值一致。
 
-本机 1280×720 WebGPU 证据命名为 `hp-ocean-day-lighting-before.png` / `hp-ocean-day-lighting-after.png`。上方 70% 区域的平均 RGB 从约 `(126,132,139)` 提升到 `(157,162,168)`，平均绝对差约 `(21,21,20)`；HP 配对参考图的对应绝对差约 `(31,25,16)`，变化幅度处于同一量级。关闭 HP 光照后的 `current/side-cu` 与旧基线平均每通道漂移低于 1 个 8-bit 码值。
+本机 1280×720 WebGPU 证据命名为 `hp-ocean-day-lighting-before.png` / `hp-ocean-day-lighting-after.png`。上方 70% 区域的平均 RGB 从约 `(126,132,139)` 提升到 `(157,162,168)`，平均绝对差约 `(21,21,20)`；HP 配对参考图的对应绝对差约 `(31,25,16)`，变化幅度处于同一量级。
 
 截图命名约定：`<density-model>-<scenario>.png`。
 
-通过 `&model=hpCore` 或 `&model=hpLowCloud` 可在完全相同的相机、天气、时间与噪声相位下做 A/B 对照；省略时使用 `current`。
+省略 `model` 时始终使用 `hpLowCloud`；`&model=hpCore` 仅用于在相同相机、天气、时间与噪声相位下隔离侵蚀核心。旧 demo 密度模式已经删除。
 通过 `&debug=Support`、`AfterShape`、`FinalDensity` 或 `DensityCoverage` 可覆盖场景默认 debug view。
 
 HP detail 纹理使用独立资源，通道为 R WispyLow、G WispyHigh、B BillowyLow、A BillowyHigh。当前生成器只保证通道与频率角色，不宣称复现 HP 原始噪声资产。
 
 Sc 强对照使用 `&model=hpLowCloud&sc=1`；`hp-ocean-day` 默认用 `sc=0.35`，局部强度仍逐像素乘 weather B。可用 `&sc=0` 验证关闭时回退到非 Sc 低云。
 
-低云 weather 的 RGB 已恢复 HP 布局：R coverage、G cloud type、B Sc mask；A 是仅供 demo current/support 兼容路径使用的 meso 扩展。CloudLut 的 RGB 分别是 Cu/Tcu/Cb，`radialDist` 与 HP 一样由 `saturate(length(weatherUV - 0.5) * 2)` 计算。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
+低云 weather 的 RGB 已恢复 HP 布局：R coverage、G cloud type、B Sc mask；A 只供 `hpCore` 的 support 诊断路径使用。CloudLut 的 RGB 分别是 Cu/Tcu/Cb，`radialDist` 与 HP 一样由 `saturate(length(weatherUV - 0.5) * 2)` 计算。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
 
 `&mod=<0..1>` 可覆盖低云 darkness modulation 强度；0 会在 shader 中完全旁路该计算，作为无变化基线。
 
@@ -91,7 +91,6 @@ Sc 强对照使用 `&model=hpLowCloud&sc=1`；`hp-ocean-day` 默认用 `sc=0.35`
 
 - `&noiseMip=<0..7>&erosionMip=<0..5>`：分别覆盖 HP shape 与 detail 的显式 3D mip LOD。
 - `&simple=1`：强制所有 HP 密度采样跳过 detail；正常 raymarch 中仅 probe/ahead 自动使用 simple mode。
-- `stage7-current-side-cu.png` 与 `current-side-cu.png` 字节一致，证明 mip 资源迁移没有改变 current 的 LOD 0 回归结果。
 - `hpLowCloud-stage7-lod0-oblique-cb.png`、`hpLowCloud-stage7-mip2-oblique-cb.png` 与 `hpLowCloud-stage7-simple-oblique-cb.png` 分别记录完整 LOD 0、显式 LOD 2 与强制 simple 的结果。
 
 阶段 7 已接入可选 WebGPU timestamp-query；不支持该 feature 的设备会显示 `data-gpu-timing-supported="false"`，但仍正常渲染。固定 `oblique-cb + hpLowCloud` 场景的本机趋势值记录在 `gpu-timing.json`，这些小样本结果只用于同机相对比较。
@@ -106,7 +105,7 @@ Sc 强对照使用 `&model=hpLowCloud&sc=1`；`hp-ocean-day` 默认用 `sc=0.35`
 - `&debug=HighWeather|HighBand|HighDensity`：分别检查 high-weather 通道、高度带和最终高云密度。
 - `hpHigh-stage8-ac-oblique.png` 与 `hpHigh-stage8-as-oblique.png` 记录 Ac/As 最终合成；`hpHigh-stage8-weather.png`、`hpHigh-stage8-band-side.png`、`hpHigh-stage8-density.png` 记录独立调试输出。
 
-高云关闭时，阶段 8 的 `current/side-cu` 与阶段 0 基线字节一致，`hpLowCloud/oblique-cb` 与阶段 7 LOD 0 基线字节一致。
+高云关闭时，`hpLowCloud/oblique-cb` 与阶段 7 LOD 0 基线字节一致。
 
 ### 高空云覆盖 / 消光视觉调整 5
 

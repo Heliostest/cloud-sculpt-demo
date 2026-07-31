@@ -13,7 +13,6 @@ import {
 import { generateCloudLutRGBA } from './cloudLutGen';
 import {
   DETAIL_VOLUME_SIZE,
-  generateDetailRGBA,
   generateHpDetailRGBA,
   generateShapeRGBA,
   generateVolumeMipChainRGBA,
@@ -154,7 +153,6 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
 
   const weatherData = generateWeatherRGBA(512);
   const shapeData = generateShapeRGBA(128);
-  const detailData = generateDetailRGBA();
   const hpDetailData = generateHpDetailRGBA();
   const cloudLutData = generateCloudLutRGBA(256, 32);
   const scCellData = generateScCellRGBA(256);
@@ -163,7 +161,6 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   const highWarpData = generateHighWarpRGBA(256);
   const highWispData = generateHighWispRGBA(256);
   const shapeMips = generateVolumeMipChainRGBA(shapeData, 128);
-  const detailMips = generateVolumeMipChainRGBA(detailData, DETAIL_VOLUME_SIZE);
   const hpDetailMips = generateVolumeMipChainRGBA(hpDetailData, DETAIL_VOLUME_SIZE);
 
   const weatherTex = device.createTexture({
@@ -259,23 +256,6 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     );
   }
 
-  const detailTex = device.createTexture({
-    size: [DETAIL_VOLUME_SIZE, DETAIL_VOLUME_SIZE, DETAIL_VOLUME_SIZE],
-    dimension: '3d',
-    format: 'rgba8unorm',
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    mipLevelCount: detailMips.length,
-  });
-  for (let mip = 0; mip < detailMips.length; mip++) {
-    const level = detailMips[mip];
-    device.queue.writeTexture(
-      { texture: detailTex, mipLevel: mip },
-      level.data.buffer as ArrayBuffer,
-      { bytesPerRow: level.size * 4, rowsPerImage: level.size },
-      [level.size, level.size, level.size],
-    );
-  }
-
   const weatherSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat' });
   const weatherClampSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
   const shapeSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat', addressModeW: 'repeat' });
@@ -324,7 +304,6 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       { binding: 2, resource: weatherSamp },
       { binding: 3, resource: shapeTex.createView() },
       { binding: 4, resource: shapeSamp },
-      { binding: 5, resource: detailTex.createView() },
       { binding: 6, resource: detailSamp },
       { binding: 7, resource: hpDetailTex.createView() },
       { binding: 8, resource: cloudLutTex.createView() },
@@ -347,9 +326,6 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     aspect: number,
     time: number,
     windOffset: [number, number],
-    shapeOffset: [number, number, number],
-    detailOffset: [number, number, number],
-    detailMorph: number,
   ): void {
     const view = lookAt(camera.position, camera.target, [0, 1, 0]);
     const proj = perspective(camera.fovY, aspect, 10, 200000);
@@ -382,20 +358,20 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[30] = windOffset[0];
     f32[31] = windOffset[1];
 
-    f32[32] = shapeOffset[0];
-    f32[33] = shapeOffset[1];
-    f32[34] = shapeOffset[2];
-    f32[35] = params.shapeAmount;
+    f32[32] = 0;
+    f32[33] = 0;
+    f32[34] = 0;
+    f32[35] = 0;
 
-    f32[36] = params.shapeRepeat;
+    f32[36] = 0;
     f32[37] = params.detailStrength;
     f32[38] = params.detailRepeat;
     f32[39] = params.wispyEdgeWidth;
 
-    f32[40] = detailOffset[0];
-    f32[41] = detailOffset[1];
-    f32[42] = detailOffset[2];
-    f32[43] = detailMorph;
+    f32[40] = 0;
+    f32[41] = 0;
+    f32[42] = 0;
+    f32[43] = 0;
 
     const L = params.layers;
     // layer0: base, top, densScale, enabled
@@ -414,17 +390,17 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[54] = L[2].densityScale;
     f32[55] = L[2].enabled ? 1 : 0;
 
-    f32[56] = L[0].shapeAmount;
+    f32[56] = 0;
     f32[57] = L[0].detailAmount;
     f32[58] = 0;
     f32[59] = 0;
 
-    f32[60] = L[1].shapeAmount;
+    f32[60] = 0;
     f32[61] = L[1].detailAmount;
     f32[62] = 0;
     f32[63] = 0;
 
-    f32[64] = L[2].shapeAmount;
+    f32[64] = 0;
     f32[65] = L[2].detailAmount;
     f32[66] = 0;
     f32[67] = 0;
@@ -651,13 +627,10 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     camera: CameraState,
     time: number,
     windOffset: [number, number],
-    shapeOffset: [number, number, number],
-    detailOffset: [number, number, number],
-    detailMorph: number,
   ): void {
     resizeCanvas();
     const aspect = canvas.width / Math.max(1, canvas.height);
-    writeUniforms(params, camera, aspect, time, windOffset, shapeOffset, detailOffset, detailMorph);
+    writeUniforms(params, camera, aspect, time, windOffset);
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
     const sampleTimestamp = timestampQuerySet !== null

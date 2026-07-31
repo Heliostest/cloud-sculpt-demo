@@ -1,13 +1,20 @@
 import GUI from 'lil-gui';
 import type { CameraPreset, DemoParams } from './params';
+import { CLOUD_PRESET_OPTIONS, type CloudPresetName } from './cloudPresets';
 
 export function createGui(
   params: DemoParams,
   hooks: {
-    onPreset: (p: CameraPreset) => void;
+    initialCloudPreset: CloudPresetName;
+    onCloudPreset: (preset: CloudPresetName) => void;
+    onCameraPreset: (preset: CameraPreset) => void;
   },
 ): GUI {
   const gui = new GUI({ title: 'Cloud Sculpt' });
+  const presetSelection = { preset: hooks.initialCloudPreset };
+  gui.add(presetSelection, 'preset', CLOUD_PRESET_OPTIONS)
+    .name('Preset')
+    .onChange((value: string) => hooks.onCloudPreset(value as CloudPresetName));
 
   const alignment = gui.addFolder('HP Alignment');
   alignment.add(params, 'densityThreshold', 0, 0.5, 0.005);
@@ -182,10 +189,10 @@ export function createGui(
   gui.add(params, 'debugMode', ['Final', 'Support', 'AfterShape', 'FinalDensity', 'Weather', 'DensityCoverage', 'HighWeather', 'HighBand', 'HighDensity']);
 
   const cam = {
-    side: () => hooks.onPreset('side'),
-    oblique45: () => hooks.onPreset('oblique45'),
-    top: () => hooks.onPreset('top'),
-    hpOcean: () => hooks.onPreset('hpOcean'),
+    side: () => hooks.onCameraPreset('side'),
+    oblique45: () => hooks.onCameraPreset('oblique45'),
+    top: () => hooks.onCameraPreset('top'),
+    hpOcean: () => hooks.onCameraPreset('hpOcean'),
   };
   const camFolder = gui.addFolder('Camera');
   camFolder.add(cam, 'side').name('侧视');

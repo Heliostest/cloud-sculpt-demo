@@ -1,4 +1,4 @@
-import type { CameraPreset, DebugMode, DemoParams } from './params';
+import { createDefaultParams, type CameraPreset, type DebugMode, type DemoParams } from './params';
 
 type HpLightingFixture = Pick<
   DemoParams,
@@ -49,7 +49,8 @@ type HpMorphologyFixture = Pick<
   | 'loCoverTopCurvePow'
 >;
 
-export type ValidationScenarioName =
+export type CloudPresetName =
+  | 'default'
   | 'side-cu'
   | 'oblique-tcu'
   | 'oblique-cb'
@@ -57,7 +58,9 @@ export type ValidationScenarioName =
   | 'detail-off'
   | 'hp-ocean-day';
 
-export interface ValidationScenario {
+export interface CloudPreset {
+  label: string;
+  version: number;
   camera: CameraPreset;
   debugMode: DebugMode;
   detailOff: boolean;
@@ -73,8 +76,19 @@ export interface ValidationScenario {
   hpMorphology?: HpMorphologyFixture;
 }
 
-export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScenario> = {
+export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
+  default: {
+    label: 'Default',
+    version: 1,
+    camera: 'oblique45',
+    debugMode: 'Final',
+    detailOff: false,
+    cloudTypeOverride: -1,
+    frozenTime: 6,
+  },
   'side-cu': {
+    label: 'Side Cu',
+    version: 1,
     camera: 'side',
     debugMode: 'Final',
     detailOff: false,
@@ -82,6 +96,8 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     frozenTime: 6,
   },
   'oblique-cb': {
+    label: 'Oblique Cb',
+    version: 1,
     camera: 'oblique45',
     debugMode: 'Final',
     detailOff: false,
@@ -89,6 +105,8 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     frozenTime: 6,
   },
   'oblique-tcu': {
+    label: 'Oblique TCu',
+    version: 1,
     camera: 'oblique45',
     debugMode: 'Final',
     detailOff: false,
@@ -96,6 +114,8 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     frozenTime: 6,
   },
   'top-density': {
+    label: 'Top Density',
+    version: 1,
     camera: 'top',
     debugMode: 'FinalDensity',
     detailOff: false,
@@ -103,6 +123,8 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     frozenTime: 6,
   },
   'detail-off': {
+    label: 'Detail Off',
+    version: 1,
     camera: 'oblique45',
     debugMode: 'Final',
     detailOff: true,
@@ -110,6 +132,8 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     frozenTime: 6,
   },
   'hp-ocean-day': {
+    label: 'HP Ocean Day',
+    version: 1,
     camera: 'hpOcean',
     debugMode: 'Final',
     detailOff: false,
@@ -168,21 +192,59 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
   },
 };
 
-export function isValidationScenarioName(value: string | null): value is ValidationScenarioName {
-  return value !== null && value in VALIDATION_SCENARIOS;
+export const CLOUD_PRESET_OPTIONS = Object.fromEntries(
+  Object.entries(CLOUD_PRESETS).map(([name, preset]) => [preset.label, name]),
+) as Record<string, CloudPresetName>;
+
+export function isCloudPresetName(value: string | null): value is CloudPresetName {
+  return value !== null && value in CLOUD_PRESETS;
 }
 
-export function applyValidationScenario(params: DemoParams, scenario: ValidationScenario): void {
-  params.debugMode = scenario.debugMode;
-  params.detailOff = scenario.detailOff;
-  params.cloudTypeOverride = scenario.cloudTypeOverride;
-  params.windSpeed = 0;
-  if (scenario.sunAzimuthDeg !== undefined) params.sunAzimuthDeg = scenario.sunAzimuthDeg;
-  if (scenario.sunElevationDeg !== undefined) params.sunElevationDeg = scenario.sunElevationDeg;
-  if (scenario.exposure !== undefined) params.exposure = scenario.exposure;
-  if (scenario.highCloudEnabled !== undefined) params.highCloudEnabled = scenario.highCloudEnabled;
-  if (scenario.scStrength !== undefined) params.scStrength = scenario.scStrength;
-  if (scenario.hpLighting !== undefined) Object.assign(params, scenario.hpLighting);
-  if (scenario.hpDensity !== undefined) Object.assign(params, scenario.hpDensity);
-  if (scenario.hpMorphology !== undefined) Object.assign(params, scenario.hpMorphology);
+export interface PresetRequest {
+  name: CloudPresetName;
+  validation: boolean;
+  legacyScenario: boolean;
+}
+
+export function resolvePresetRequest(query: URLSearchParams): PresetRequest {
+  const legacyScenario = query.get('scenario');
+  const requestedPreset = query.get('preset');
+  const name = isCloudPresetName(requestedPreset)
+    ? requestedPreset
+    : isCloudPresetName(legacyScenario)
+      ? legacyScenario
+      : 'default';
+  const validationValue = query.get('validation');
+  const validation = isCloudPresetName(legacyScenario)
+    || validationValue === '1'
+    || validationValue === 'true';
+  return {
+    name,
+    validation,
+    legacyScenario: isCloudPresetName(legacyScenario),
+  };
+}
+
+export function applyCloudPreset(params: DemoParams, preset: CloudPreset): void {
+  // Preserve nested object identities because lil-gui controllers bind to them.
+  const targetLayers = params.layers;
+  const targetHero = params.hero;
+  const defaults = createDefaultParams();
+  Object.assign(params, defaults, { layers: targetLayers, hero: targetHero });
+  for (let i = 0; i < targetLayers.length; i++) {
+    Object.assign(targetLayers[i], defaults.layers[i]);
+  }
+  Object.assign(targetHero, defaults.hero);
+
+  params.debugMode = preset.debugMode;
+  params.detailOff = preset.detailOff;
+  params.cloudTypeOverride = preset.cloudTypeOverride;
+  if (preset.sunAzimuthDeg !== undefined) params.sunAzimuthDeg = preset.sunAzimuthDeg;
+  if (preset.sunElevationDeg !== undefined) params.sunElevationDeg = preset.sunElevationDeg;
+  if (preset.exposure !== undefined) params.exposure = preset.exposure;
+  if (preset.highCloudEnabled !== undefined) params.highCloudEnabled = preset.highCloudEnabled;
+  if (preset.scStrength !== undefined) params.scStrength = preset.scStrength;
+  if (preset.hpLighting !== undefined) Object.assign(params, preset.hpLighting);
+  if (preset.hpDensity !== undefined) Object.assign(params, preset.hpDensity);
+  if (preset.hpMorphology !== undefined) Object.assign(params, preset.hpMorphology);
 }

@@ -23,20 +23,22 @@ function channelRange(data, channel) {
   return max - min;
 }
 
-test('low weather exposes the HP RGB layout and keeps meso in alpha', () => {
+test('low weather exposes the HP RGB layout and reserves alpha', () => {
   assert.deepEqual(weatherModule.LOW_WEATHER_CHANNELS, {
     coverage: 0,
     cloudType: 1,
     scMask: 2,
-    meso: 3,
+    reserved: 3,
   });
 });
 
-test('coverage, cloud type, Sc mask, and meso all vary across the finite map', () => {
+test('coverage, cloud type, and Sc mask vary across the finite map while alpha stays reserved', () => {
   const data = weatherModule.generateWeatherRGBA(64);
-  for (const [name, channel] of Object.entries(weatherModule.LOW_WEATHER_CHANNELS)) {
+  for (const [name, channel] of Object.entries(weatherModule.LOW_WEATHER_CHANNELS).filter(([name]) => name !== 'reserved')) {
     assert.ok(channelRange(data, channel) > 32, `${name} does not have useful spatial range`);
   }
+  assert.equal(channelRange(data, weatherModule.LOW_WEATHER_CHANNELS.reserved), 0);
+  assert.equal(data[weatherModule.LOW_WEATHER_CHANNELS.reserved], 0);
 });
 
 test('finite weather coverage fades to zero at the texture boundary', () => {

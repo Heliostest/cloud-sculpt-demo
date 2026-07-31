@@ -38,8 +38,8 @@ npm run test:weather
 
 HP 密度差异审计与渐进对齐计划：[`HP_DENSITY_ALIGNMENT_ROADMAP.md`](HP_DENSITY_ALIGNMENT_ROADMAP.md)
 
-固定视觉验证场景：`/?scenario=hp-ocean-day`、`side-cu`、`oblique-tcu`、`oblique-cb`、`top-density`、`detail-off`。六个场景全部使用 `hpLowCloud`；其中 `hp-ocean-day` 锁定 HP 海面参考图的相机/FOV、太阳、曝光、时间和 HP 低云光照。场景参数记录在 `docs/evidence/hp-alignment/baseline/scenarios.json`。
+页面只有一个交互入口，GUI 顶部的 `Preset` 可选择 `Default`、`HP Ocean Day`、`Side Cu`、`Oblique TCu`、`Oblique Cb`、`Top Density` 和 `Detail Off`。`/?preset=hp-ocean-day` 会加载同名 preset 并保持 GUI、相机和动画可交互；增加 `&validation=1` 才冻结时间、停止动画、隐藏 GUI 并提供截图就绪信号。preset 参数记录在 `docs/evidence/hp-alignment/baseline/presets.json`。
 
-正式密度模式为 `hpLowCloud`；`&model=hpCore` 仅用于隔离 HP 侵蚀核心的诊断对照。旧 `current` 模式已从类型、GUI、shader 和资源中删除。HP 低云支持 `noiseMip`、`erosionMip`、`simple` 和 `detailFade` 对照；独立 Ac/As 高空云通过 `&high=1&highType=0|1` 启用，并可用 `highThreshold`、`highViewAbsorption`、`highLightAbsorption` 和 `HighWeather` / `HighBand` / `HighDensity` 调试视图检查。完整复现参数与截图见 `docs/evidence/hp-alignment/baseline/README.md`。
+渲染结构固定为 `LowCloud + HighCloud` 两个 evaluator，没有密度模式选择器，`model` URL 参数也不再参与解析。低云中的 Cu/TCu/Cb 由 weather G 连续控制，Sc 由 weather B 空间混入；独立 Ac/As 高空云通过 `&high=1&highType=0|1` 启用。旧 `?scenario=<name>` 链接仅作为兼容别名，等价于 `?preset=<name>&validation=1`。HP 低云仍支持 `noiseMip`、`erosionMip`、`simple` 和 `detailFade` 对照，高云可用 `highThreshold`、`highViewAbsorption`、`highLightAbsorption` 和 `HighWeather` / `HighBand` / `HighDensity` 调试视图检查。
 
 最终颜色默认使用 HP/HDRP 风格的线性 HDR 合成与 ACES fitted 显示变换；`toneMap=aces|reinhard`、`exposure`、`skyIntensity`、`saturation`、`contrast` 可用于固定场景 A/B，天空线性 RGB 可在 `HP Sky / HDR Post` GUI 中调整。

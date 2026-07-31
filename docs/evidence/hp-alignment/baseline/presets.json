@@ -1,12 +1,13 @@
 {
   "baselineDate": "2026-07-30",
-  "queryFormat": "?scenario=<name>&model=<hpCore|hpLowCloud>",
+  "queryFormat": "?preset=<name>[&validation=1]",
   "shared": {
-    "densityModel": "hpLowCloud",
-    "windSpeed": 0,
+    "evaluator": "LowCloud",
+    "presetVersion": 1,
+    "animation": "frozen only when validation=1",
     "frozenTime": 6
   },
-  "scenarios": {
+  "presets": {
     "side-cu": {
       "camera": "side",
       "debugMode": "Final",
@@ -46,7 +47,6 @@
       "debugMode": "Final",
       "detailOff": false,
       "cloudTypeOverride": -1,
-      "densityModel": "hpLowCloud",
       "hpDensity": {
         "loCovCoverIntensity": 0.62,
         "loCovCoverContrast": 1.5,

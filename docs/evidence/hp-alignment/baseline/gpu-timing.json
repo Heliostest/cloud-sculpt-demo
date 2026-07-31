@@ -1,7 +1,7 @@
 {
   "date": "2026-07-29",
-  "scenario": "oblique-cb",
-  "densityModel": "hpLowCloud",
+  "preset": "oblique-cb",
+  "evaluator": "LowCloud",
   "timer": "WebGPU timestamp-query, rolling arithmetic mean",
   "warning": "Small-sample same-machine trend only; do not compare across devices.",
   "results": {

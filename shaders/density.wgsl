@@ -100,16 +100,8 @@ fn isInsideWeatherMap(uv: vec2f) -> bool {
   return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0));
 }
 
-fn coverageSignal(w: vec4f) -> f32 {
-  let macroCov = pow(saturate(w.r), U.weatherExponent);
-  // Alpha is a demo-only meso signal. RGB follows HP low-weather semantics.
-  let meso = saturate(w.a * U.mesoContrast);
-  // meso 只做轻破碎，避免斑块被撕成碎末
-  return macroCov * mix(1.0, meso, U.mesoStrength * 0.55);
-}
-
 fn selectedCloudType(w: vec4f) -> f32 {
-  return select(saturate(w.g), saturate(U.hpCore1.w), U.hpCore1.w >= 0.0);
+  return select(saturate(w.g), saturate(U.hpLow1.w), U.hpLow1.w >= 0.0);
 }
 
 fn hpLoCoverage(rawCoverage: f32) -> f32 {
@@ -194,28 +186,6 @@ fn anvilFootprintBoost(h01: f32, typeMix: f32) -> f32 {
   return 1.0 + anvil * 0.9;
 }
 
-fn layerSupport(worldPos: vec3f, baseM: f32, topM: f32, densScale: f32, w: vec4f) -> vec4f {
-  if (densScale <= 1e-4 || topM <= baseM) {
-    return vec4f(0.0);
-  }
-  let alt = altitude(worldPos);
-  let h01 = saturate((alt - baseM) / max(1.0, topM - baseM));
-  let hFade = softstep(0.0, 0.1, h01) * (1.0 - softstep(0.86, 1.0, h01));
-  if (hFade <= 0.0) {
-    return vec4f(0.0);
-  }
-  let typeMix = selectedCloudType(w);
-  let cov = coverageSignal(w) * anvilFootprintBoost(h01, typeMix);
-  let heightScale = shapeAlteringSemiCircle(h01, -0.12);
-  let factor = 1.0 - U.coverage * heightScale;
-  let filterWidth = mix(0.62, 0.38, typeMix);
-  let supportWeather = remapClamped(cov, factor, factor + filterWidth);
-  let supportWeatherSoft = supportWeather * supportWeather * (3.0 - 2.0 * supportWeather);
-  let profile = verticalProfile(h01, typeMix);
-  let support = supportWeatherSoft * profile * densScale * hFade;
-  return vec4f(support, typeMix, h01, densScale);
-}
-
 fn heroSupport(worldPos: vec3f) -> vec4f {
   if (U.hero0.w < 0.5) {
     return vec4f(0.0);
@@ -296,10 +266,10 @@ fn cloudFromShape(
   densScale: f32
 ) -> f32 {
   var bottomFade = 1.0;
-  if (U.hpCore1.y > 0.0) {
+  if (U.hpLow1.y > 0.0) {
     bottomFade = pow(
-      saturate(localHeight / U.hpCore1.y),
-      max(U.hpCore1.z, 0.01)
+      saturate(localHeight / U.hpLow1.y),
+      max(U.hpLow1.z, 0.01)
     );
   }
   let shape = mix(1.0, baseShape, bottomFade);
@@ -320,21 +290,21 @@ fn cloudFromShape(
   erodedB *= heightGradient;
   erodedW *= heightGradient;
 
-  let threshold = (1.0 - saturate(densityCoverage)) + U.hpCore0.x;
+  let threshold = (1.0 - saturate(densityCoverage)) + U.hpLow0.x;
   let hiAInverseWeight = 1.0 - pow(saturate(U.hpDensityPost0.x), max(U.hpDensityPost0.y, 0.01));
-  let edgeSoftness = max(U.hpCore0.z * hiAInverseWeight, 0.001);
-  let wispyThreshold = threshold - U.hpCore0.y;
+  let edgeSoftness = max(U.hpLow0.z * hiAInverseWeight, 0.001);
+  let wispyThreshold = threshold - U.hpLow0.y;
   let densB = remapClamped(erodedB, threshold, threshold + edgeSoftness);
   var densW = remapClamped(erodedW, wispyThreshold, wispyThreshold + edgeSoftness);
 
-  let wispyT = saturate((normalizedHeight - U.hpCore0.w) / max(1.0 - U.hpCore0.w, 0.001));
-  densW *= pow(max(0.0, 1.0 - wispyT), max(U.hpCore1.x * 10.0, 0.01));
+  let wispyT = saturate((normalizedHeight - U.hpLow0.w) / max(1.0 - U.hpLow0.w, 0.001));
+  densW *= pow(max(0.0, 1.0 - wispyT), max(U.hpLow1.x * 10.0, 0.01));
 
   let coreMix = smoothstep(0.0, max(U.wispyEdgeWidth, 0.001), densB);
   return mix(densW, densB, coreMix) * densScale;
 }
 
-fn evaluateLayer(
+fn evaluateLowCloudLayer(
   worldPos: vec3f,
   baseM: f32,
   topM: f32,
@@ -364,23 +334,13 @@ fn evaluateLayer(
     return;
   }
 
-  let covRaw = coverageSignal(w) * anvilFootprintBoost(h01, typeMix);
-  let heightScale = shapeAlteringSemiCircle(h01, -0.12);
-  let factor = 1.0 - U.coverage * heightScale;
-  let filterWidth = mix(0.62, 0.38, typeMix);
-  var supportCoverage = remapClamped(covRaw, factor, factor + filterWidth);
-  supportCoverage = supportCoverage * supportCoverage * (3.0 - 2.0 * supportCoverage);
-  var densityCoverage = supportCoverage;
-  var scStrength = 0.0;
+  var densityCoverage = hpLoCoverage(w.r);
+  let scStrength = saturate(U.hpSc0.x * w.b);
   var scCell = 1.0;
-  if (U.debugFlags.w == 1u) {
-    densityCoverage = hpLoCoverage(w.r);
-    scStrength = saturate(U.hpSc0.x * w.b);
-    if (scStrength > 0.0) {
-      scCell = saturate(textureSampleLevel(scCellTex, weatherSamp, weatherUv(worldPos) * U.hpSc2.xy, 0.0).r * U.hpSc1.y);
-      let scCoverage = saturate(pow(saturate(w.r), max(U.hpSc1.w, 0.001)) * U.hpSc1.z);
-      densityCoverage = mix(densityCoverage, scCoverage * scCell, scStrength);
-    }
+  if (scStrength > 0.0) {
+    scCell = saturate(textureSampleLevel(scCellTex, weatherSamp, weatherUv(worldPos) * U.hpSc2.xy, 0.0).r * U.hpSc1.y);
+    let scCoverage = saturate(pow(saturate(w.r), max(U.hpSc1.w, 0.001)) * U.hpSc1.z);
+    densityCoverage = mix(densityCoverage, scCoverage * scCell, scStrength);
   }
   *outDensityCoverage = densityCoverage;
   let heightCoverage = hpLoHeightCoverage(w.r);
@@ -391,11 +351,9 @@ fn evaluateLayer(
   let localHeight = mix(heightForLut, scCompressedHeight, scStrength);
   let profiles = hpProfiles(localHeight, weatherUv(worldPos));
   let profile = mix(hpTypeValue(profiles, typeMix), profiles.r, scStrength);
-  let modelSupportCoverage = select(supportCoverage, densityCoverage, U.debugFlags.w == 1u);
-  let support = modelSupportCoverage * profile * densScale;
+  let support = densityCoverage * profile * densScale;
   *outSupport = support;
-  let coverageGate = select(0.001, 0.1, U.debugFlags.w == 1u);
-  if (densityCoverage < coverageGate || profile <= 0.0) {
+  if (densityCoverage < 0.1 || profile <= 0.0) {
     *outAfterShape = 0.0;
     *outDensity = 0.0;
     return;
@@ -424,7 +382,7 @@ fn distanceFade(worldPos: vec3f) -> f32 {
   return 1.0 - softstep(maxD * 0.82, maxD, d);
 }
 
-fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensitySample {
+fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensitySample {
   let edgeFade = distanceFade(worldPos);
   if (edgeFade <= 0.0) {
     return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
@@ -443,7 +401,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
 
   if (U.layer0.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLayer(worldPos, U.layer0.x, U.layer0.y, U.layer0.z, U.layerShapeDetail0.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLowCloudLayer(worldPos, U.layer0.x, U.layer0.y, U.layer0.z, U.layerShapeDetail0.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     if (d >= bestDens) {
       bestSupport = s; bestAfter = a; bestDens = d; bestType = t; bestH = h;
@@ -453,7 +411,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   }
   if (U.layer1.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLayer(worldPos, U.layer1.x, U.layer1.y, U.layer1.z, U.layerShapeDetail1.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLowCloudLayer(worldPos, U.layer1.x, U.layer1.y, U.layer1.z, U.layerShapeDetail1.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     bestSupport = max(bestSupport, s);
     if (d > bestDens) {
@@ -462,7 +420,7 @@ fn evaluateSculpted(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   }
   if (U.layer2.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLayer(worldPos, U.layer2.x, U.layer2.y, U.layer2.z, U.layerShapeDetail2.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLowCloudLayer(worldPos, U.layer2.x, U.layer2.y, U.layer2.z, U.layerShapeDetail2.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     bestSupport = max(bestSupport, s);
     if (d > bestDens) {

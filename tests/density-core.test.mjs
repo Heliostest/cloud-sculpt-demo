@@ -282,7 +282,7 @@ test('HP wispy selection happens after thresholding and is limited by billowy de
   assert.equal(smoothstep(0, width, 0.8), 1);
 });
 
-test('HP core reference remains finite across representative density inputs', () => {
+test('HP low-cloud core reference remains finite across representative density inputs', () => {
   const base = {
     bottomSmoothHeight: 0.14,
     bottomSmoothPow: 1.4,
@@ -309,12 +309,12 @@ test('HP core reference remains finite across representative density inputs', ()
   }
 });
 
-test('HP low-cloud coverage is independent from demo meso', () => {
+test('HP low-cloud coverage depends only on weather R, not reserved alpha', () => {
   const hpCoverage = (raw, intensity, contrast) => saturate(Math.pow(saturate(raw), Math.max(contrast, 0.001)) * intensity);
   const raw = 0.57;
   const expected = hpCoverage(raw, 1.2, 1.4);
-  for (const ignoredMeso of [0, 0.25, 0.75, 1]) {
-    void ignoredMeso;
+  for (const reservedAlpha of [0, 0.25, 0.75, 1]) {
+    void reservedAlpha;
     assert.equal(hpCoverage(raw, 1.2, 1.4), expected);
   }
 });

@@ -1,18 +1,18 @@
 # cloud-sculpt-demo 与 HPVolumeCloud 密度对齐路线图
 
-> 核查基线：2026-07-29 当前工作树。本文只审计并规划密度生成；光照、散射积分和 HDRP 接入不在本轮范围内。
+> 初始核查基线：2026-07-29 工作树。第 1–5 节保留当时的差异记录；完成状态以第 6–9 节和 2026-07-31 的当前代码为准。当前运行时已经收口为 `LowCloud + HighCloud`，不存在密度模式选择器。
 
 ## 1. 结论摘要
 
-原差异表的方向基本正确，但不能据此认定两边已经等价。最重要的修正是：
+原差异表的方向基本正确，但在初始基线中不能据此认定两边已经等价。最重要的修正是：
 
 1. `cloudFromShape` 内部已经采用 `baseShape → detail erosion → × heightGradient → coverage threshold → Billowy/Wispy mix` 的局部顺序；整个密度调用链并未对齐。
-2. demo 传给阈值阶段的 `cov` 已经过 `coverageSignal → U.coverage/heightScale 门控 → remap → smooth`。HP 使用的是经 Lo coverage 强度/对比度调整、但没有经过这套 support remap 的 coverage。两者即使都写 `1 - coverage`，输入语义也不同。
+2. 初始 demo 传给阈值阶段的 `cov` 曾经过额外 support remap；HP 使用的是经 Lo coverage 强度/对比度调整、但没有经过这套 remap 的 coverage。该差异现已通过删除第二套 coverage 路径解决。
 3. demo 的 detail 资源物理上仍是 RGBA8 3D 纹理，不是 RG 纹理；只是 shader 只消费 R/G。B 中的 fine noise 当前未使用，A 固定为 1。
 4. HP 的 `DensityRemap` 本身不 clamp，调用点再 `saturate`；demo 的 `densityRemap` 内部调用带分母保护的 `remapClamped`。常规参数下结果等价，边界条件并非逐位等价。
 5. 除原表所列项目外，尚有 weather 通道、coverage 预处理、早退阈值、shape 通道合成、采样 LOD、云型体系、分层合成、密度输出范围、独立高空云路径等关键差异。
 
-因此，当前状态应描述为：**demo 已借用并局部对齐 HP 的 Billowy/Wispy 侵蚀拓扑，但仍是 three-geospatial 风格 support 与 demo 自有多层/hero 逻辑包裹的混合模型。**
+因此，初始状态应描述为：**demo 已借用并局部对齐 HP 的 Billowy/Wispy 侵蚀拓扑，但仍是 three-geospatial 风格 support 与 demo 自有多层/hero 逻辑包裹的混合模型。** 当前实现已经移除这套 support 密度入口。
 
 ## 2. 对比范围与源码锚点
 
@@ -20,13 +20,13 @@
 - HP 通用 remap：[`DensityRemap`](../HPVolumeCloud/VolumetricClouds.hlsl#L365)
 - HP 低云侵蚀与阈值：[`VolumetricClouds.hlsl` 571 行附近](../HPVolumeCloud/VolumetricClouds.hlsl#L571)
 - HP 独立高空云入口：[`EvaluateHighCloudDensity`](../HPVolumeCloud/VolumetricClouds.hlsl#L621)
-- demo 密度入口：[`evaluateSculpted`](shaders/density.wgsl#L208)
-- demo 单层入口：[`evaluateLayer`](shaders/density.wgsl#L148)
+- demo 低云入口：[`evaluateLowCloud`](shaders/density.wgsl)
+- demo 低云单层入口：[`evaluateLowCloudLayer`](shaders/density.wgsl)
 - demo 侵蚀核心：[`cloudFromShape`](shaders/density.wgsl#L105)
 - demo remap helper：[`common.wgsl`](shaders/common.wgsl#L46)
 - demo shape/detail 纹理生成：[`noiseAtlasGen.ts`](src/noiseAtlasGen.ts#L96)
 
-本文基于当前未提交的 `shaders/density.wgsl` 与 `src/params.ts` 内容核查；后续实现时，先确认这两处用户改动仍是预期基线，不覆盖或回滚它们。
+以下逐项表格记录 2026-07-29 初始差异，用于解释路线图决策，不代表 2026-07-31 的最终实现状态。
 
 ## 3. 对原差异表的逐项核实
 
@@ -34,7 +34,7 @@
 | --- | --- | --- |
 | 蚀刻函数 | 基本正确，需补边界差异 | HP 的五参数 `DensityRemap` 只做线性映射，不 clamp、不保护 `b == a`；实际调用外包 `saturate`。demo 的二参数 `densityRemap(d, low)` 固定映射到 `[0,1]`，内部 clamp，并用 `max(1e-5, 1-low)` 防止除零。demo GUI 允许组合强度令 `low >= 1`，所以这不只是理论边界。 |
 | 蚀刻公式 | 局部等价 | HP 为 `saturate(DensityRemap(baseShape, detail * strength, 1, 0, 1))`；demo 为 `densityRemap(shape, det * detailStr)`。在 `low < 1` 时代数等价。demo 的 `shape` 还受 `shapeAmount` 和底部 fade 影响。 |
-| 调用位置 | 正确 | HP 在 `EvaluateCloudProperties`，demo 在 `cloudFromShape`；demo 外层实际入口是 `evaluateSculpted → evaluateLayer → cloudFromShape`。 |
+| 调用位置 | 正确 | HP 在 `EvaluateCloudProperties`，初始 demo 在 `cloudFromShape`；当前外层入口是 `evaluateLowCloud → evaluateLowCloudLayer → cloudFromShape`。 |
 | 流程顺序 | 仅局部正确 | `cloudFromShape` 内顺序已对齐。全链路中 demo 先把 weather 做 support remap/smooth，且 profile/hFade 参与 support；HP 则先分别计算 coverage、高度变换、LUT 与 Sc，再进入相同侵蚀拓扑。 |
 | baseShape | 基本正确，有遗漏 | HP 只取 `_Worley128RGBA.r` 后 `pow(abs(r), 0.6)`。demo 的 `sampleShape` 先做 `0.88R + 0.10G + 0.02B`，再以 `max(1e-4, sampleShape)` 为底做 `pow(..., 0.6)`，并用 `shapeAmount × layerShapeAmount × mix(0.85,0.65,typeMix)` 混回 1。 |
 | 底平滑 | 公式方向正确 | HP 的高度与幂均为参数，且高度基于经过 coverage 顶部拉伸/Sc 压缩后的 `localHeight`。demo 写死 `h01/0.14` 与 `pow(...,1.4)`，基于每层原始归一化高度。两边都把 base shape 拉向 1，并把 detail 强度乘 fade。 |
@@ -59,7 +59,7 @@ HP 低云 weather 通道是 `R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask, A=reserve
 - Cover 路径：`pow(raw, contrast) × intensity`，参与密度阈值。
 - Height 路径：另一组 contrast/intensity，参与 coverage 驱动的云顶拉伸。
 
-demo 的 low weather 已恢复 HP RGB 布局：`R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask`；A 仅作为 `hpCore` support 诊断路径的 meso 扩展。`coverageSignal` 在诊断路径合成 R/A，随后又经过全局 `U.coverage`、高度半圆、type filter width、remap 和 smooth；正式 `hpLowCloud` 路径保持从 R 读取独立 density coverage。
+demo 的 low weather 已恢复 HP RGBA 布局：`R=LoCoverage, G=Cu/Tcu/Cb type, B=ScMask, A=reserved`。低云只有一个正式 coverage 入口，直接从 R 读取并执行 HP Cover contrast/intensity；旧的 R/A meso support 旁路已经删除。
 
 ### 4.2 高度体系与云型体系不同
 
@@ -110,30 +110,29 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 固定至少四个相机/天气预设：侧视 Cu、斜视 Cb、正俯视、detail-off。
 - [x] 保存当前 Final、Support、AfterShape、FinalDensity 截图及参数 JSON。
 - [x] 增加纯数值 debug 输出或小型 CPU reference test，覆盖 `densityRemap`、阈值、wispy reach、混合和底部 fade。
-- [x] 对齐期间使用 `densityModel = hpCore | hpLowCloud` 分离核心公式与完整低云语义；L2 完成后删除旧 demo 内核，不再提供回退入口。
+- [x] 对齐期间短暂分离侵蚀核心与完整低云语义；L2 完成后收口为唯一的 `LowCloud` evaluator，不再提供模式选择或回退入口。
 
 验收：能判断一次改动发生在 weather/support、shape、detail、threshold 还是 post-density，而不是只看最终彩图猜原因。
 
 ### 阶段 1：先实现 L1 的参数和公式等价
 
 - [x] 把 demo 的 `densityThreshold`、`wispyReach`、`edgeSoftness`、`wispyTopHeight`、`wispyTopHardness` 与 `bottomSmoothHeight/Pow` 拆成独立参数。
-- [x] 在 `hpCore` 路径中移除隐式耦合：`wispyReach = edgeWidth*0.9`、blend width 的 0.08 下限、写死的 0.55/2.2、type 驱动 edge softness。
+- [x] 在低云侵蚀核心中移除隐式耦合：`wispyReach = edgeWidth*0.9`、blend width 的 0.08 下限、写死的 0.55/2.2、type 驱动 edge softness。
 - [x] 明确 remap 边界约定：推荐保留 WebGPU 安全分母，但测试应验证常规域内与 HP `saturate(DensityRemap(...))` 一致；对 `low >= 1` 规定返回 0，避免 NaN。
 - [x] 暂时保留 demo 的 `detailFade`，但把它定义为核心外部的采样质量权重，确保设为 1 时可做 HP 数值对照。
 - [x] 从 HP 路径移除 demo 特有的 `topW` detail 加成和旧 type 线性加成；旧实现随 legacy 内核一起删除。
 
 验收：给定固定标量输入的 CPU reference 与 WGSL 公式误差不超过 `1e-5`；`detail=0` 时 Billowy/Wispy 均退化到相同 base path。
 
-### 阶段 2：拆开 support coverage 与 HP density coverage
+### 阶段 2：收口 HP density coverage
 
-- [x] 将当前 `cov` 重命名为 `supportCoverage`，避免继续把它误认为 HP coverage。
-- [x] 直接从 weather R 读取独立 `densityCoverageRaw`；不要从已经混入 A/meso 的 `coverageSignal` 旁路。`coverageSignal` 只保留给 `hpCore` support 诊断路径。
+- [x] 直接从 weather R 读取 `densityCoverageRaw`，不再从 A/meso 或旧 support remap 旁路。
 - [x] 添加 HP 风格 Cover contrast/intensity；另设 Height contrast/intensity，为后续 cloud-top 变换预留。
-- [x] `cloudFromShape`/新 `hpLowCloudCore` 只接收 `densityCoverage`，阈值使用 `(1-densityCoverage)+densityThreshold`。
-- [x] 保留 `supportCoverage` 供 debug、空域提示和 `hpCore` 诊断使用；确认它不再暗中进入正式 `hpLowCloud` 输入。
+- [x] `cloudFromShape` 只接收 `densityCoverage`，阈值使用 `(1-densityCoverage)+densityThreshold`。
+- [x] 删除旧 `supportCoverage`、全局 coverage、weather exponent 和 meso 参数；Support debug 直接显示正式低云 coverage/profile 结果。
 - [x] 加入与 HP `CLOUD_DENSITY_TRESHOLD=0.1` 对应的低云 coverage 门控测试；若要测试整个函数早退，必须固定 `needHighCloud=false`。
 
-验收：扫描 raw coverage 从 0 到 1 时，阈值和最终密度曲线与 HP reference 同向且断点一致；改变 support filter width 不再改变 `hpCore` 的 density coverage。
+验收：扫描 raw coverage 从 0 到 1 时，阈值和最终密度曲线与 HP reference 同向且断点一致；shader 中不存在可切换的第二套 coverage 语义。
 
 ### 阶段 3：对齐 base shape 与 detail 资源语义
 
@@ -231,7 +230,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 
 #### 后续形态改进 4：恢复天气图径向 LUT、cloud type 和 Sc 空间变化
 
-- [x] low weather 通道恢复为 HP 的 `R=coverage / G=cloud type / B=Sc mask`；demo 原有 meso 移到 A，且只由 `hpCore` support 诊断路径消费。
+- [x] low weather 通道恢复为 HP 的 `R=coverage / G=cloud type / B=Sc mask / A=reserved`；demo 原有 meso support 通道删除。
 - [x] 取消 `hp-ocean-day` 的固定 `cloudType=0.2`，改为逐像素读取 weather G；Sc 改为 `0.35 × weather B`，mask 为 0 的位置保持无变化。
 - [x] CloudLut 继续按 `(localHeight, saturate(length(weatherUV-0.5)*2))` 采样。天气中心从旧基线 `(210km,210km)` 微调为 `(205km,205km)`，保留天气相位，并让长视线进入径向坐标的未饱和区间。
 - [x] `Weather` 调试视图直接显示 HP RGB，并增加天气通道、Cu/Tcu/Cb 插值、Sc mask 乘法和径向坐标范围测试。
@@ -241,7 +240,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 - [x] 保留阶段 3 的低频坐标扭曲与主采样；第二次 base-shape 采样采用独立错切、`37°` 额外旋转、`1.618034` 非整数频率比和固定相位偏移。
 - [x] 第二层仅在相机水平距离 `18–90 km` 渐入，默认最大权重 `0.24`；近场与权重为 0 时严格保持原单采样路径，并跳过第二次纹理读取。
 - [x] 增加 GUI、URL 和运行时 dataset 参数，允许单独调整比例、旋转和最大权重；增加主纹理周期无法同时命中第二层周期、远场渐入边界的 CPU 回归测试。
-- [x] 固定 `hp-ocean-day` 和 `top-density&model=hpLowCloud` 对比 `shapeSecondWeight=0/0.24`：变化集中在远处云带，近景构图保持；无 WGSL/WebGPU 错误。俯视压力场景约由 `64.0 ms` 增至 `68.1 ms`，主场景保持在 `48–49 ms` 样本波动范围。
+- [x] 固定 `hp-ocean-day` 和 `top-density` 对比 `shapeSecondWeight=0/0.24`：变化集中在远处云带，近景构图保持；无 WGSL/WebGPU 错误。俯视压力场景约由 `64.0 ms` 增至 `68.1 ms`，主场景保持在 `48–49 ms` 样本波动范围。
 
 实现边界：这是为了补偿 demo 生成式 128³ shape atlas 的远场重复而加入的显式扩展，不是 `VolumetricClouds.hlsl` 原公式。它不改变天气图、HP DensityRemap、detail 侵蚀、Sc 或光学积分。
 
@@ -275,7 +274,7 @@ npm run build
 L1 完成需同时满足：
 
 - 同输入下 remap、阈值、wispy mask、Billowy/Wispy mix 与 HP reference 一致；
-- `hpCore` 与 `hpLowCloud` 可明确切换，且不存在 legacy 密度入口；
+- 低云只有一个 `LowCloud` evaluator，且不存在模式选择或 legacy 密度入口；
 - 没有 NaN、support 外造云或纹理通道错接。
 
 L2 完成需额外满足：
@@ -292,4 +291,4 @@ L3 完成需额外满足：
 
 ## 9. 当前建议的下一步
 
-阶段 0–8 已完成。所有正式场景统一使用 `hpLowCloud`，旧 demo 密度内核、shader 分支和专用 detail 资源已删除；剩余工作属于调参、更多硬件上的性能采样，或不在本路线图范围内的完整高云光照模型。
+阶段 0–8 已完成。运行时结构统一为 `LowCloud + HighCloud`：Cu/TCu/Cb/Sc 由低云天气图参数化，As/Ac 由独立高云 evaluator 参数化；旧密度模式、shader 分支和专用 detail 资源已删除。剩余工作属于调参、更多硬件上的性能采样，或不在本路线图范围内的完整高云光照模型。

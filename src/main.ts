@@ -1,7 +1,12 @@
 import { createGui } from './gui';
-import { createDefaultParams, isDebugMode, isToneMapper, type CameraPreset } from './params';
+import { createDefaultParams, isDebugMode, isToneMapper, type CameraPreset, type DemoParams } from './params';
 import { createRenderer, type CameraState } from './renderer';
-import { applyValidationScenario, isValidationScenarioName, VALIDATION_SCENARIOS } from './validationScenarios';
+import {
+  applyCloudPreset,
+  CLOUD_PRESETS,
+  resolvePresetRequest,
+  type CloudPresetName,
+} from './cloudPresets';
 
 type Orbit = {
   yaw: number;
@@ -13,7 +18,7 @@ type Orbit = {
   fovYDeg: number;
 };
 
-function applyPreset(preset: CameraPreset, cam: Orbit): void {
+function applyCameraPreset(preset: CameraPreset, cam: Orbit): void {
   if (preset === 'side') {
     // 看向云环上一点，沿层内切向平视，避免对着中心空洞
     cam.targetX = 10000;
@@ -64,13 +69,63 @@ function orbitToCamera(yaw: number, pitch: number, dist: number, target: [number
   };
 }
 
+function syncParameterDataset(params: DemoParams): void {
+  const data = document.body.dataset;
+  data.noiseMipOffset = String(params.noiseMipOffset);
+  data.erosionMipOffset = String(params.erosionMipOffset);
+  data.forceSimpleMode = String(params.forceSimpleMode);
+  data.detailFadeEnabled = String(params.detailFadeEnabled);
+  data.highCloudEnabled = String(params.highCloudEnabled);
+  data.highCloudType = String(params.highCloudTypeOverride);
+  data.highDensityThreshold = String(params.highDensityThreshold);
+  data.highDensitySoftness = String(params.highDensitySoftness);
+  data.highViewAbsorption = String(params.highViewAbsorption);
+  data.highLightAbsorption = String(params.highLightAbsorption);
+  data.highCoverAbsorption = String(params.highCoverAbsorptionStrength);
+  data.toneMapper = params.toneMapper;
+  data.skyIntensity = String(params.skyIntensity);
+  data.skyZenith = [params.skyZenithR, params.skyZenithG, params.skyZenithB].join(',');
+  data.skyHorizon = [params.skyHorizonR, params.skyHorizonG, params.skyHorizonB].join(',');
+  data.skyHorizonExponent = String(params.skyHorizonExponent);
+  data.colorSaturation = String(params.colorSaturation);
+  data.colorContrast = String(params.colorContrast);
+  data.scStrength = String(params.scStrength);
+  data.cloudTypeOverride = String(params.cloudTypeOverride);
+  data.loCovCoverIntensity = String(params.loCovCoverIntensity);
+  data.loCovCoverContrast = String(params.loCovCoverContrast);
+  data.densityMultiplier = String(params.densityMultiplier);
+  data.weatherMapCenter = [params.weatherMapCenterX, params.weatherMapCenterZ].join(',');
+  data.weatherMapWorldSizeKm = String(params.weatherMapWorldSizeKm);
+  data.hpShapeScale = [params.hpShapeScaleX, params.hpShapeScaleY, params.hpShapeScaleZ].join(',');
+  data.hpShapeTransform = [params.hpShapeRotationDeg, params.hpShapeWarpScaleKm, params.hpShapeWarpStrengthM].join(',');
+  data.hpShapeSecondary = [params.hpShapeSecondaryScaleRatio, params.hpShapeSecondaryRotationDeg, params.hpShapeSecondaryWeight].join(',');
+  data.hpDetailScale = [params.hpDetailScaleX, params.hpDetailScaleY, params.hpDetailScaleZ].join(',');
+  data.detailStrength = String(params.detailStrength);
+  data.hpDetailWeights = [params.billowyLowWeight, params.billowyHighWeight, params.wispyLowWeight, params.wispyHighWeight].join(',');
+  data.hpWispyBlend = [params.wispyEdgeWidth, params.wispyReach].join(',');
+  data.hpCoverTop = [params.loCoverTopStrength, params.loCoverTopMax, params.loCoverTopCurvePow].join(',');
+  data.hpLightingEnabled = String(params.hpLightingEnabled);
+  data.hpForwardEccentricity = String(params.forwardEccentricity);
+  data.hpBackwardEccentricity = String(params.backwardEccentricity);
+  data.hpMsAttenuation = String(params.msAttenuation);
+  data.hpMsContribution = String(params.msContribution);
+  data.hpMsEccentricity = String(params.msEccentricity);
+  data.hpAmbientTopMultiplier = String(params.ambientTopMultiplier);
+  data.hpAmbientBottomMultiplier = String(params.ambientBottomMultiplier);
+  data.hpAoUpwardScale = String(params.aoUpwardScale);
+  data.hpScatterSourceOdScale = String(params.scatterSourceODScale);
+  data.hpScatterSourceCurvePow = String(params.scatterSourceCurvePow);
+}
+
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement;
   const params = createDefaultParams();
   const query = new URLSearchParams(window.location.search);
-  const scenarioName = query.get('scenario');
-  const scenario = isValidationScenarioName(scenarioName) ? VALIDATION_SCENARIOS[scenarioName] : null;
-  if (scenario) applyValidationScenario(params, scenario);
+  const presetRequest = resolvePresetRequest(query);
+  let currentPresetName = presetRequest.name;
+  let currentPreset = CLOUD_PRESETS[currentPresetName];
+  const validationMode = presetRequest.validation;
+  applyCloudPreset(params, currentPreset);
   const scStrength = Number(query.get('sc'));
   if (query.has('sc') && Number.isFinite(scStrength)) params.scStrength = Math.max(0, Math.min(1, scStrength));
   const debugMode = query.get('debug');
@@ -191,52 +246,12 @@ async function main(): Promise<void> {
     targetZ: 0,
     fovYDeg: 55,
   };
-  applyPreset(scenario?.camera ?? 'oblique45', orbit);
-  document.body.dataset.validationScenario = scenarioName ?? 'interactive';
-  document.body.dataset.noiseMipOffset = String(params.noiseMipOffset);
-  document.body.dataset.erosionMipOffset = String(params.erosionMipOffset);
-  document.body.dataset.forceSimpleMode = String(params.forceSimpleMode);
-  document.body.dataset.detailFadeEnabled = String(params.detailFadeEnabled);
-  document.body.dataset.highCloudEnabled = String(params.highCloudEnabled);
-  document.body.dataset.highCloudType = String(params.highCloudTypeOverride);
-  document.body.dataset.highDensityThreshold = String(params.highDensityThreshold);
-  document.body.dataset.highDensitySoftness = String(params.highDensitySoftness);
-  document.body.dataset.highViewAbsorption = String(params.highViewAbsorption);
-  document.body.dataset.highLightAbsorption = String(params.highLightAbsorption);
-  document.body.dataset.highCoverAbsorption = String(params.highCoverAbsorptionStrength);
-  document.body.dataset.toneMapper = params.toneMapper;
-  document.body.dataset.skyIntensity = String(params.skyIntensity);
-  document.body.dataset.skyZenith = [params.skyZenithR, params.skyZenithG, params.skyZenithB].join(',');
-  document.body.dataset.skyHorizon = [params.skyHorizonR, params.skyHorizonG, params.skyHorizonB].join(',');
-  document.body.dataset.skyHorizonExponent = String(params.skyHorizonExponent);
-  document.body.dataset.colorSaturation = String(params.colorSaturation);
-  document.body.dataset.colorContrast = String(params.colorContrast);
-  document.body.dataset.scStrength = String(params.scStrength);
-  document.body.dataset.cloudTypeOverride = String(params.cloudTypeOverride);
-  document.body.dataset.loCovCoverIntensity = String(params.loCovCoverIntensity);
-  document.body.dataset.loCovCoverContrast = String(params.loCovCoverContrast);
-  document.body.dataset.densityMultiplier = String(params.densityMultiplier);
-  document.body.dataset.weatherMapCenter = [params.weatherMapCenterX, params.weatherMapCenterZ].join(',');
-  document.body.dataset.weatherMapWorldSizeKm = String(params.weatherMapWorldSizeKm);
-  document.body.dataset.hpShapeScale = [params.hpShapeScaleX, params.hpShapeScaleY, params.hpShapeScaleZ].join(',');
-  document.body.dataset.hpShapeTransform = [params.hpShapeRotationDeg, params.hpShapeWarpScaleKm, params.hpShapeWarpStrengthM].join(',');
-  document.body.dataset.hpShapeSecondary = [params.hpShapeSecondaryScaleRatio, params.hpShapeSecondaryRotationDeg, params.hpShapeSecondaryWeight].join(',');
-  document.body.dataset.hpDetailScale = [params.hpDetailScaleX, params.hpDetailScaleY, params.hpDetailScaleZ].join(',');
-  document.body.dataset.detailStrength = String(params.detailStrength);
-  document.body.dataset.hpDetailWeights = [params.billowyLowWeight, params.billowyHighWeight, params.wispyLowWeight, params.wispyHighWeight].join(',');
-  document.body.dataset.hpWispyBlend = [params.wispyEdgeWidth, params.wispyReach].join(',');
-  document.body.dataset.hpCoverTop = [params.loCoverTopStrength, params.loCoverTopMax, params.loCoverTopCurvePow].join(',');
-  document.body.dataset.hpLightingEnabled = String(params.hpLightingEnabled);
-  document.body.dataset.hpForwardEccentricity = String(params.forwardEccentricity);
-  document.body.dataset.hpBackwardEccentricity = String(params.backwardEccentricity);
-  document.body.dataset.hpMsAttenuation = String(params.msAttenuation);
-  document.body.dataset.hpMsContribution = String(params.msContribution);
-  document.body.dataset.hpMsEccentricity = String(params.msEccentricity);
-  document.body.dataset.hpAmbientTopMultiplier = String(params.ambientTopMultiplier);
-  document.body.dataset.hpAmbientBottomMultiplier = String(params.ambientBottomMultiplier);
-  document.body.dataset.hpAoUpwardScale = String(params.aoUpwardScale);
-  document.body.dataset.hpScatterSourceOdScale = String(params.scatterSourceODScale);
-  document.body.dataset.hpScatterSourceCurvePow = String(params.scatterSourceCurvePow);
+  applyCameraPreset(currentPreset.camera, orbit);
+  document.body.dataset.cloudPreset = currentPresetName;
+  document.body.dataset.presetVersion = String(currentPreset.version);
+  document.body.dataset.validationMode = String(validationMode);
+  document.body.dataset.validationScenario = validationMode ? currentPresetName : 'interactive';
+  syncParameterDataset(params);
 
   let dragging = false;
   let lastX = 0;
@@ -268,23 +283,42 @@ async function main(): Promise<void> {
     { passive: false },
   );
 
-  const gui = createGui(params, {
-    onPreset(p) {
-      applyPreset(p, orbit);
-    },
-  });
-  if (scenario) gui.hide();
-
   let windOffset: [number, number] = [0, 0];
   let last = performance.now();
-  let time = 0;
+  let time = currentPreset.frozenTime;
   let validationReady = false;
+  let gui: ReturnType<typeof createGui>;
+  gui = createGui(params, {
+    initialCloudPreset: currentPresetName,
+    onCloudPreset(presetName: CloudPresetName) {
+      currentPresetName = presetName;
+      currentPreset = CLOUD_PRESETS[presetName];
+      applyCloudPreset(params, currentPreset);
+      applyCameraPreset(currentPreset.camera, orbit);
+      windOffset = [0, 0];
+      time = currentPreset.frozenTime;
+      last = performance.now();
+      document.body.dataset.cloudPreset = currentPresetName;
+      document.body.dataset.presetVersion = String(currentPreset.version);
+      document.body.dataset.validationScenario = 'interactive';
+      syncParameterDataset(params);
+      const url = new URL(window.location.href);
+      url.search = '';
+      if (presetName !== 'default') url.searchParams.set('preset', presetName);
+      window.history.replaceState(null, '', url);
+      for (const controller of gui.controllersRecursive()) controller.updateDisplay();
+    },
+    onCameraPreset(preset) {
+      applyCameraPreset(preset, orbit);
+    },
+  });
+  if (validationMode) gui.hide();
 
   function frame(now: number): void {
     const dt = Math.min(0.05, (now - last) / 1000);
-    const animationDt = scenario ? 0 : dt;
+    const animationDt = validationMode ? 0 : dt;
     last = now;
-    time = scenario?.frozenTime ?? time + dt;
+    time = validationMode ? currentPreset.frozenTime : time + dt;
 
     const ang = (params.windAngleDeg * Math.PI) / 180;
     const wx = Math.cos(ang) * params.windSpeed;
@@ -314,7 +348,7 @@ async function main(): Promise<void> {
     if (gpuTiming.averageGpuMs !== null) {
       document.body.dataset.gpuMs = gpuTiming.averageGpuMs.toFixed(3);
     }
-    if (!validationReady) {
+    if (validationMode && !validationReady) {
       validationReady = true;
       void renderer.device.queue.onSubmittedWorkDone().then(() => {
         document.body.dataset.renderReady = 'true';

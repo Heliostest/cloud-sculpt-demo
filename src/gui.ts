@@ -10,7 +10,6 @@ export function createGui(
   const gui = new GUI({ title: 'Cloud Sculpt' });
 
   const alignment = gui.addFolder('HP Alignment');
-  alignment.add(params, 'densityModel', ['hpLowCloud', 'hpCore']);
   alignment.add(params, 'densityThreshold', 0, 0.5, 0.005);
   alignment.add(params, 'wispyReach', 0, 0.5, 0.005);
   alignment.add(params, 'edgeSoftness', 0.001, 0.5, 0.005);
@@ -110,10 +109,6 @@ export function createGui(
   highCell.add(params, 'highHorizonEndKm', 1, 400, 1);
 
   const weather = gui.addFolder('Weather');
-  weather.add(params, 'coverage', 0.1, 1.0, 0.01);
-  weather.add(params, 'weatherExponent', 0.5, 3.0, 0.01);
-  weather.add(params, 'mesoStrength', 0, 1, 0.01);
-  weather.add(params, 'mesoContrast', 0.5, 3, 0.01);
   weather.add(params, 'weatherMapCenterX', -500000, 500000, 1000).name('map center X (m)');
   weather.add(params, 'weatherMapCenterZ', -500000, 500000, 1000).name('map center Z (m)');
   weather.add(params, 'weatherMapWorldSizeKm', 20, 1000, 10).name('map world size (km)');

@@ -17,7 +17,7 @@ import {
   generateShapeRGBA,
   generateVolumeMipChainRGBA,
 } from './noiseAtlasGen';
-import { DEBUG_MODE_INDEX, DENSITY_MODEL_INDEX, TONE_MAPPER_INDEX, type DemoParams } from './params';
+import { DEBUG_MODE_INDEX, TONE_MAPPER_INDEX, type DemoParams } from './params';
 
 const UNIFORM_SIZE = 880;
 
@@ -346,15 +346,15 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[20] = sunX / sl;
     f32[21] = sunY / sl;
     f32[22] = sunZ / sl;
-    f32[23] = params.coverage;
+    f32[23] = 0;
 
     f32[24] = params.weatherMapCenterX;
     f32[25] = params.weatherMapCenterZ;
     f32[26] = params.weatherMapWorldSizeKm * 1000;
-    f32[27] = params.weatherExponent;
+    f32[27] = 0;
 
-    f32[28] = params.mesoStrength;
-    f32[29] = params.mesoContrast;
+    f32[28] = 0;
+    f32[29] = 0;
     f32[30] = windOffset[0];
     f32[31] = windOffset[1];
 
@@ -439,15 +439,15 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     u32[88] = DEBUG_MODE_INDEX[params.debugMode];
     u32[89] = params.detailOff ? 1 : 0;
     u32[90] = params.lightSteps;
-    u32[91] = DENSITY_MODEL_INDEX[params.densityModel];
+    u32[91] = 0;
 
-    // hpCore0: densityThreshold, wispyReach, edgeSoftness, wispyTopHeight
+    // hpLow0: densityThreshold, wispyReach, edgeSoftness, wispyTopHeight
     f32[92] = params.densityThreshold;
     f32[93] = params.wispyReach;
     f32[94] = params.edgeSoftness;
     f32[95] = params.wispyTopHeight;
 
-    // hpCore1: wispyTopHardness, bottomSmoothHeight, bottomSmoothPow, typeOverride
+    // hpLow1: wispyTopHardness, bottomSmoothHeight, bottomSmoothPow, typeOverride
     f32[96] = params.wispyTopHardness;
     f32[97] = params.bottomSmoothHeight;
     f32[98] = params.bottomSmoothPow;

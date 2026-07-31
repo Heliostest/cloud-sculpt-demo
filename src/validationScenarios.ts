@@ -1,4 +1,4 @@
-import type { CameraPreset, DebugMode, DemoParams, DensityModel } from './params';
+import type { CameraPreset, DebugMode, DemoParams } from './params';
 
 type HpLightingFixture = Pick<
   DemoParams,
@@ -63,7 +63,6 @@ export interface ValidationScenario {
   detailOff: boolean;
   cloudTypeOverride: number;
   frozenTime: number;
-  densityModel: DensityModel;
   sunAzimuthDeg?: number;
   sunElevationDeg?: number;
   exposure?: number;
@@ -77,7 +76,6 @@ export interface ValidationScenario {
 export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScenario> = {
   'side-cu': {
     camera: 'side',
-    densityModel: 'hpLowCloud',
     debugMode: 'Final',
     detailOff: false,
     cloudTypeOverride: 0,
@@ -85,7 +83,6 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
   },
   'oblique-cb': {
     camera: 'oblique45',
-    densityModel: 'hpLowCloud',
     debugMode: 'Final',
     detailOff: false,
     cloudTypeOverride: 1,
@@ -93,7 +90,6 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
   },
   'oblique-tcu': {
     camera: 'oblique45',
-    densityModel: 'hpLowCloud',
     debugMode: 'Final',
     detailOff: false,
     cloudTypeOverride: 0.5,
@@ -101,7 +97,6 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
   },
   'top-density': {
     camera: 'top',
-    densityModel: 'hpLowCloud',
     debugMode: 'FinalDensity',
     detailOff: false,
     cloudTypeOverride: -1,
@@ -109,7 +104,6 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
   },
   'detail-off': {
     camera: 'oblique45',
-    densityModel: 'hpLowCloud',
     debugMode: 'Final',
     detailOff: true,
     cloudTypeOverride: -1,
@@ -121,7 +115,6 @@ export const VALIDATION_SCENARIOS: Record<ValidationScenarioName, ValidationScen
     detailOff: false,
     cloudTypeOverride: -1,
     frozenTime: 6,
-    densityModel: 'hpLowCloud',
     sunAzimuthDeg: 210,
     sunElevationDeg: 35,
     exposure: 0.45,
@@ -184,7 +177,6 @@ export function applyValidationScenario(params: DemoParams, scenario: Validation
   params.detailOff = scenario.detailOff;
   params.cloudTypeOverride = scenario.cloudTypeOverride;
   params.windSpeed = 0;
-  params.densityModel = scenario.densityModel;
   if (scenario.sunAzimuthDeg !== undefined) params.sunAzimuthDeg = scenario.sunAzimuthDeg;
   if (scenario.sunElevationDeg !== undefined) params.sunElevationDeg = scenario.sunElevationDeg;
   if (scenario.exposure !== undefined) params.exposure = scenario.exposure;

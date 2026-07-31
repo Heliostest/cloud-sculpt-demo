@@ -74,7 +74,7 @@ export const LOW_WEATHER_CHANNELS = {
   coverage: 0,
   cloudType: 1,
   scMask: 2,
-  meso: 3,
+  reserved: 3,
 } as const;
 
 export function generateWeatherRGBA(size = 512): Uint8Array {
@@ -97,13 +97,11 @@ export function generateWeatherRGBA(size = 512): Uint8Array {
       const type = Math.min(1, Math.max(0, typeBase * 0.85 + meso * 0.15));
       const scMask = Math.min(1, Math.max(0, (typeBase - 0.38) / 0.42));
       const i = (y * size + x) * 4;
-      // HP low-weather layout: R coverage, G cloud type, B Sc mask.
-      // A remains a demo-only meso signal for the legacy support path; HP
-      // density never consumes it as coverage, type, or Sc.
+      // HP low-weather layout: R coverage, G cloud type, B Sc mask, A reserved.
       data[i + LOW_WEATHER_CHANNELS.coverage] = Math.round(Math.min(1, Math.max(0, macro * 1.12 * edgeFade)) * 255);
       data[i + LOW_WEATHER_CHANNELS.cloudType] = Math.round(type * 255);
       data[i + LOW_WEATHER_CHANNELS.scMask] = Math.round(scMask * 255);
-      data[i + LOW_WEATHER_CHANNELS.meso] = Math.round(Math.min(1, Math.max(0, meso * 0.92 + 0.08)) * 255);
+      data[i + LOW_WEATHER_CHANNELS.reserved] = 0;
     }
   }
   return data;

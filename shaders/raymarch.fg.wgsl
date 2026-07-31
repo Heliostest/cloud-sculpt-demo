@@ -23,7 +23,7 @@ fn lowCloudLightOptics(pos: vec3f, dens0: f32) -> vec2f {
     if (i >= steps) { break; }
     t += stepLen;
     let p = pos + sun * t;
-    let s = evaluateSculpted(p, stepLen, false);
+    let s = evaluateLowCloud(p, stepLen, false);
     tau += s.density * U.optical.y * stepLen;
     stepLen *= 1.6;
   }
@@ -129,7 +129,7 @@ fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
   return vec4f(radiance, transmittance);
 }
 
-fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
+fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
   let topAlt = U.optical.w;
   var baseAlt = topAlt;
   if (U.layer0.w > 0.5) { baseAlt = min(baseAlt, U.layer0.x); }
@@ -158,7 +158,7 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   }
   if (debugMode == 5u) {
     let p = ro + rd * ((t0 + t1) * 0.5);
-    let s = evaluateSculpted(p, U.quality.x, true);
+    let s = evaluateLowCloud(p, U.quality.x, true);
     return vec4f(vec3f(s.densityCoverage), 0.0);
   }
 
@@ -185,7 +185,7 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
   for (var i = 0u; i < 768u; i++) {
     if (i >= maxIter || t >= t1 || transmittance < 0.008) { break; }
     let pos = ro + rd * t;
-    let probe = evaluateSculpted(pos, minStep, true);
+    let probe = evaluateLowCloud(pos, minStep, true);
     var stepLen = minStep;
     if (probe.density > 0.008) {
       stepLen = select(minStep * 0.9, minStep * 0.35, probe.density < 0.22);
@@ -196,7 +196,7 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     } else {
       // 空域前瞻：若下一步落在云内则收回步长
       let leap = min(mix(minStep, maxStep, 0.4), t1 - t);
-      let ahead = evaluateSculpted(pos + rd * leap, leap, true);
+      let ahead = evaluateLowCloud(pos + rd * leap, leap, true);
       // 只用 density 前瞻，避免 support 壳把空步拉小却积不出可见散射
       if (ahead.density > 0.01) {
         stepLen = minStep * 0.55;
@@ -209,7 +209,7 @@ fn marchCloud(ro: vec3f, rd: vec3f) -> vec4f {
     // edge. This is the demo equivalent of HP's stepSmall = totalDist/maxIter.
     stepLen = max(stepLen, traversalStepFloor);
     stepLen = min(stepLen, t1 - t);
-    let s = evaluateSculpted(pos, stepLen, false);
+    let s = evaluateLowCloud(pos, stepLen, false);
     dbgSupport = max(dbgSupport, s.support);
     dbgAfter = max(dbgAfter, s.afterShape);
     dbgDens = max(dbgDens, s.density);
@@ -318,7 +318,7 @@ fn fs(inp: VSOut) -> @location(0) vec4f {
   let ro = U.cameraPos;
 
   let bg = sampleBackground(ro, rd);
-  let lowCloud = marchCloud(ro, rd);
+  let lowCloud = marchLowCloud(ro, rd);
   let highCloud = marchHighCloud(ro, rd);
   var cloud = lowCloud;
   if (U.hpHigh0.x >= 0.5) {

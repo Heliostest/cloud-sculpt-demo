@@ -108,7 +108,7 @@ function secondaryShapeWeight(distanceM, maximumWeight) {
   return maximumWeight * smoothstep(18000, 90000, distanceM);
 }
 
-function hpCoreReference(input) {
+function lowCloudCoreReference(input) {
   const bottomFade = input.bottomSmoothHeight > 0
     ? Math.pow(saturate(input.height / input.bottomSmoothHeight), Math.max(input.bottomSmoothPow, 0.01))
     : 1;
@@ -301,7 +301,7 @@ test('HP core reference remains finite across representative density inputs', ()
   for (const baseShape of [0, 0.2, 0.5, 0.9, 1]) {
     for (const coverage of [0, 0.1, 0.4, 0.8, 1]) {
       for (const height of [0, 0.1, 0.55, 0.9, 1]) {
-        const value = hpCoreReference({ ...base, baseShape, coverage, height, billowy: 0.4, wispy: 0.7 });
+        const value = lowCloudCoreReference({ ...base, baseShape, coverage, height, billowy: 0.4, wispy: 0.7 });
         assert.ok(Number.isFinite(value));
         assert.ok(value >= 0);
       }

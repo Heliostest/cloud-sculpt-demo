@@ -1,7 +1,5 @@
 export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'Weather' | 'DensityCoverage' | 'HighWeather' | 'HighBand' | 'HighDensity';
 
-export type DensityModel = 'hpCore' | 'hpLowCloud';
-
 export type ToneMapper = 'reinhard' | 'aces';
 
 export type CameraPreset = 'side' | 'oblique45' | 'top' | 'hpOcean';
@@ -28,11 +26,6 @@ export interface HeroParams {
 }
 
 export interface DemoParams {
-  densityModel: DensityModel;
-  coverage: number;
-  weatherExponent: number;
-  mesoStrength: number;
-  mesoContrast: number;
   weatherMapCenterX: number;
   weatherMapCenterZ: number;
   weatherMapWorldSizeKm: number;
@@ -172,11 +165,6 @@ export interface DemoParams {
 
 export function createDefaultParams(): DemoParams {
   return {
-    densityModel: 'hpLowCloud',
-    coverage: 0.62,
-    weatherExponent: 0.85,
-    mesoStrength: 0.16,
-    mesoContrast: 1.0,
     // Keep the tuned southwest weather phase while allowing the long view
     // rays to enter the active (non-saturated) HP radial-LUT range.
     weatherMapCenterX: 205000,
@@ -364,15 +352,6 @@ export const DEBUG_MODE_INDEX: Record<DebugMode, number> = {
 
 export function isDebugMode(value: string | null): value is DebugMode {
   return value !== null && value in DEBUG_MODE_INDEX;
-}
-
-export const DENSITY_MODEL_INDEX: Record<DensityModel, number> = {
-  hpCore: 0,
-  hpLowCloud: 1,
-};
-
-export function isDensityModel(value: string | null): value is DensityModel {
-  return value !== null && value in DENSITY_MODEL_INDEX;
 }
 
 export const TONE_MAPPER_INDEX: Record<ToneMapper, number> = {

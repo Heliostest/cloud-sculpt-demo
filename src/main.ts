@@ -1,5 +1,5 @@
 import { createGui } from './gui';
-import { createDefaultParams, isDebugMode, isDensityModel, isToneMapper, type CameraPreset } from './params';
+import { createDefaultParams, isDebugMode, isToneMapper, type CameraPreset } from './params';
 import { createRenderer, type CameraState } from './renderer';
 import { applyValidationScenario, isValidationScenarioName, VALIDATION_SCENARIOS } from './validationScenarios';
 
@@ -71,8 +71,6 @@ async function main(): Promise<void> {
   const scenarioName = query.get('scenario');
   const scenario = isValidationScenarioName(scenarioName) ? VALIDATION_SCENARIOS[scenarioName] : null;
   if (scenario) applyValidationScenario(params, scenario);
-  const densityModel = query.get('model');
-  if (isDensityModel(densityModel)) params.densityModel = densityModel;
   const scStrength = Number(query.get('sc'));
   if (query.has('sc') && Number.isFinite(scStrength)) params.scStrength = Math.max(0, Math.min(1, scStrength));
   const debugMode = query.get('debug');
@@ -213,7 +211,6 @@ async function main(): Promise<void> {
   document.body.dataset.skyHorizonExponent = String(params.skyHorizonExponent);
   document.body.dataset.colorSaturation = String(params.colorSaturation);
   document.body.dataset.colorContrast = String(params.colorContrast);
-  document.body.dataset.densityModel = params.densityModel;
   document.body.dataset.scStrength = String(params.scStrength);
   document.body.dataset.cloudTypeOverride = String(params.cloudTypeOverride);
   document.body.dataset.loCovCoverIntensity = String(params.loCovCoverIntensity);

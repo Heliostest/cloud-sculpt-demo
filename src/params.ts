@@ -85,6 +85,7 @@ export interface DemoParams {
   scCoverageContrast: number;
   scCellScaleX: number;
   scCellScaleZ: number;
+  scMaskOverride: number;
   hiASoftContrast: number;
   hiAConstant: number;
   densityModIntensity: number;
@@ -226,6 +227,7 @@ export function createDefaultParams(): DemoParams {
     scCoverageContrast: 1.0,
     scCellScaleX: 4.0,
     scCellScaleZ: 4.0,
+    scMaskOverride: -1.0,
     hiASoftContrast: 1.0,
     hiAConstant: 0.0,
     densityModIntensity: 0.0,

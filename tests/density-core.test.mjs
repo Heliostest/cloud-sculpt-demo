@@ -194,13 +194,19 @@ test('HP cloud type reaches the Cu, Tcu, and Cb LUT channels', () => {
   assert.ok(hpTypeValue(profiles, 0.75) > profiles[1]);
 });
 
-test('HP Sc strength is the weather B mask multiplied by the global control', () => {
+test('HP Sc strength preserves the weather B mask unless a preset overrides it', () => {
+  const scStrength = (globalStrength, weatherMask, maskOverride = -1) => {
+    const mask = maskOverride >= 0 ? saturate(maskOverride) : weatherMask;
+    return saturate(globalStrength * mask);
+  };
   const globalStrength = 0.35;
-  const strengths = [0, 0.4, 1].map((mask) => saturate(globalStrength * mask));
+  const strengths = [0, 0.4, 1].map((mask) => scStrength(globalStrength, mask));
   assert.equal(strengths[0], 0);
   assert.ok(Math.abs(strengths[1] - 0.14) < 1e-12);
   assert.equal(strengths[2], 0.35);
-  assert.equal(saturate(0 * 1), 0);
+  assert.equal(scStrength(0, 1), 0);
+  assert.equal(scStrength(1, 0, 1), 1);
+  assert.equal(scStrength(0.6, 1, 0), 0);
 });
 
 test('HP demo noise shear breaks exact repetition along a world-axis texture period', () => {

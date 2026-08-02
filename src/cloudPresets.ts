@@ -20,6 +20,25 @@ type HpDensityFixture = Pick<
   'loCovCoverIntensity' | 'loCovCoverContrast' | 'densityMultiplier'
 >;
 
+type HpStratocumulusFixture = Pick<
+  DemoParams,
+  | 'edgeSoftness'
+  | 'wispyTopHeight'
+  | 'wispyTopHardness'
+  | 'bottomSmoothHeight'
+  | 'bottomSmoothPow'
+  | 'scHeightScale'
+  | 'scDetailStrength'
+  | 'scCellThickPow'
+  | 'scCellThickStrength'
+  | 'scCellNoiseStrength'
+  | 'scCoverageIntensity'
+  | 'scCoverageContrast'
+  | 'scCellScaleX'
+  | 'scCellScaleZ'
+  | 'scMaskOverride'
+>;
+
 type HpMorphologyFixture = Pick<
   DemoParams,
   | 'weatherMapCenterX'
@@ -56,6 +75,7 @@ export type CloudPresetName =
   | 'oblique-cb'
   | 'top-density'
   | 'detail-off'
+  | 'stratocumulus-sheet'
   | 'hp-ocean-day';
 
 export interface CloudPreset {
@@ -74,6 +94,7 @@ export interface CloudPreset {
   hpLighting?: HpLightingFixture;
   hpDensity?: HpDensityFixture;
   hpMorphology?: HpMorphologyFixture;
+  hpStratocumulus?: HpStratocumulusFixture;
 }
 
 export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
@@ -130,6 +151,73 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     detailOff: true,
     cloudTypeOverride: -1,
     frozenTime: 6,
+  },
+  'stratocumulus-sheet': {
+    label: 'Stratocumulus Sheet',
+    version: 1,
+    camera: 'oblique45',
+    debugMode: 'Final',
+    detailOff: false,
+    // Keep the low-cloud type stable while the dedicated Sc path supplies the
+    // flattened profile and cell field.
+    cloudTypeOverride: 0,
+    frozenTime: 6,
+    highCloudEnabled: false,
+    scStrength: 1,
+    hpDensity: {
+      // Raise broad weather-map coverage without closing every sky gap.
+      loCovCoverIntensity: 1.0,
+      loCovCoverContrast: 1.05,
+      densityMultiplier: 0.62,
+    },
+    hpMorphology: {
+      weatherMapCenterX: 205000,
+      weatherMapCenterZ: 205000,
+      weatherMapWorldSizeKm: 500,
+      hpShapeScaleX: 0.000085,
+      hpShapeScaleY: 0.00004,
+      hpShapeScaleZ: 0.000085,
+      hpShapeRotationDeg: 0,
+      hpShapeWarpScaleKm: 60,
+      hpShapeWarpStrengthM: 650,
+      hpShapeSecondaryScaleRatio: 1.618034,
+      hpShapeSecondaryRotationDeg: 37,
+      hpShapeSecondaryWeight: 0.05,
+      hpDetailScaleX: 0.00072,
+      hpDetailScaleY: 0.0005,
+      hpDetailScaleZ: 0.00072,
+      detailStrength: 0.16,
+      billowyLowWeight: 0.78,
+      billowyHighWeight: 0.12,
+      wispyLowWeight: 0.78,
+      wispyHighWeight: 0.12,
+      wispyEdgeWidth: 0.2,
+      wispyReach: 0,
+      loCoverTopStrength: 0,
+      loCoverTopMax: 1.8,
+      loCoverTopCurvePow: 1,
+    },
+    hpStratocumulus: {
+      // Compress the default low-cloud layer to a shallow, connected deck.
+      scHeightScale: 0.22,
+      // Preserve large rounded cells while suppressing high-frequency erosion.
+      scDetailStrength: 0.15,
+      scCellThickPow: 1.25,
+      scCellThickStrength: 0.52,
+      scCellNoiseStrength: 1.3,
+      scCoverageIntensity: 1.1,
+      scCoverageContrast: 1.0,
+      scCellScaleX: 4.6,
+      scCellScaleZ: 4.6,
+      scMaskOverride: 1,
+      // A wider density transition and a detail-free lower band keep the
+      // silhouette soft without adding a detached wispy halo.
+      edgeSoftness: 0.4,
+      wispyTopHeight: 0.72,
+      wispyTopHardness: 0.4,
+      bottomSmoothHeight: 0.24,
+      bottomSmoothPow: 1.15,
+    },
   },
   'hp-ocean-day': {
     label: 'HP Ocean Day',
@@ -247,4 +335,5 @@ export function applyCloudPreset(params: DemoParams, preset: CloudPreset): void 
   if (preset.hpLighting !== undefined) Object.assign(params, preset.hpLighting);
   if (preset.hpDensity !== undefined) Object.assign(params, preset.hpDensity);
   if (preset.hpMorphology !== undefined) Object.assign(params, preset.hpMorphology);
+  if (preset.hpStratocumulus !== undefined) Object.assign(params, preset.hpStratocumulus);
 }

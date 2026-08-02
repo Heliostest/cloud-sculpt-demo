@@ -335,7 +335,10 @@ fn evaluateLowCloudLayer(
   }
 
   var densityCoverage = hpLoCoverage(w.r);
-  let scStrength = saturate(U.hpSc0.x * w.b);
+  // A negative override preserves the authored weather-map Sc mask. Presets
+  // can opt into a uniform Sc deck without changing any existing cloud type.
+  let scMask = select(w.b, saturate(U.hpSc2.z), U.hpSc2.z >= 0.0);
+  let scStrength = saturate(U.hpSc0.x * scMask);
   var scCell = 1.0;
   if (scStrength > 0.0) {
     scCell = saturate(textureSampleLevel(scCellTex, weatherSamp, weatherUv(worldPos) * U.hpSc2.xy, 0.0).r * U.hpSc1.y);

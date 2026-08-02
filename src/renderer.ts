@@ -509,7 +509,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[139] = params.scCoverageContrast;
     f32[140] = params.scCellScaleX;
     f32[141] = params.scCellScaleZ;
-    f32[142] = 0;
+    f32[142] = params.scMaskOverride;
     f32[143] = 0;
 
     // Hi-A edge softness and low-cloud coverage darkness modulation

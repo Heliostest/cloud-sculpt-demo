@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+
+const raymarchSource = readFileSync(new URL('../shaders/raymarch.fg.wgsl', import.meta.url), 'utf8');
+
+function wgslFunctionSource(name, nextMarker) {
+  const start = raymarchSource.indexOf(`fn ${name}`);
+  const end = raymarchSource.indexOf(nextMarker, start);
+  assert.ok(start >= 0, `missing WGSL function ${name}`);
+  assert.ok(end > start, `missing WGSL marker after ${name}: ${nextMarker}`);
+  return raymarchSource.slice(start, end);
+}
 
 function traverseWithIterationBudget(totalDistance, maxIterations, requestedStep) {
   const traversalStepFloor = totalDistance / Math.max(maxIterations, 1);
@@ -22,6 +33,26 @@ test('thin foreground edges cannot exhaust the ray budget before the far cloud i
   assert.equal(result.distance, totalDistance);
   assert.equal(result.iterations, maxIterations);
   assert.ok(result.traversalStepFloor > oldThinEdgeStep);
+});
+
+test('view marches decorrelate their initial sample per pixel and cover the effective step span', () => {
+  const highMarch = wgslFunctionSource('marchHighCloud', '\nfn marchLowCloud');
+  const lowMarch = wgslFunctionSource('marchLowCloud', '\nfn acesFitted');
+  const fragment = raymarchSource.slice(raymarchSource.indexOf('@fragment'));
+
+  assert.match(raymarchSource, /fn interleavedGradientNoise\(pixelCoord: vec2f\) -> f32/);
+  assert.match(raymarchSource, /let pixel = floor\(pixelCoord\);/);
+  assert.match(raymarchSource, /dot\(pixel, vec2f\(0\.06711056, 0\.00583715\)\)/);
+  assert.match(fragment, /let rayJitter = interleavedGradientNoise\(inp\.pos\.xy\);/);
+
+  assert.match(highMarch, /fn marchHighCloud\(ro: vec3f, rd: vec3f, rayJitter: f32\)/);
+  assert.match(highMarch, /var t = t0 \+ rayJitter \* stepLen;/);
+  assert.doesNotMatch(highMarch, /dot\(ro \+ rd \* t0/);
+
+  assert.match(lowMarch, /fn marchLowCloud\(ro: vec3f, rd: vec3f, rayJitter: f32\)/);
+  assert.match(lowMarch, /let initialJitterSpan = min\(max\(minStep, traversalStepFloor\), t1 - t0\);/);
+  assert.match(lowMarch, /var t = t0 \+ rayJitter \* initialJitterSpan;/);
+  assert.doesNotMatch(lowMarch, /dot\(ro \+ rd \* t0/);
 });
 
 const saturate = (x) => Math.min(1, Math.max(0, x));

@@ -13,6 +13,14 @@ fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
   return o;
 }
 
+// Stable screen-space dither for the first ray sample. World-entry hashes
+// collapse to one value when the camera is already inside a cloud shell and
+// t0 is zero, making every pixel march on the same sampling planes.
+fn interleavedGradientNoise(pixelCoord: vec2f) -> f32 {
+  let pixel = floor(pixelCoord);
+  return fract(52.9829189 * fract(dot(pixel, vec2f(0.06711056, 0.00583715))));
+}
+
 fn lowCloudLightOptics(pos: vec3f, dens0: f32) -> vec2f {
   let steps = max(1u, U.debugFlags.z);
   let sun = U.sunDir;
@@ -69,7 +77,7 @@ fn highLightTransmittance(pos: vec3f, coverBright: f32) -> f32 {
   return exp(-min(tau, 12.0));
 }
 
-fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
+fn marchHighCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
   if (U.hpHigh0.x < 0.5) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
@@ -91,8 +99,7 @@ fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
 
   let stepCount = max(4u, min(256u, u32(U.hpHigh0.w)));
   let stepLen = (t1 - t0) / f32(stepCount);
-  let jitter = fract(sin(dot(ro + rd * t0, vec3f(41.7, 289.1, 113.5))) * 15731.743);
-  var t = t0 + jitter * stepLen;
+  var t = t0 + rayJitter * stepLen;
   var transmittance = 1.0;
   var radiance = vec3f(0.0);
   var maxBand = 0.0;
@@ -129,7 +136,7 @@ fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
   return vec4f(radiance, transmittance);
 }
 
-fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
+fn marchLowCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
   let topAlt = U.optical.w;
   var baseAlt = topAlt;
   if (U.layer0.w > 0.5) { baseAlt = min(baseAlt, U.layer0.x); }
@@ -162,8 +169,6 @@ fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
     return vec4f(vec3f(s.densityCoverage), 0.0);
   }
 
-  let jitter = fract(sin(dot(ro + rd * t0, vec3f(127.1, 311.7, 74.7))) * 43758.5453);
-  var t = t0 + jitter * min(U.quality.x, 40.0);
   var transmittance = 1.0;
   var radiance = vec3f(0.0);
   var dbgSupport = 0.0;
@@ -179,6 +184,11 @@ fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
   // kilometres; the unvisited remainder was then composited as clear sky,
   // which looked like a transparent proxy shell hiding all clouds behind it.
   let traversalStepFloor = (t1 - t0) / f32(max(maxIter, 1u));
+  // Jitter across the actual minimum segment used by this ray. Limiting the
+  // old offset to minStep left long horizon rays almost phase-aligned after
+  // traversalStepFloor raised their effective step to hundreds of metres.
+  let initialJitterSpan = min(max(minStep, traversalStepFloor), t1 - t0);
+  var t = t0 + rayJitter * initialJitterSpan;
   // 刚离开云面后若干步保持小步长，避免大步跳过后方云体
   var exitHold = 0u;
 
@@ -316,10 +326,11 @@ fn fs(inp: VSOut) -> @location(0) vec4f {
   let nearW = near.xyz / near.w;
   let rd = normalize(farW - nearW);
   let ro = U.cameraPos;
+  let rayJitter = interleavedGradientNoise(inp.pos.xy);
 
   let bg = sampleBackground(ro, rd);
-  let lowCloud = marchLowCloud(ro, rd);
-  let highCloud = marchHighCloud(ro, rd);
+  let lowCloud = marchLowCloud(ro, rd, rayJitter);
+  let highCloud = marchHighCloud(ro, rd, rayJitter);
   var cloud = lowCloud;
   if (U.hpHigh0.x >= 0.5) {
     let highBottomAlt = U.hpHigh0.y + U.hpHigh4.x * (U.hpHigh0.z - U.hpHigh0.y);

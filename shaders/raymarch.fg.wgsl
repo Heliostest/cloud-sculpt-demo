@@ -13,12 +13,19 @@ fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
   return o;
 }
 
-// Stable screen-space dither for the first ray sample. World-entry hashes
-// collapse to one value when the camera is already inside a cloud shell and
-// t0 is zero, making every pixel march on the same sampling planes.
-fn interleavedGradientNoise(pixelCoord: vec2f) -> f32 {
-  let pixel = floor(pixelCoord);
-  return fract(52.9829189 * fract(dot(pixel, vec2f(0.06711056, 0.00583715))));
+// A static integer avalanche hash avoids the diagonal lattice of IGN while
+// keeping the first sample stable in this single-frame (non-TAA) renderer.
+fn hashU32(value: u32) -> u32 {
+  var x = value;
+  x = ((x >> 16u) ^ x) * 0x7feb352du;
+  x = ((x >> 15u) ^ x) * 0x846ca68bu;
+  return (x >> 16u) ^ x;
+}
+
+fn screenSpaceJitter(pixelCoord: vec2f) -> f32 {
+  let pixel = vec2u(floor(pixelCoord));
+  let seed = (pixel.x * 0x1f123bb5u) ^ (pixel.y * 0x5f356495u);
+  return f32(hashU32(seed) & 0x00ffffffu) / 16777216.0;
 }
 
 fn lowCloudLightOptics(pos: vec3f, dens0: f32) -> vec2f {
@@ -219,7 +226,28 @@ fn marchLowCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
     // edge. This is the demo equivalent of HP's stepSmall = totalDist/maxIter.
     stepLen = max(stepLen, traversalStepFloor);
     stepLen = min(stepLen, t1 - t);
-    let s = evaluateLowCloud(pos, stepLen, false);
+    var s = evaluateLowCloud(pos, stepLen, false);
+    // Long, almost horizontal segments are where a single point sample most
+    // visibly turns density error into a screen-space pattern. Add a midpoint
+    // density sample only near supported cloud, but still advance by stepLen so
+    // the finite iteration budget reaches the far shell exit.
+    let horizonRefinement = 1.0 - smoothstep(0.04, 0.22, abs(rd.y));
+    if (horizonRefinement > 0.01
+        && stepLen > minStep * 1.25
+        && (probe.support > 0.001 || exitHold > 0u)) {
+      let refinementPos = pos + rd * (stepLen * 0.5);
+      let refinement = evaluateLowCloud(refinementPos, stepLen * 0.5, false);
+      let primaryDensity = s.density;
+      let pairDensity = 0.5 * (s.density + refinement.density);
+      s.support = max(s.support, refinement.support);
+      s.afterShape = max(s.afterShape, refinement.afterShape);
+      s.density = mix(s.density, pairDensity, horizonRefinement);
+      s.densityCoverage = max(s.densityCoverage, refinement.densityCoverage);
+      if (refinement.density > primaryDensity) {
+        s.typeMix = mix(s.typeMix, refinement.typeMix, horizonRefinement);
+        s.height01 = mix(s.height01, refinement.height01, horizonRefinement);
+      }
+    }
     dbgSupport = max(dbgSupport, s.support);
     dbgAfter = max(dbgAfter, s.afterShape);
     dbgDens = max(dbgDens, s.density);
@@ -326,7 +354,7 @@ fn fs(inp: VSOut) -> @location(0) vec4f {
   let nearW = near.xyz / near.w;
   let rd = normalize(farW - nearW);
   let ro = U.cameraPos;
-  let rayJitter = interleavedGradientNoise(inp.pos.xy);
+  let rayJitter = screenSpaceJitter(inp.pos.xy);
 
   let bg = sampleBackground(ro, rd);
   let lowCloud = marchLowCloud(ro, rd, rayJitter);

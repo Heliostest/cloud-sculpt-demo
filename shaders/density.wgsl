@@ -210,7 +210,13 @@ fn heroSupport(worldPos: vec3f) -> vec4f {
   return vec4f(support, typeMix, h01, 1.0);
 }
 
-fn sampleBaseShape(worldPos: vec3f) -> f32 {
+fn volumeFootprintLod(stepLen: f32, scale: vec3f, texelsPerAxis: f32, manualOffset: f32) -> f32 {
+  let maxScale = max(max(abs(scale.x), abs(scale.y)), abs(scale.z));
+  let footprintTexels = max(stepLen, 1.0) * maxScale * texelsPerAxis;
+  return max(manualOffset, 0.0) + log2(max(footprintTexels, 1.0));
+}
+
+fn sampleBaseShape(worldPos: vec3f, stepLen: f32) -> f32 {
   let windMeters = vec3f(U.hpDetailMotion.y, 0.0, U.hpDetailMotion.z) * U.time * U.hpShapeScale.w;
   // HP's source asset has substantially richer, less obvious repetition than
   // this demo's generated atlas. First rotate and bend the primary lattice.
@@ -222,7 +228,7 @@ fn sampleBaseShape(worldPos: vec3f) -> f32 {
   let rotatedPos = rotateNoiseXZ(warpedPos, U.hpShapeWarp0.x);
   let baseNoisePos = shearNoiseXZ(rotatedPos, 0.23, 0.17);
   let p = baseNoisePos * U.hpShapeScale.xyz;
-  let lod = max(U.hpLod0.x, 0.0);
+  let lod = volumeFootprintLod(stepLen, U.hpShapeScale.xyz, 128.0, U.hpLod0.x);
   let primary = pow(abs(textureSampleLevel(shapeTex, shapeSamp, p, lod).r), 0.6);
 
   let distanceXZ = distance(worldPos.xz, U.cameraPos.xz);
@@ -234,16 +240,18 @@ fn sampleBaseShape(worldPos: vec3f) -> f32 {
   let secondaryNoisePos = shearNoiseXZ(secondaryRotated, -0.19, 0.31);
   let ratio = max(U.hpShapeBlend0.x, 0.01);
   let secondaryP = secondaryNoisePos * U.hpShapeScale.xyz * ratio + vec3f(0.173, 0.071, -0.114);
-  let secondary = pow(abs(textureSampleLevel(shapeTex, shapeSamp, secondaryP, lod).r), 0.6);
+  let secondaryLod = volumeFootprintLod(stepLen, U.hpShapeScale.xyz * ratio, 128.0, U.hpLod0.x);
+  let secondary = pow(abs(textureSampleLevel(shapeTex, shapeSamp, secondaryP, secondaryLod).r), 0.6);
   return mix(primary, secondary, secondaryWeight);
 }
 
-fn sampleDetailHp(worldPos: vec3f) -> vec2f {
+fn sampleDetailHp(worldPos: vec3f, stepLen: f32) -> vec2f {
   let horizontalWind = vec3f(U.hpDetailMotion.y, 0.0, U.hpDetailMotion.z) * U.time * U.hpDetailScale.w;
   let verticalWind = vec3f(0.0, U.time * U.hpDetailMotion.x, 0.0);
   let hpPos = vec3f(worldPos.x, -worldPos.y, worldPos.z) + horizontalWind + verticalWind;
   let detailNoisePos = shearNoiseXZ(hpPos, -0.31, 0.27);
-  let d = textureSampleLevel(hpDetailTex, detailSamp, detailNoisePos * U.hpDetailScale.xyz, max(U.hpLod0.y, 0.0));
+  let lod = volumeFootprintLod(stepLen, U.hpDetailScale.xyz, 64.0, U.hpLod0.y);
+  let d = textureSampleLevel(hpDetailTex, detailSamp, detailNoisePos * U.hpDetailScale.xyz, lod);
   let billowy = d.b * U.hpDetailWeights.x + d.a * U.hpDetailWeights.y;
   let wispy = d.r * U.hpDetailWeights.z + d.g * U.hpDetailWeights.w;
   return vec2f(billowy, wispy);
@@ -281,7 +289,7 @@ fn cloudFromShape(
   var erodedB = shape;
   var erodedW = shape;
   if (!simpleMode && U.hpLod0.z < 0.5 && !detailOff && detailAmt > 1e-4 && detailFade > 0.01) {
-    let det = sampleDetailHp(worldPos);
+    let det = sampleDetailHp(worldPos, stepLen);
     let typeDetailStrength = mix(hpTypeValue(U.hpTypeDetail.xyz, typeMix), U.hpSc0.z, scStrength);
     let detailStr = U.detailStrength * typeDetailStrength * detailAmt * detailFade * bottomFade;
     erodedB = hpDensityRemapSafe(shape, det.x * detailStr);
@@ -363,7 +371,7 @@ fn evaluateLowCloudLayer(
   }
 
   // HP: baseShape = pow(noise, 0.6)，与 coverage 解耦
-  let baseShape = sampleBaseShape(worldPos);
+  let baseShape = sampleBaseShape(worldPos, stepLen);
   *outAfterShape = baseShape * profile;
   var density = cloudFromShape(baseShape, worldPos, h01, localHeight, typeMix, scStrength, simpleMode, detailAmt, stepLen, densityCoverage, profile, densScale);
   density *= hpTypeValue(U.hpTypeDensity.xyz, typeMix) * U.hpTypeDensity.w;
@@ -436,7 +444,7 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
     let typeMix = hs.y;
     let h01 = hs.z;
     let profile = hpProfile(h01, typeMix, lowWeatherUv);
-    let baseShape = sampleBaseShape(worldPos);
+    let baseShape = sampleBaseShape(worldPos, stepLen);
     bestSupport = hs.x;
     bestAfter = baseShape * profile;
     bestDens = cloudFromShape(baseShape, worldPos, h01, h01, typeMix, 0.0, simpleMode, 1.0, stepLen, U.hero2.x, profile, U.hero2.y);

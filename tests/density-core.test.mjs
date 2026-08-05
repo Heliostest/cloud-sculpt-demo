@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const raymarchSource = readFileSync(new URL('../shaders/raymarch.fg.wgsl', import.meta.url), 'utf8');
+const densitySource = readFileSync(new URL('../shaders/density.wgsl', import.meta.url), 'utf8');
 
 function wgslFunctionSource(name, nextMarker) {
   const start = raymarchSource.indexOf(`fn ${name}`);
@@ -35,15 +36,16 @@ test('thin foreground edges cannot exhaust the ray budget before the far cloud i
   assert.ok(result.traversalStepFloor > oldThinEdgeStep);
 });
 
-test('view marches decorrelate their initial sample per pixel and cover the effective step span', () => {
+test('view marches use non-lattice pixel jitter and cover the effective step span', () => {
   const highMarch = wgslFunctionSource('marchHighCloud', '\nfn marchLowCloud');
   const lowMarch = wgslFunctionSource('marchLowCloud', '\nfn acesFitted');
   const fragment = raymarchSource.slice(raymarchSource.indexOf('@fragment'));
 
-  assert.match(raymarchSource, /fn interleavedGradientNoise\(pixelCoord: vec2f\) -> f32/);
-  assert.match(raymarchSource, /let pixel = floor\(pixelCoord\);/);
-  assert.match(raymarchSource, /dot\(pixel, vec2f\(0\.06711056, 0\.00583715\)\)/);
-  assert.match(fragment, /let rayJitter = interleavedGradientNoise\(inp\.pos\.xy\);/);
+  assert.match(raymarchSource, /fn hashU32\(value: u32\) -> u32/);
+  assert.match(raymarchSource, /fn screenSpaceJitter\(pixelCoord: vec2f\) -> f32/);
+  assert.match(raymarchSource, /vec2u\(floor\(pixelCoord\)\)/);
+  assert.doesNotMatch(raymarchSource, /0\.06711056|0\.00583715|52\.9829189/);
+  assert.match(fragment, /let rayJitter = screenSpaceJitter\(inp\.pos\.xy\);/);
 
   assert.match(highMarch, /fn marchHighCloud\(ro: vec3f, rd: vec3f, rayJitter: f32\)/);
   assert.match(highMarch, /var t = t0 \+ rayJitter \* stepLen;/);
@@ -53,6 +55,25 @@ test('view marches decorrelate their initial sample per pixel and cover the effe
   assert.match(lowMarch, /let initialJitterSpan = min\(max\(minStep, traversalStepFloor\), t1 - t0\);/);
   assert.match(lowMarch, /var t = t0 \+ rayJitter \* initialJitterSpan;/);
   assert.doesNotMatch(lowMarch, /dot\(ro \+ rd \* t0/);
+});
+
+test('low-cloud volume mip follows the ray segment footprint', () => {
+  assert.match(densitySource, /fn volumeFootprintLod\(/);
+  assert.match(densitySource, /log2\(max\(footprintTexels, 1\.0\)\)/);
+  assert.match(densitySource, /fn sampleBaseShape\(worldPos: vec3f, stepLen: f32\)/);
+  assert.match(densitySource, /volumeFootprintLod\(stepLen, U\.hpShapeScale\.xyz, 128\.0, U\.hpLod0\.x\)/);
+  assert.match(densitySource, /fn sampleDetailHp\(worldPos: vec3f, stepLen: f32\)/);
+  assert.match(densitySource, /volumeFootprintLod\(stepLen, U\.hpDetailScale\.xyz, 64\.0, U\.hpLod0\.y\)/);
+  assert.doesNotMatch(densitySource, /let lod = max\(U\.hpLod0\.x, 0\.0\)/);
+});
+
+test('long near-horizontal cloud segments receive a second density sample without reducing traversal distance', () => {
+  const lowMarch = wgslFunctionSource('marchLowCloud', '\nfn acesFitted');
+  assert.match(lowMarch, /let horizonRefinement = 1\.0 - smoothstep\(/);
+  assert.match(lowMarch, /pos \+ rd \* \(stepLen \* 0\.5\)/);
+  assert.match(lowMarch, /evaluateLowCloud\(refinementPos, stepLen \* 0\.5, false\)/);
+  assert.match(lowMarch, /0\.5 \* \(s\.density \+ refinement\.density\)/);
+  assert.match(lowMarch, /t \+= stepLen;/);
 });
 
 const saturate = (x) => Math.min(1, Math.max(0, x));

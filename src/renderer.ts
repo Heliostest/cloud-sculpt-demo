@@ -17,17 +17,22 @@ import {
   generateShapeRGBA,
   generateVolumeMipChainRGBA,
 } from './noiseAtlasGen';
+import type { CloudBody } from './cloudBodies';
+import {
+  CLOUD_BODY_FLOAT_COUNT,
+  packVolumeCloudBodies,
+  selectVolumeCloudBodies,
+} from './cloudBodyPacking';
 import {
   CLOUD_GENUS_INDEX,
   DEBUG_MODE_INDEX,
-  MAX_VOLUME_CLOUD_BODIES,
   TONE_MAPPER_INDEX,
   cloudGenusTypeMix,
   type DemoParams,
 } from './params';
 
 const UNIFORM_SIZE = 880;
-const CLOUD_BODY_UNIFORM_SIZE = MAX_VOLUME_CLOUD_BODIES * 4 * 16;
+const CLOUD_BODY_UNIFORM_SIZE = CLOUD_BODY_FLOAT_COUNT * 4;
 
 export interface CameraState {
   position: [number, number, number];
@@ -339,6 +344,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
 
   function writeUniforms(
     params: DemoParams,
+    cloudBodies: readonly CloudBody[],
     camera: CameraState,
     aspect: number,
     time: number,
@@ -394,48 +400,22 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     // data if writeUniforms is reused during hot reload.
     f32.fill(0, 44, 68);
 
-    const L = params.layers;
-    cloudBodyF32.fill(0);
-    for (let layerIndex = 0; layerIndex < Math.min(L.length, MAX_VOLUME_CLOUD_BODIES); layerIndex++) {
-      const layer = L[layerIndex];
-      const recordOffset = layerIndex * 4;
-      cloudBodyF32[recordOffset] = layer.baseKm * 1000;
-      cloudBodyF32[recordOffset + 1] = layer.topKm * 1000;
-      cloudBodyF32[recordOffset + 2] = layer.densityScale;
-      cloudBodyF32[recordOffset + 3] = layer.enabled ? 1 : 0;
+    const volumeBodies = selectVolumeCloudBodies(cloudBodies);
+    packVolumeCloudBodies(volumeBodies, cloudBodyF32);
 
-      const shapeOffset = (MAX_VOLUME_CLOUD_BODIES + layerIndex) * 4;
-      cloudBodyF32[shapeOffset] = CLOUD_GENUS_INDEX[layer.genus];
-      cloudBodyF32[shapeOffset + 1] = layer.detailAmount;
-      cloudBodyF32[shapeOffset + 2] = layer.cumulusDevelopment;
-      cloudBodyF32[shapeOffset + 3] = 0;
+    const localBody = cloudBodies.find((body) => body.enabled && body.path === 'local-volume');
+    f32[68] = localBody?.centerX ?? 0;
+    f32[69] = localBody?.centerZ ?? 0;
+    f32[70] = localBody?.radiusX ?? 1;
+    f32[71] = localBody ? 1 : 0;
 
-      const boundsOffset = (MAX_VOLUME_CLOUD_BODIES * 2 + layerIndex) * 4;
-      cloudBodyF32[boundsOffset] = layer.centerX;
-      cloudBodyF32[boundsOffset + 1] = layer.centerZ;
-      cloudBodyF32[boundsOffset + 2] = Math.max(1, layer.radiusX);
-      cloudBodyF32[boundsOffset + 3] = Math.max(1, layer.radiusZ);
+    f32[72] = localBody?.radiusZ ?? 1;
+    f32[73] = (localBody?.baseKm ?? 0) * 1000;
+    f32[74] = localBody ? Math.max(0.1, localBody.topKm - localBody.baseKm) * 1000 : 0;
+    f32[75] = localBody ? cloudGenusTypeMix(localBody.genus, localBody.cumulusDevelopment) : 0;
 
-      const transformOffset = (MAX_VOLUME_CLOUD_BODIES * 3 + layerIndex) * 4;
-      cloudBodyF32[transformOffset] = (layer.rotationDeg * Math.PI) / 180;
-      cloudBodyF32[transformOffset + 1] = Math.min(0.95, Math.max(0.001, layer.feather));
-      cloudBodyF32[transformOffset + 2] = layer.bounded ? 1 : 0;
-      cloudBodyF32[transformOffset + 3] = 0;
-    }
-
-    const h = params.hero;
-    f32[68] = h.cx;
-    f32[69] = h.cz;
-    f32[70] = h.rx;
-    f32[71] = h.enabled ? 1 : 0;
-
-    f32[72] = h.rz;
-    f32[73] = h.baseKm * 1000;
-    f32[74] = h.thicknessKm * 1000;
-    f32[75] = cloudGenusTypeMix(h.genus, h.cumulusDevelopment);
-
-    f32[76] = h.coverage;
-    f32[77] = h.densityMul;
+    f32[76] = localBody?.coverage ?? 0;
+    f32[77] = localBody?.densityScale ?? 0;
     f32[78] = params.exposure;
     f32[79] = 0;
 
@@ -448,11 +428,8 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[85] = params.extinction;
     f32[86] = params.boxHalfKm * 1000;
     let topKm = 0.5;
-    for (let layerIndex = 0; layerIndex < Math.min(L.length, MAX_VOLUME_CLOUD_BODIES); layerIndex++) {
-      const layer = L[layerIndex];
-      if (layer.enabled) topKm = Math.max(topKm, layer.topKm);
-    }
-    if (h.enabled) topKm = Math.max(topKm, h.baseKm + h.thicknessKm);
+    for (const body of volumeBodies) topKm = Math.max(topKm, body.topKm);
+    if (localBody) topKm = Math.max(topKm, localBody.topKm);
     f32[87] = topKm * 1000 + 500;
 
     u32[88] = DEBUG_MODE_INDEX[params.debugMode];
@@ -542,14 +519,16 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[150] = params.forceSimpleMode ? 1 : 0;
     f32[151] = params.detailFadeEnabled ? 1 : 0;
 
-    // Independent HP Ac/As high-cloud path. The general demo layer 2 remains separate.
-    f32[152] = params.highCloudEnabled ? 1 : 0;
-    f32[153] = params.highBaseKm * 1000;
-    f32[154] = params.highTopKm * 1000;
+    // Independent HP Ac/As density path, with common body properties supplied
+    // by the same authoring collection as volume and local-volume bodies.
+    const highBody = cloudBodies.find((body) => body.enabled && body.path === 'high-sheet');
+    f32[152] = highBody ? 1 : 0;
+    f32[153] = (highBody?.baseKm ?? 0) * 1000;
+    f32[154] = (highBody?.topKm ?? 0) * 1000;
     f32[155] = params.highSteps;
     f32[156] = params.highWeatherRepeat;
-    f32[157] = CLOUD_GENUS_INDEX[params.highCloudGenus];
-    f32[158] = params.highDensityMultiplier;
+    f32[157] = highBody ? CLOUD_GENUS_INDEX[highBody.genus] : 0;
+    f32[158] = highBody?.densityScale ?? 0;
     f32[159] = params.highCellWindSpeed;
     f32[160] = params.highCellScaleX;
     f32[161] = params.highCellScaleZ;
@@ -569,7 +548,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[175] = params.hiASoftContrast;
     f32[176] = params.highWispScaleX;
     f32[177] = params.highWispScaleZ;
-    f32[178] = params.highWispStrength;
+    f32[178] = highBody?.detailAmount ?? 0;
     f32[179] = params.highHorizonStartKm * 1000;
     f32[180] = params.highHorizonEndKm * 1000;
     f32[181] = 0;
@@ -644,13 +623,14 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
 
   function render(
     params: DemoParams,
+    cloudBodies: readonly CloudBody[],
     camera: CameraState,
     time: number,
     windOffset: [number, number],
   ): void {
     resizeCanvas();
     const aspect = canvas.width / Math.max(1, canvas.height);
-    writeUniforms(params, camera, aspect, time, windOffset);
+    writeUniforms(params, cloudBodies, camera, aspect, time, windOffset);
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
     const sampleTimestamp = timestampQuerySet !== null

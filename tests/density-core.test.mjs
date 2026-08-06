@@ -6,6 +6,7 @@ const raymarchSource = readFileSync(new URL('../shaders/raymarch.fg.wgsl', impor
 const densitySource = readFileSync(new URL('../shaders/density.wgsl', import.meta.url), 'utf8');
 const commonSource = readFileSync(new URL('../shaders/common.wgsl', import.meta.url), 'utf8');
 const rendererSource = readFileSync(new URL('../src/renderer.ts', import.meta.url), 'utf8');
+const packingSource = readFileSync(new URL('../src/cloudBodyPacking.ts', import.meta.url), 'utf8');
 
 function wgslFunctionSource(name, nextMarker) {
   const start = raymarchSource.indexOf(`fn ${name}`);
@@ -49,6 +50,18 @@ function horizontalEllipseMask(point, bounds, rotationDeg, feather, bounded = tr
   const localZ = -Math.sin(angle) * dx + Math.cos(angle) * dz;
   const distance = Math.hypot(localX / bounds[2], localZ / bounds[3]);
   return 1 - ellipseSmoothstep(1 - feather, 1, distance);
+}
+
+function bodyLifecycleScale(enabled, life, peak, time) {
+  if (!enabled) return 1;
+  const birth = life[0];
+  const grow = Math.max(birth, life[1]);
+  const decay = Math.max(grow, life[2]);
+  const death = Math.max(decay, life[3]);
+  if (time < birth || time >= death) return 0;
+  if (time < grow) return ellipseSmoothstep(birth, Math.max(birth + 0.001, grow), time) * peak;
+  if (time < decay) return peak;
+  return (1 - ellipseSmoothstep(decay, Math.max(decay + 0.001, death), time)) * peak;
 }
 
 test('thin foreground edges cannot exhaust the ray budget before the far cloud interval', () => {
@@ -116,14 +129,23 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.match(commonSource, /layerShapeDetails: array<vec4f, 8>/);
   assert.match(commonSource, /layerBounds: array<vec4f, 8>/);
   assert.match(commonSource, /layerBoundTransforms: array<vec4f, 8>/);
+  assert.match(commonSource, /layerMotion: array<vec4f, 8>/);
+  assert.match(commonSource, /layerLife: array<vec4f, 8>/);
   assert.match(commonSource, /@group\(0\) @binding\(15\) var<uniform> B: CloudBodyUniforms/);
-  assert.match(rendererSource, /MAX_VOLUME_CLOUD_BODIES \* 4 \* 16/);
-  assert.match(rendererSource, /Math\.min\(L\.length, MAX_VOLUME_CLOUD_BODIES\)/);
-  assert.match(rendererSource, /cloudBodyF32\[shapeOffset\] = CLOUD_GENUS_INDEX\[layer\.genus\]/);
-  assert.match(rendererSource, /cloudBodyF32\[shapeOffset \+ 2\] = layer\.cumulusDevelopment;/);
-  assert.match(rendererSource, /cloudBodyF32\[boundsOffset\] = layer\.centerX;/);
-  assert.match(rendererSource, /cloudBodyF32\[transformOffset\] = \(layer\.rotationDeg \* Math\.PI\) \/ 180;/);
-  assert.match(rendererSource, /cloudBodyF32\[transformOffset \+ 2\] = layer\.bounded \? 1 : 0;/);
+  assert.match(packingSource, /CLOUD_BODY_FLOATS_PER_RECORD_SET = 6 \* 4/);
+  assert.match(packingSource, /selectVolumeCloudBodies\(bodies/);
+  assert.match(packingSource, /target\[shapeOffset\] = CLOUD_GENUS_INDEX\[body\.genus\]/);
+  assert.match(packingSource, /target\[shapeOffset \+ 2\] = body\.cumulusDevelopment;/);
+  assert.match(packingSource, /target\[boundsOffset\] = body\.centerX;/);
+  assert.match(packingSource, /target\[transformOffset\] = \(body\.rotationDeg \* Math\.PI\) \/ 180;/);
+  assert.match(packingSource, /target\[transformOffset \+ 2\] = body\.bounded \? 1 : 0;/);
+  assert.match(packingSource, /target\[transformOffset \+ 3\] = body\.lifeStart;/);
+  assert.match(packingSource, /target\[motionOffset \+ 2\] = body\.morphRate;/);
+  assert.match(packingSource, /target\[lifeOffset \+ 3\] = body\.lifeDeath;/);
+  assert.match(rendererSource, /packVolumeCloudBodies\(volumeBodies, cloudBodyF32\)/);
+  assert.doesNotMatch(rendererSource, /params\.layers/);
+  assert.match(rendererSource, /const localBody = cloudBodies\.find/);
+  assert.doesNotMatch(rendererSource, /params\.hero/);
   assert.match(densitySource, /fn selectedCloudType\(genusIndex: f32, cumulusDevelopment: f32\)/);
   assert.match(densitySource, /for \(var layerIndex = 0u; layerIndex < 8u; layerIndex \+= 1u\)/);
   assert.match(densitySource, /let layer = B\.layers\[layerIndex\]/);
@@ -135,7 +157,25 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.match(densitySource, /shapeDetail\.x,/);
   assert.match(densitySource, /shapeDetail\.z,/);
   assert.doesNotMatch(densitySource, /U\.layer[012]/);
-  assert.doesNotMatch(rendererSource, /L\[[012]\]\.genus/);
+  assert.doesNotMatch(packingSource, /params\.layers/);
+});
+
+test('per-body motion transports the density domain and lifecycle scales density smoothly', () => {
+  assert.equal(bodyLifecycleScale(false, [2, 4, 8, 10], 1.5, 100), 1);
+  assert.equal(bodyLifecycleScale(true, [2, 4, 8, 10], 1.5, 1), 0);
+  assert.ok(bodyLifecycleScale(true, [2, 4, 8, 10], 1.5, 3) > 0);
+  assert.equal(bodyLifecycleScale(true, [2, 4, 8, 10], 1.5, 6), 1.5);
+  assert.ok(bodyLifecycleScale(true, [2, 4, 8, 10], 1.5, 9) < 1.5);
+  assert.equal(bodyLifecycleScale(true, [2, 4, 8, 10], 1.5, 10), 0);
+
+  assert.match(densitySource, /fn bodyLifecycleScale\(/);
+  assert.match(densitySource, /let motion = B\.layerMotion\[layerIndex\]/);
+  assert.match(densitySource, /let bodyTime = max\(0\.0, U\.time - B\.layerBoundTransforms\[layerIndex\]\.w\);/);
+  assert.match(densitySource, /let transport = motion\.xy \* U\.time;/);
+  assert.match(densitySource, /let transportedPos = vec3f\(worldPos\.x - transport\.x/);
+  assert.match(densitySource, /let densityPos = transportedPos \+ vec3f\(/);
+  assert.match(densitySource, /layer\.z \* lifeScale,/);
+  assert.match(densitySource, /let bodyWeather = sampleWeather\(densityPos\);/);
 });
 
 test('rotated elliptical bounds preserve global decks and feather local cloud edges', () => {
@@ -150,7 +190,12 @@ test('rotated elliptical bounds preserve global decks and feather local cloud ed
 });
 
 test('the independent high-cloud path maps an explicit Ac or As genus on the GPU', () => {
-  assert.match(rendererSource, /f32\[157\] = CLOUD_GENUS_INDEX\[params\.highCloudGenus\];/);
+  assert.match(rendererSource, /const highBody = cloudBodies\.find/);
+  assert.match(rendererSource, /f32\[157\] = highBody \? CLOUD_GENUS_INDEX\[highBody\.genus\] : 0;/);
+  assert.doesNotMatch(
+    rendererSource,
+    /params\.(?:highCloudEnabled|highCloudGenus|highBaseKm|highTopKm|highDensityMultiplier|highWispStrength)/,
+  );
   assert.match(densitySource, /fn highCloudTypeMix\(genusIndex: f32\) -> f32/);
   assert.match(densitySource, /let typeMix = highCloudTypeMix\(U\.hpHigh1\.y\);/);
   assert.doesNotMatch(densitySource, /select\(saturate\(weather\.g\), saturate\(U\.hpHigh1\.y\)/);

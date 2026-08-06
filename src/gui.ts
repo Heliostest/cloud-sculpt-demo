@@ -1,7 +1,7 @@
 import GUI, { Controller } from 'lil-gui';
 import { CLOUD_GENERA, HIGH_CLOUD_GENERA, type CameraPreset, type DemoParams } from './params';
 import { CLOUD_PRESET_OPTIONS, type CloudPresetName } from './cloudPresets';
-import { CloudBodyStore, type CloudBody } from './cloudBodies';
+import type { CloudBody, CloudBodyStore } from './cloudBodies';
 import {
   cloudGenusLabel,
   cloudGenusOptions,
@@ -35,6 +35,7 @@ function helpMark(tip: string): HTMLSpanElement {
 
 export function createGui(
   params: DemoParams,
+  bodyStore: CloudBodyStore,
   hooks: {
     initialCloudPreset: CloudPresetName;
     onCloudPreset: (preset: CloudPresetName) => void;
@@ -43,7 +44,6 @@ export function createGui(
   },
 ): GUI {
   const gui = new GUI({ title: uiText('title'), closeFolders: true });
-  const bodyStore = new CloudBodyStore(params);
   let selectedBodyId: string | null = null;
   let bodyIdToOpen: string | null = null;
   const localizedFolders: LocalizedFolder[] = [];
@@ -272,9 +272,12 @@ export function createGui(
   gui.$title.append(titleText, titleHelp, modeSelect, langSelect);
 
   const advancedFolders = [alignment, high, weather, sculpt, sun, post, hpLighting, quality];
+  let advancedBodyFolders: GUI[] = [];
+  let bodyLocalizedFolders: LocalizedFolder[] = [];
   const applyMode = (): void => {
     const isBasic = guiMode === 'basic';
     for (const folder of advancedFolders) folder.show(!isBasic);
+    for (const folder of advancedBodyFolders) folder.show(!isBasic);
     modeSelect.value = guiMode;
   };
 
@@ -318,7 +321,7 @@ export function createGui(
       }
       controller.$name.appendChild(helpMark(tip));
     }
-    for (const item of localizedFolders) {
+    for (const item of [...localizedFolders, ...bodyLocalizedFolders]) {
       const tip = folderTip(item.key);
       item.gui.title(folderLabel(item.key));
       item.gui.$title.title = tip;
@@ -350,6 +353,8 @@ export function createGui(
   const rebuildCloudBodies = (): void => {
     for (const folder of bodyFolders) folder.destroy();
     bodyFolders = [];
+    advancedBodyFolders = [];
+    bodyLocalizedFolders = [];
     genusControllers.length = 0;
 
     const activeBodies = bodyStore.active();
@@ -398,6 +403,24 @@ export function createGui(
           folder.add(body, 'feather', 0.01, 0.95, 0.01);
         }
       }
+      if (body.supportsRuntimeControls) {
+        const motionFolder = folder.addFolder(folderLabel('bodyMotion'));
+        bodyLocalizedFolders.push({ gui: motionFolder, key: 'bodyMotion' });
+        advancedBodyFolders.push(motionFolder);
+        motionFolder.add(body, 'windDeg', 0, 360, 1);
+        motionFolder.add(body, 'windSpeedMps', 0, 80, 0.1);
+        motionFolder.add(body, 'morphRate', 0, 0.5, 0.005);
+
+        const lifecycleFolder = folder.addFolder(folderLabel('bodyLifecycle'));
+        bodyLocalizedFolders.push({ gui: lifecycleFolder, key: 'bodyLifecycle' });
+        advancedBodyFolders.push(lifecycleFolder);
+        lifecycleFolder.add(body, 'lifeEnabled');
+        lifecycleFolder.add(body, 'lifeBirth', 0, 300, 0.5);
+        lifecycleFolder.add(body, 'lifeGrow', 0, 300, 0.5);
+        lifecycleFolder.add(body, 'lifeDecay', 0, 300, 0.5);
+        lifecycleFolder.add(body, 'lifeDeath', 0, 300, 0.5);
+        lifecycleFolder.add(body, 'lifePeak', 0, 2, 0.01);
+      }
 
       const actions = {
         applyGenusDefaults: () => {
@@ -438,6 +461,7 @@ export function createGui(
   refreshCloudBodies = (): void => {
     rebuildCloudBodies();
     applyLanguage();
+    applyMode();
   };
 
   modeSelect.addEventListener('change', () => {

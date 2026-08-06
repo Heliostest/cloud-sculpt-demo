@@ -27,14 +27,36 @@ export interface CloudBodySnapshot {
   radiusZ: number;
   rotationDeg: number;
   feather: number;
+  windDeg: number;
+  windSpeedMps: number;
+  morphRate: number;
+  lifeEnabled: boolean;
+  lifeBirth: number;
+  lifeGrow: number;
+  lifeDecay: number;
+  lifeDeath: number;
+  lifePeak: number;
+  lifeStart: number;
 }
 
 export interface CloudBodyCollectionSnapshot {
-  version: 1;
+  version: 2;
   bodies: CloudBodySnapshot[];
 }
 
 const CLOUD_BODY_PATHS = ['volume', 'local-volume', 'high-sheet'] as const;
+const LEGACY_RUNTIME_DEFAULTS = {
+  windDeg: 35,
+  windSpeedMps: 0,
+  morphRate: 0,
+  lifeEnabled: false,
+  lifeBirth: 2,
+  lifeGrow: 32,
+  lifeDecay: 60,
+  lifeDeath: 90,
+  lifePeak: 1,
+  lifeStart: 0,
+} as const;
 const GENUS_PLACEMENT_DEFAULTS: Record<CloudGenus, { baseKm: number; thicknessKm: number; halfExtentM: number }> = {
   cumulus: { baseKm: 1, thicknessKm: 1.5, halfExtentM: 800 },
   stratus: { baseKm: 0.3, thicknessKm: 1.2, halfExtentM: 5000 },
@@ -60,6 +82,15 @@ const SNAPSHOT_NUMBER_FIELDS = [
   'radiusZ',
   'rotationDeg',
   'feather',
+  'windDeg',
+  'windSpeedMps',
+  'morphRate',
+  'lifeBirth',
+  'lifeGrow',
+  'lifeDecay',
+  'lifeDeath',
+  'lifePeak',
+  'lifeStart',
 ] as const satisfies readonly (keyof CloudBodySnapshot)[];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,6 +113,7 @@ function parseCloudBodySnapshot(value: unknown): CloudBodySnapshot {
     throw new Error(`Cloud body ${value.id} has an invalid placementLocked flag.`);
   }
   if (typeof value.bounded !== 'boolean') throw new Error(`Cloud body ${value.id} has an invalid bounded flag.`);
+  if (typeof value.lifeEnabled !== 'boolean') throw new Error(`Cloud body ${value.id} has an invalid lifeEnabled flag.`);
   for (const field of SNAPSHOT_NUMBER_FIELDS) {
     if (typeof value[field] !== 'number' || !Number.isFinite(value[field])) {
       throw new Error(`Cloud body ${value.id} has an invalid ${field} value.`);
@@ -91,10 +123,12 @@ function parseCloudBodySnapshot(value: unknown): CloudBodySnapshot {
 }
 
 export function parseCloudBodyCollectionSnapshot(value: unknown): CloudBodyCollectionSnapshot {
-  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.bodies)) {
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2) || !Array.isArray(value.bodies)) {
     throw new Error('Unsupported cloud-body collection snapshot.');
   }
-  const bodies = value.bodies.map(parseCloudBodySnapshot);
+  const bodies = value.bodies.map((body) => parseCloudBodySnapshot(
+    value.version === 1 && isRecord(body) ? { ...LEGACY_RUNTIME_DEFAULTS, ...body } : body,
+  ));
   const ids = new Set<string>();
   const pathCounts: Record<CloudBodyPath, number> = { volume: 0, 'local-volume': 0, 'high-sheet': 0 };
   for (const body of bodies) {
@@ -105,7 +139,7 @@ export function parseCloudBodyCollectionSnapshot(value: unknown): CloudBodyColle
   if (pathCounts.volume > MAX_VOLUME_CLOUD_BODIES || pathCounts['local-volume'] > 1 || pathCounts['high-sheet'] > 1) {
     throw new Error('Cloud-body collection exceeds renderer capacity.');
   }
-  return { version: 1, bodies };
+  return { version: 2, bodies };
 }
 
 type CloudBodySlot =
@@ -346,6 +380,93 @@ export class CloudBody {
     return this.slot.kind === 'high';
   }
 
+  get supportsRuntimeControls(): boolean {
+    return this.slot.kind === 'layer';
+  }
+
+  get windDeg(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].windDeg : 0;
+  }
+
+  set windDeg(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].windDeg = value;
+  }
+
+  get windSpeedMps(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].windSpeedMps : 0;
+  }
+
+  set windSpeedMps(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].windSpeedMps = value;
+  }
+
+  get morphRate(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].morphRate : 0;
+  }
+
+  set morphRate(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].morphRate = value;
+  }
+
+  get lifeEnabled(): boolean {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeEnabled : false;
+  }
+
+  set lifeEnabled(value: boolean) {
+    if (this.slot.kind !== 'layer') return;
+    const layer = this.params.layers[this.slot.index];
+    if (value && !layer.lifeEnabled) layer.lifeStart = this.params.sceneTime;
+    layer.lifeEnabled = value;
+  }
+
+  get lifeBirth(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeBirth : 0;
+  }
+
+  set lifeBirth(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeBirth = value;
+  }
+
+  get lifeGrow(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeGrow : 0;
+  }
+
+  set lifeGrow(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeGrow = value;
+  }
+
+  get lifeDecay(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeDecay : 0;
+  }
+
+  set lifeDecay(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeDecay = value;
+  }
+
+  get lifeDeath(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeDeath : 0;
+  }
+
+  set lifeDeath(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeDeath = value;
+  }
+
+  get lifePeak(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifePeak : 1;
+  }
+
+  set lifePeak(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifePeak = value;
+  }
+
+  get lifeStart(): number {
+    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeStart : 0;
+  }
+
+  set lifeStart(value: number) {
+    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeStart = value;
+  }
+
   toSnapshot(): CloudBodySnapshot {
     return {
       id: this.id,
@@ -365,6 +486,16 @@ export class CloudBody {
       radiusZ: this.radiusZ,
       rotationDeg: this.rotationDeg,
       feather: this.feather,
+      windDeg: this.windDeg,
+      windSpeedMps: this.windSpeedMps,
+      morphRate: this.morphRate,
+      lifeEnabled: this.lifeEnabled,
+      lifeBirth: this.lifeBirth,
+      lifeGrow: this.lifeGrow,
+      lifeDecay: this.lifeDecay,
+      lifeDeath: this.lifeDeath,
+      lifePeak: this.lifePeak,
+      lifeStart: this.lifeStart,
     };
   }
 
@@ -384,6 +515,16 @@ export class CloudBody {
       this.radiusZ = snapshot.radiusZ;
       this.rotationDeg = snapshot.rotationDeg;
       this.feather = snapshot.feather;
+      this.windDeg = snapshot.windDeg;
+      this.windSpeedMps = snapshot.windSpeedMps;
+      this.morphRate = snapshot.morphRate;
+      this.lifeEnabled = snapshot.lifeEnabled;
+      this.lifeBirth = snapshot.lifeBirth;
+      this.lifeGrow = snapshot.lifeGrow;
+      this.lifeDecay = snapshot.lifeDecay;
+      this.lifeDeath = snapshot.lifeDeath;
+      this.lifePeak = snapshot.lifePeak;
+      this.lifeStart = snapshot.lifeStart;
     });
     this.placementLocked = snapshot.placementLocked;
   }
@@ -426,6 +567,18 @@ export class CloudBody {
         target.centerZ = this.supportsBounds ? this.centerZ : -2000;
         target.radiusX = this.hasSpatialBounds ? this.radiusX : 1800;
         target.radiusZ = this.hasSpatialBounds ? this.radiusZ : 1600;
+      }
+      if (target.supportsRuntimeControls) {
+        target.windDeg = this.supportsRuntimeControls ? this.windDeg : 35;
+        target.windSpeedMps = this.supportsRuntimeControls ? this.windSpeedMps : 0;
+        target.morphRate = this.supportsRuntimeControls ? this.morphRate : 0;
+        target.lifeEnabled = this.supportsRuntimeControls ? this.lifeEnabled : false;
+        target.lifeBirth = this.supportsRuntimeControls ? this.lifeBirth : 2;
+        target.lifeGrow = this.supportsRuntimeControls ? this.lifeGrow : 32;
+        target.lifeDecay = this.supportsRuntimeControls ? this.lifeDecay : 60;
+        target.lifeDeath = this.supportsRuntimeControls ? this.lifeDeath : 90;
+        target.lifePeak = this.supportsRuntimeControls ? this.lifePeak : 1;
+        target.lifeStart = this.supportsRuntimeControls ? this.lifeStart : 0;
       }
     });
     target.placementLocked = this.placementLocked;
@@ -526,7 +679,7 @@ export class CloudBodyStore {
 
   exportSnapshot(): CloudBodyCollectionSnapshot {
     return {
-      version: 1,
+      version: 2,
       bodies: this.bodyList.map((body) => body.toSnapshot()),
     };
   }

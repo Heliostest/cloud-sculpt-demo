@@ -439,6 +439,27 @@ fn layerHorizontalMask(worldPos: vec3f, bounds: vec4f, transform: vec4f) -> f32 
   return 1.0 - smoothstep(1.0 - feather, 1.0, ellipseDistance);
 }
 
+fn bodyLifecycleScale(enabled: f32, life: vec4f, peakDensity: f32, time: f32) -> f32 {
+  if (enabled < 0.5) {
+    return 1.0;
+  }
+  let birth = life.x;
+  let grow = max(birth, life.y);
+  let decay = max(grow, life.z);
+  let death = max(decay, life.w);
+  if (time < birth || time >= death) {
+    return 0.0;
+  }
+  let peak = max(0.0, peakDensity);
+  if (time < grow) {
+    return smoothstep(birth, max(birth + 0.001, grow), time) * peak;
+  }
+  if (time < decay) {
+    return peak;
+  }
+  return (1.0 - smoothstep(decay, max(decay + 0.001, death), time)) * peak;
+}
+
 fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensitySample {
   let edgeFade = distanceFade(worldPos);
   if (edgeFade <= 0.0) {
@@ -462,8 +483,28 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
       continue;
     }
     let shapeDetail = B.layerShapeDetails[layerIndex];
+    let motion = B.layerMotion[layerIndex];
+    let bodyTime = max(0.0, U.time - B.layerBoundTransforms[layerIndex].w);
+    let lifeScale = bodyLifecycleScale(motion.w, B.layerLife[layerIndex], shapeDetail.w, bodyTime);
+    if (lifeScale <= 0.0001) {
+      continue;
+    }
+    let transport = motion.xy * U.time;
+    let transportedPos = vec3f(worldPos.x - transport.x, worldPos.y, worldPos.z - transport.y);
+    let morphPhase = U.time * motion.z * 6.2831853;
+    let morphAmount = saturate(abs(motion.z) * 10.0) * 450.0;
+    let densityPos = transportedPos + vec3f(
+      sin(morphPhase) * morphAmount,
+      0.0,
+      (cos(morphPhase) - 1.0) * morphAmount,
+    );
+    let bodyWeatherUv = weatherUv(densityPos);
+    if (!isInsideWeatherMap(bodyWeatherUv)) {
+      continue;
+    }
+    let bodyWeather = sampleWeather(densityPos);
     let horizontalMask = layerHorizontalMask(
-      worldPos,
+      transportedPos,
       B.layerBounds[layerIndex],
       B.layerBoundTransforms[layerIndex],
     );
@@ -477,14 +518,14 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
     var height01 = 0.0;
     var densityCoverage = 0.0;
     evaluateLowCloudLayer(
-      worldPos,
+      densityPos,
       layer.x,
       layer.y,
-      layer.z,
+      layer.z * lifeScale,
       shapeDetail.y,
       shapeDetail.x,
       shapeDetail.z,
-      w,
+      bodyWeather,
       stepLen,
       simpleMode,
       &support,

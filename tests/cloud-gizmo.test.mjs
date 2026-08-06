@@ -84,6 +84,10 @@ test('GUI selection and canvas pointer arbitration stay wired together', async (
   assert.match(mainSource, /gizmo\.pointerDown\(e\)/);
   assert.match(mainSource, /gizmo\.pointerMove\(e\)/);
   assert.match(mainSource, /gizmo\.update\(cam,/);
+  assert.match(mainSource, /const bodyStore = new CloudBodyStore\(params\)/);
+  assert.match(mainSource, /createGui\(params, bodyStore,/);
+  assert.match(mainSource, /renderer\.render\(params, bodyStore\.bodies,/);
+  assert.doesNotMatch(guiSource, /new CloudBodyStore\(params\)/);
 });
 
 test('GUI reconciles presets and exposes explicit genus placement controls', async () => {
@@ -91,4 +95,9 @@ test('GUI reconciles presets and exposes explicit genus placement controls', asy
   assert.match(guiSource, /bodyStore\.reloadFromParams\(\)/);
   assert.match(guiSource, /folder\.add\(body, 'placementLocked'\)/);
   assert.match(guiSource, /body\.applyGenusDefaults\(\)/);
+  assert.match(guiSource, /body\.supportsRuntimeControls/);
+  assert.match(guiSource, /folderLabel\('bodyMotion'\)/);
+  assert.match(guiSource, /folderLabel\('bodyLifecycle'\)/);
+  assert.match(guiSource, /advancedBodyFolders/);
+  assert.match(guiSource, /lifecycleFolder\.add\(body, 'lifeEnabled'\)/);
 });

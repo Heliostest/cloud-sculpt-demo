@@ -66,6 +66,8 @@ struct CloudBodyUniforms {
   layerShapeDetails: array<vec4f, 8>,
   layerBounds: array<vec4f, 8>,
   layerBoundTransforms: array<vec4f, 8>,
+  layerMotion: array<vec4f, 8>,
+  layerLife: array<vec4f, 8>,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;

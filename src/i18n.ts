@@ -26,6 +26,8 @@ const UI = {
 } as const;
 
 const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
+  bodyMotion: { label: copy('Motion', '运动'), tip: copy('Independent horizontal transport and internal density variation for this volume body.', '该体积云独立的水平移动与内部密度变化。') },
+  bodyLifecycle: { label: copy('Lifecycle', '生命周期'), tip: copy('Optional formation, mature, and dissipation timing for this volume body.', '该体积云可选的生成、成熟与消散时间。') },
   cloudBodies: { label: copy('Cloud Bodies', '云体'), tip: copy('Add, duplicate, remove, and edit independent cloud objects.', '添加、复制、删除并编辑独立云体。') },
   cloudBody: { label: copy('Cloud Body', '云体'), tip: copy('One editable cloud object backed by the current renderer.', '一个可独立编辑并连接到当前渲染器的云体对象。') },
   environment: { label: copy('Environment', '环境'), tip: copy('Wind, sun direction, and final exposure.', '风、太阳方向和最终曝光。') },
@@ -50,6 +52,15 @@ const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
 };
 
 const PARAMETERS: Record<string, ParameterCopy> = {
+  windDeg: parameter('Body Wind Direction (°)', '单体风向（°）', 'Direction in which this cloud body is transported.', '这个云体整体移动的方向。'),
+  windSpeedMps: parameter('Body Wind Speed (m/s)', '单体风速（m/s）', 'Horizontal transport speed of this cloud body.', '这个云体整体水平移动的速度。'),
+  morphRate: parameter('Morph Rate', '形变速率', 'Rate of slow internal density-domain variation; zero keeps the authored shape stable.', '内部密度域缓慢变化的速率；设为零时保持原始形态。'),
+  lifeEnabled: parameter('Enable Lifecycle', '启用生命周期', 'Starts this lifecycle when enabled; disable and enable again to restart it.', '启用时从头开始生命周期；关闭后再次启用可重新开始。'),
+  lifeBirth: parameter('Birth (s)', '生成开始（秒）', 'Delay before the cloud begins to form.', '云体开始生成前的等待时间。'),
+  lifeGrow: parameter('Full Growth (s)', '完全生成（秒）', 'Time when the cloud reaches peak density.', '云体达到峰值密度的时间。'),
+  lifeDecay: parameter('Decay Start (s)', '消散开始（秒）', 'Time when the mature cloud begins to dissipate.', '成熟云体开始消散的时间。'),
+  lifeDeath: parameter('Death (s)', '完全消失（秒）', 'Time when the cloud has fully dissipated.', '云体完全消散的时间。'),
+  lifePeak: parameter('Peak Density', '峰值密度', 'Density multiplier during the mature lifecycle phase.', '生命周期成熟阶段的密度倍率。'),
   placementLocked: parameter('Keep Placement', '保留摆放', 'When enabled, changing the cloud genus keeps the hand-edited position and size.', '启用后，切换云属时保留手工调整的位置和尺寸。'),
   applyGenusDefaults: parameter('Apply Genus Placement', '应用云属摆放', 'Applies the recommended altitude and horizontal size for this cloud genus.', '应用该云属建议的高度和水平尺寸。'),
   cloudBody: parameter('Cloud', '云体', 'An independently editable cloud object.', '一个可独立编辑的云体对象。'),

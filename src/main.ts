@@ -1,6 +1,6 @@
 import { createGui } from './gui';
 import { CloudGizmo } from './cloudGizmo';
-import type { CloudBody } from './cloudBodies';
+import { CloudBodyStore, type CloudBody } from './cloudBodies';
 import { createDefaultParams, isCloudGenus, isDebugMode, isHighCloudGenus, isToneMapper, type CameraPreset, type DemoParams } from './params';
 import { createRenderer, type CameraState } from './renderer';
 import {
@@ -263,6 +263,7 @@ async function main(): Promise<void> {
     params.wispyLowWeight = detailChannel === 'wispyLow' ? 1 : 0;
     params.wispyHighWeight = detailChannel === 'wispyHigh' ? 1 : 0;
   }
+  const bodyStore = new CloudBodyStore(params);
   const renderer = await createRenderer(canvas);
 
   const orbit: Orbit = {
@@ -338,7 +339,7 @@ async function main(): Promise<void> {
   let last = performance.now();
   let time = currentPreset.frozenTime;
   let validationReady = false;
-  gui = createGui(params, {
+  gui = createGui(params, bodyStore, {
     initialCloudPreset: currentPresetName,
     onCloudPreset(presetName: CloudPresetName) {
       currentPresetName = presetName;
@@ -372,6 +373,7 @@ async function main(): Promise<void> {
     const animationDt = validationMode ? 0 : dt;
     last = now;
     time = validationMode ? currentPreset.frozenTime : time + dt;
+    params.sceneTime = time;
 
     const ang = (params.windAngleDeg * Math.PI) / 180;
     const wx = Math.cos(ang) * params.windSpeed;
@@ -395,7 +397,7 @@ async function main(): Promise<void> {
     document.body.dataset.sunElevationDeg = params.sunElevationDeg.toFixed(2);
     document.body.dataset.exposure = params.exposure.toFixed(3);
     gizmo.update(cam, validationMode ? null : selectedCloudBody);
-    renderer.render(params, cam, time, windOffset);
+    renderer.render(params, bodyStore.bodies, cam, time, windOffset);
     const gpuTiming = renderer.getGpuTimingInfo();
     document.body.dataset.gpuTimingSupported = String(gpuTiming.supported);
     document.body.dataset.gpuSampleCount = String(gpuTiming.sampleCount);

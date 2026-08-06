@@ -71,6 +71,19 @@ export interface LayerParams {
   rotationDeg: number;
   /** Normalized width of the soft edge inside the ellipse. */
   feather: number;
+  /** Per-body horizontal transport, independent from global noise advection. */
+  windDeg: number;
+  windSpeedMps: number;
+  /** Cycles per second used to vary the internal density domain. */
+  morphRate: number;
+  lifeEnabled: boolean;
+  lifeBirth: number;
+  lifeGrow: number;
+  lifeDecay: number;
+  lifeDeath: number;
+  lifePeak: number;
+  /** Scene time captured when the lifecycle was enabled. */
+  lifeStart: number;
 }
 
 export const MAX_VOLUME_CLOUD_BODIES = 8;
@@ -90,6 +103,8 @@ export interface HeroParams {
 }
 
 export interface DemoParams {
+  /** Runtime-only scene clock used to restart per-body lifecycles interactively. */
+  sceneTime: number;
   weatherMapCenterX: number;
   weatherMapCenterZ: number;
   weatherMapWorldSizeKm: number;
@@ -236,6 +251,16 @@ export function createDefaultParams(): DemoParams {
     radiusZ: 15000,
     rotationDeg: 0,
     feather: 0.25,
+    windDeg: 35,
+    windSpeedMps: 0,
+    morphRate: 0,
+    lifeEnabled: false,
+    lifeBirth: 2,
+    lifeGrow: 32,
+    lifeDecay: 60,
+    lifeDeath: 90,
+    lifePeak: 1,
+    lifeStart: 0,
   };
   const layers: LayerParams[] = [
     {
@@ -320,6 +345,7 @@ export function createDefaultParams(): DemoParams {
     },
   ];
   return {
+    sceneTime: 0,
     // Keep the tuned southwest weather phase while allowing the long view
     // rays to enter the active (non-saturated) HP radial-LUT range.
     weatherMapCenterX: 205000,

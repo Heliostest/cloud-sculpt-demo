@@ -151,6 +151,27 @@ test('invalid or over-capacity cloud-body snapshots are rejected before mutation
   assert.deepEqual(store.exportSnapshot(), before);
 });
 
+test('version one snapshots migrate to the runtime-control schema', () => {
+  const params = createDefaultParams();
+  const source = new CloudBodyStore(params).exportSnapshot();
+  const legacy = structuredClone(source);
+  legacy.version = 1;
+  for (const body of legacy.bodies) {
+    for (const key of [
+      'windDeg', 'windSpeedMps', 'morphRate', 'lifeEnabled', 'lifeBirth',
+      'lifeGrow', 'lifeDecay', 'lifeDeath', 'lifePeak', 'lifeStart',
+    ]) delete body[key];
+  }
+
+  const target = new CloudBodyStore(createDefaultParams());
+  target.restoreSnapshot(legacy);
+  const migrated = target.exportSnapshot();
+  assert.equal(migrated.version, 2);
+  assert.equal(migrated.bodies[0].windSpeedMps, 0);
+  assert.equal(migrated.bodies[0].lifeEnabled, false);
+  assert.equal(migrated.bodies[0].lifeDeath, 90);
+});
+
 test('genus defaults respect manual placement until explicitly applied', () => {
   const params = createDefaultParams();
   const store = new CloudBodyStore(params);
@@ -175,4 +196,37 @@ test('genus defaults respect manual placement until explicitly applied', () => {
   assert.equal(added.radiusX, 5000);
   assert.equal(added.radiusZ, 5000);
   assert.equal(added.placementLocked, false);
+});
+
+test('volume bodies own independent motion and lifecycle authoring data', () => {
+  const params = createDefaultParams();
+  const store = new CloudBodyStore(params);
+  const primary = store.active()[0];
+  const second = store.duplicate(primary.id);
+
+  primary.windDeg = 120;
+  primary.windSpeedMps = 18;
+  primary.morphRate = 0.08;
+  params.sceneTime = 17;
+  primary.lifeEnabled = true;
+  primary.lifeBirth = 4;
+  primary.lifeGrow = 12;
+  primary.lifeDecay = 40;
+  primary.lifeDeath = 55;
+  primary.lifePeak = 1.4;
+
+  assert.equal(params.layers[0].windDeg, 120);
+  assert.equal(params.layers[0].windSpeedMps, 18);
+  assert.equal(params.layers[0].lifeEnabled, true);
+  assert.equal(params.layers[0].lifeStart, 17);
+  assert.equal(params.layers[0].lifePeak, 1.4);
+  assert.notEqual(params.layers[1].windDeg, primary.windDeg);
+  assert.equal(second.supportsRuntimeControls, true);
+
+  const snapshot = store.exportSnapshot();
+  const saved = snapshot.bodies.find((body) => body.id === primary.id);
+  assert.equal(saved.windSpeedMps, 18);
+  assert.equal(saved.morphRate, 0.08);
+  assert.equal(saved.lifeDeath, 55);
+  assert.equal(saved.lifeStart, 17);
 });

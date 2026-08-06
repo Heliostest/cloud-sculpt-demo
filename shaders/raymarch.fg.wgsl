@@ -93,7 +93,11 @@ fn marchHighCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
   let t0 = max(shell.x, 0.0);
-  let t1 = min(shell.y, U.quality.w);
+  var t1 = min(shell.y, U.quality.w);
+  let groundT = rayGroundDistance(ro, rd);
+  if (groundT > 0.0) {
+    t1 = min(t1, groundT);
+  }
   if (t1 <= t0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
@@ -158,7 +162,11 @@ fn marchLowCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
   }
   // 不再用世界 XZ 盒硬裁（会把地平线远云切掉）
   let t0 = max(shell.x, 0.0);
-  let t1 = min(shell.y, U.quality.w);
+  var t1 = min(shell.y, U.quality.w);
+  let groundT = rayGroundDistance(ro, rd);
+  if (groundT > 0.0) {
+    t1 = min(t1, groundT);
+  }
   if (t1 <= t0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
@@ -252,9 +260,11 @@ fn marchLowCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
     dbgAfter = max(dbgAfter, s.afterShape);
     dbgDens = max(dbgDens, s.density);
 
-    // 过低密度不积分：否则薄 support 边会变成“看不见却挡后景”的黑壳
-    if (s.density > 0.012) {
-      let dens = s.density;
+    // Smoothly suppress sub-visible density so stochastic samples cannot toggle
+    // an entire segment at a hard threshold near the horizon.
+    let densityGate = smoothstep(0.002, 0.02, s.density);
+    let dens = s.density * densityGate;
+    if (dens > 1e-5) {
       let typeW = mix(1.0, 1.08, s.typeMix);
       // 消光≈散射（高反照率），禁止 sigmaT>>sigmaS 造隐形壳体
       let sigmaT = dens * U.optical.y * typeW;

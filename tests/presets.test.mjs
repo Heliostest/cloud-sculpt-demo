@@ -31,6 +31,52 @@ test('density model selector is removed from the public parameter surface', () =
   assert.equal('isDensityModel' in paramsModule, false);
 });
 
+test('the parameter model exposes the canonical ten cloud genera per layer', () => {
+  const expectedGenera = [
+    'cumulus',
+    'stratus',
+    'stratocumulus',
+    'cumulonimbus',
+    'altocumulus',
+    'altostratus',
+    'nimbostratus',
+    'cirrus',
+    'cirrostratus',
+    'cirrocumulus',
+  ];
+  assert.deepEqual(paramsModule.CLOUD_GENERA, expectedGenera);
+  assert.deepEqual(
+    expectedGenera.map((genus) => paramsModule.CLOUD_GENUS_INDEX[genus]),
+    expectedGenera.map((_, index) => index),
+  );
+
+  const params = paramsModule.createDefaultParams();
+  assert.equal('cloudTypeOverride' in params, false);
+  for (const layer of params.layers) {
+    assert.ok(expectedGenera.includes(layer.genus));
+    assert.ok(layer.cumulusDevelopment >= 0 && layer.cumulusDevelopment <= 1);
+  }
+});
+
+test('TCu is represented as cumulus development rather than an eleventh genus', () => {
+  assert.equal(paramsModule.CLOUD_GENERA.includes('tcu'), false);
+  assert.equal(paramsModule.CLOUD_GENERA.includes('towering-cumulus'), false);
+
+  const side = paramsModule.createDefaultParams();
+  presetsModule.applyCloudPreset(side, presetsModule.CLOUD_PRESETS['side-cu']);
+  assert.equal(side.layers[0].genus, 'cumulus');
+  assert.equal(side.layers[0].cumulusDevelopment, 0);
+
+  const towering = paramsModule.createDefaultParams();
+  presetsModule.applyCloudPreset(towering, presetsModule.CLOUD_PRESETS['oblique-tcu']);
+  assert.equal(towering.layers[0].genus, 'cumulus');
+  assert.equal(towering.layers[0].cumulusDevelopment, 1);
+
+  const storm = paramsModule.createDefaultParams();
+  presetsModule.applyCloudPreset(storm, presetsModule.CLOUD_PRESETS['oblique-cb']);
+  assert.equal(storm.layers[0].genus, 'cumulonimbus');
+});
+
 test('the interactive entry exposes default plus seven cloud presets', () => {
   const presets = Object.values(presetsModule.CLOUD_PRESETS);
   assert.equal(presets.length, 8);
@@ -46,7 +92,7 @@ test('stratocumulus preset is a shallow connected deck with softened erosion', (
 
   assert.equal(params.scStrength, 1);
   assert.equal(params.scMaskOverride, 1);
-  assert.equal(params.cloudTypeOverride, 0);
+  assert.equal(params.layers[0].genus, 'stratocumulus');
   assert.ok(params.scHeightScale <= 0.25);
   assert.ok(params.scCoverageIntensity > 1);
   assert.ok(params.scDetailStrength < paramsModule.createDefaultParams().scDetailStrength);
@@ -95,6 +141,8 @@ test('switching presets restores defaults without replacing nested GUI targets',
   assert.equal(params.scStrength, 0);
   assert.equal(params.scMaskOverride, -1);
   assert.equal(params.hpLightingEnabled, false);
-  assert.equal(params.cloudTypeOverride, 0);
-  assert.equal(params.windSpeed, 8);
+  assert.equal(params.layers[0].genus, 'cumulus');
+  assert.equal(params.layers[0].cumulusDevelopment, 0);
+  assert.equal(params.windSpeed, 15);
+  assert.equal(params.densityThreshold, 0.03);
 });

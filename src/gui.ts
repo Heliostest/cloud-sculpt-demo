@@ -1,5 +1,5 @@
 import GUI from 'lil-gui';
-import type { CameraPreset, DemoParams } from './params';
+import { CLOUD_GENERA, type CameraPreset, type DemoParams } from './params';
 import { CLOUD_PRESET_OPTIONS, type CloudPresetName } from './cloudPresets';
 
 export function createGui(
@@ -121,7 +121,6 @@ export function createGui(
   weather.add(params, 'weatherMapWorldSizeKm', 20, 1000, 10).name('map world size (km)');
   weather.add(params, 'windSpeed', 0, 40, 0.1);
   weather.add(params, 'windAngleDeg', 0, 360, 1);
-  weather.add(params, 'cloudTypeOverride', -1, 1, 0.01).name('type override');
 
   const sculpt = gui.addFolder('Sculpt');
   sculpt.add(params, 'detailStrength', 0, 1.5, 0.01);
@@ -167,6 +166,8 @@ export function createGui(
     const L = params.layers[i];
     const f = layers.addFolder(`L${i}`);
     f.add(L, 'enabled');
+    f.add(L, 'genus', Array.from(CLOUD_GENERA));
+    f.add(L, 'cumulusDevelopment', 0, 1, 0.01).name('Cu development');
     f.add(L, 'baseKm', 0.2, 10, 0.05);
     f.add(L, 'topKm', 0.5, 12, 0.05);
     f.add(L, 'densityScale', 0, 2, 0.01);
@@ -175,7 +176,8 @@ export function createGui(
 
   const hero = gui.addFolder('Hero');
   hero.add(params.hero, 'enabled');
-  hero.add(params.hero, 'typeCb', 0, 1, 0.01).name('Cu→Cb');
+  hero.add(params.hero, 'genus', Array.from(CLOUD_GENERA));
+  hero.add(params.hero, 'cumulusDevelopment', 0, 1, 0.01).name('Cu development');
   hero.add(params.hero, 'coverage', 0, 1, 0.01);
   hero.add(params.hero, 'densityMul', 0.2, 2.5, 0.01);
 

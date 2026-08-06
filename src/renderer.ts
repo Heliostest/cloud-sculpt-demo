@@ -17,7 +17,13 @@ import {
   generateShapeRGBA,
   generateVolumeMipChainRGBA,
 } from './noiseAtlasGen';
-import { DEBUG_MODE_INDEX, TONE_MAPPER_INDEX, type DemoParams } from './params';
+import {
+  CLOUD_GENUS_INDEX,
+  DEBUG_MODE_INDEX,
+  TONE_MAPPER_INDEX,
+  cloudGenusTypeMix,
+  type DemoParams,
+} from './params';
 
 const UNIFORM_SIZE = 880;
 
@@ -390,19 +396,19 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[54] = L[2].densityScale;
     f32[55] = L[2].enabled ? 1 : 0;
 
-    f32[56] = 0;
+    f32[56] = CLOUD_GENUS_INDEX[L[0].genus];
     f32[57] = L[0].detailAmount;
-    f32[58] = 0;
+    f32[58] = L[0].cumulusDevelopment;
     f32[59] = 0;
 
-    f32[60] = 0;
+    f32[60] = CLOUD_GENUS_INDEX[L[1].genus];
     f32[61] = L[1].detailAmount;
-    f32[62] = 0;
+    f32[62] = L[1].cumulusDevelopment;
     f32[63] = 0;
 
-    f32[64] = 0;
+    f32[64] = CLOUD_GENUS_INDEX[L[2].genus];
     f32[65] = L[2].detailAmount;
-    f32[66] = 0;
+    f32[66] = L[2].cumulusDevelopment;
     f32[67] = 0;
 
     const h = params.hero;
@@ -414,7 +420,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[72] = h.rz;
     f32[73] = h.baseKm * 1000;
     f32[74] = h.thicknessKm * 1000;
-    f32[75] = h.typeCb;
+    f32[75] = cloudGenusTypeMix(h.genus, h.cumulusDevelopment);
 
     f32[76] = h.coverage;
     f32[77] = h.densityMul;
@@ -447,11 +453,11 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[94] = params.edgeSoftness;
     f32[95] = params.wispyTopHeight;
 
-    // hpLow1: wispyTopHardness, bottomSmoothHeight, bottomSmoothPow, typeOverride
+    // hpLow1: wispyTopHardness, bottomSmoothHeight, bottomSmoothPow, reserved
     f32[96] = params.wispyTopHardness;
     f32[97] = params.bottomSmoothHeight;
     f32[98] = params.bottomSmoothPow;
-    f32[99] = params.cloudTypeOverride;
+    f32[99] = 0;
 
     // hpCoverage0: Cover intensity/contrast, Height intensity/contrast
     f32[100] = params.loCovCoverIntensity;

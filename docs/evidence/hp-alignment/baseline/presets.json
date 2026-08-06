@@ -12,31 +12,36 @@
       "camera": "side",
       "debugMode": "Final",
       "detailOff": false,
-      "cloudTypeOverride": 0
+      "genus": "cumulus",
+      "cumulusDevelopment": 0
     },
     "oblique-cb": {
       "camera": "oblique45",
       "debugMode": "Final",
       "detailOff": false,
-      "cloudTypeOverride": 1
+      "genus": "cumulonimbus",
+      "cumulusDevelopment": 0
     },
     "oblique-tcu": {
       "camera": "oblique45",
       "debugMode": "Final",
       "detailOff": false,
-      "cloudTypeOverride": 0.5
+      "genus": "cumulus",
+      "cumulusDevelopment": 1
     },
     "top-density": {
       "camera": "top",
       "debugMode": "FinalDensity",
       "detailOff": false,
-      "cloudTypeOverride": -1
+      "genus": "cumulus",
+      "cumulusDevelopment": 0.5
     },
     "detail-off": {
       "camera": "oblique45",
       "debugMode": "Final",
       "detailOff": true,
-      "cloudTypeOverride": -1
+      "genus": "cumulus",
+      "cumulusDevelopment": 0.5
     },
     "hp-ocean-day": {
       "reference": "HPVolumeCloud/compare/Snipaste_2026-07-05_10-31-41.png",
@@ -46,7 +51,8 @@
       "verticalFovDeg": 55,
       "debugMode": "Final",
       "detailOff": false,
-      "cloudTypeOverride": -1,
+      "genus": "cumulus",
+      "cumulusDevelopment": 0.5,
       "hpDensity": {
         "loCovCoverIntensity": 0.62,
         "loCovCoverContrast": 1.5,

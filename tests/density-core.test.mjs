@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const raymarchSource = readFileSync(new URL('../shaders/raymarch.fg.wgsl', import.meta.url), 'utf8');
 const densitySource = readFileSync(new URL('../shaders/density.wgsl', import.meta.url), 'utf8');
+const commonSource = readFileSync(new URL('../shaders/common.wgsl', import.meta.url), 'utf8');
+const rendererSource = readFileSync(new URL('../src/renderer.ts', import.meta.url), 'utf8');
 
 function wgslFunctionSource(name, nextMarker) {
   const start = raymarchSource.indexOf(`fn ${name}`);
@@ -22,6 +24,15 @@ function traverseWithIterationBudget(totalDistance, maxIterations, requestedStep
     iterations++;
   }
   return { distance, iterations, traversalStepFloor };
+}
+
+function raySphereDistances(origin, direction, radius) {
+  const b = origin[0] * direction[0] + origin[1] * direction[1];
+  const c = origin[0] ** 2 + origin[1] ** 2 - radius ** 2;
+  const h = b * b - c;
+  if (h < 0) return null;
+  const root = Math.sqrt(h);
+  return [-b - root, -b + root];
 }
 
 test('thin foreground edges cannot exhaust the ray budget before the far cloud interval', () => {
@@ -74,6 +85,56 @@ test('long near-horizontal cloud segments receive a second density sample withou
   assert.match(lowMarch, /evaluateLowCloud\(refinementPos, stepLen \* 0\.5, false\)/);
   assert.match(lowMarch, /0\.5 \* \(s\.density \+ refinement\.density\)/);
   assert.match(lowMarch, /t \+= stepLen;/);
+});
+
+test('each low-cloud layer sends its own genus and cumulus development to the density evaluator', () => {
+  const genusConstants = [
+    'CUMULUS', 'STRATUS', 'STRATOCUMULUS', 'CUMULONIMBUS', 'ALTOCUMULUS',
+    'ALTOSTRATUS', 'NIMBOSTRATUS', 'CIRRUS', 'CIRROSTRATUS', 'CIRROCUMULUS',
+  ];
+  for (const [index, genus] of genusConstants.entries()) {
+    assert.match(densitySource, new RegExp(`const GENUS_${genus}: f32 = ${index}\\.0;`));
+  }
+  assert.match(rendererSource, /CLOUD_GENUS_INDEX\[L\[0\]\.genus\]/);
+  assert.match(rendererSource, /f32\[58\] = L\[0\]\.cumulusDevelopment;/);
+  assert.match(rendererSource, /CLOUD_GENUS_INDEX\[L\[1\]\.genus\]/);
+  assert.match(rendererSource, /f32\[62\] = L\[1\]\.cumulusDevelopment;/);
+  assert.match(rendererSource, /CLOUD_GENUS_INDEX\[L\[2\]\.genus\]/);
+  assert.match(rendererSource, /f32\[66\] = L\[2\]\.cumulusDevelopment;/);
+  assert.match(densitySource, /fn selectedCloudType\(genusIndex: f32, cumulusDevelopment: f32\)/);
+  assert.match(densitySource, /U\.layerShapeDetail0\.x, U\.layerShapeDetail0\.z/);
+  assert.match(densitySource, /U\.layerShapeDetail1\.x, U\.layerShapeDetail1\.z/);
+  assert.match(densitySource, /U\.layerShapeDetail2\.x, U\.layerShapeDetail2\.z/);
+});
+
+test('ground occludes far-side clouds before the cloud shell entry', () => {
+  const planetRadius = 6_360_000;
+  const cameraAltitude = 282.8;
+  const cloudBase = 400;
+  const angle = -1 * Math.PI / 180;
+  const origin = [0, planetRadius + cameraAltitude];
+  const direction = [Math.cos(angle), Math.sin(angle)];
+  const ground = raySphereDistances(origin, direction, planetRadius);
+  const cloudBaseShell = raySphereDistances(origin, direction, planetRadius + cloudBase);
+  assert.ok(ground && cloudBaseShell);
+  assert.ok(ground[0] > 0, `ground entry=${ground[0]}`);
+  assert.ok(cloudBaseShell[1] > ground[0], `cloud entry=${cloudBaseShell[1]}, ground=${ground[0]}`);
+
+  const highMarch = wgslFunctionSource('marchHighCloud', '\nfn marchLowCloud');
+  const lowMarch = wgslFunctionSource('marchLowCloud', '\nfn acesFitted');
+  assert.match(commonSource, /fn rayGroundDistance\(ro: vec3f, rd: vec3f\) -> f32/);
+  assert.match(highMarch, /let groundT = rayGroundDistance\(ro, rd\);/);
+  assert.match(lowMarch, /let groundT = rayGroundDistance\(ro, rd\);/);
+  assert.match(highMarch, /t1 = min\(t1, groundT\);/);
+  assert.match(lowMarch, /t1 = min\(t1, groundT\);/);
+});
+
+test('low-density cloud integration fades continuously instead of switching at a hard threshold', () => {
+  const lowMarch = wgslFunctionSource('marchLowCloud', '\nfn acesFitted');
+  assert.doesNotMatch(lowMarch, /if \(s\.density > 0\.012\)/);
+  assert.match(lowMarch, /let densityGate = smoothstep\(/);
+  assert.match(lowMarch, /let dens = s\.density \* densityGate;/);
+  assert.match(lowMarch, /if \(dens > 1e-5\)/);
 });
 
 const saturate = (x) => Math.min(1, Math.max(0, x));
@@ -237,7 +298,7 @@ test('hp-ocean weather placement keeps the radial LUT coordinate spatially activ
   assert.ok(Math.abs(nearRadial - midRadial) > 0.1);
 });
 
-test('HP cloud type reaches the Cu, Tcu, and Cb LUT channels', () => {
+test('HP Cu development and Cb endpoint reach the Cu, TCu, and Cb LUT channels', () => {
   const profiles = [0.2, 0.6, 0.9];
   assert.equal(hpTypeValue(profiles, 0), profiles[0]);
   assert.equal(hpTypeValue(profiles, 0.5), profiles[1]);

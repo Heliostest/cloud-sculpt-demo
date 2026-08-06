@@ -147,6 +147,14 @@ fn raySphere(ro: vec3f, rd: vec3f, center: vec3f, radius: f32) -> vec2f {
   return vec2f(-b - s, -b + s);
 }
 
+fn rayGroundDistance(ro: vec3f, rd: vec3f) -> f32 {
+  let hit = raySphere(ro, rd, planetCenter(), PLANET_R);
+  if (hit.x <= hit.y && hit.x > 0.0) {
+    return hit.x;
+  }
+  return -1.0;
+}
+
 fn rayCloudShell(ro: vec3f, rd: vec3f, baseAlt: f32, topAlt: f32) -> vec2f {
   let c = planetCenter();
   let bAlt = max(0.0, baseAlt);

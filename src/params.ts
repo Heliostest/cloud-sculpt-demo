@@ -4,8 +4,49 @@ export type ToneMapper = 'reinhard' | 'aces';
 
 export type CameraPreset = 'side' | 'oblique45' | 'top' | 'hpOcean';
 
+export const CLOUD_GENERA = [
+  'cumulus',
+  'stratus',
+  'stratocumulus',
+  'cumulonimbus',
+  'altocumulus',
+  'altostratus',
+  'nimbostratus',
+  'cirrus',
+  'cirrostratus',
+  'cirrocumulus',
+] as const;
+
+export type CloudGenus = (typeof CLOUD_GENERA)[number];
+
+export const CLOUD_GENUS_INDEX = {
+  cumulus: 0,
+  stratus: 1,
+  stratocumulus: 2,
+  cumulonimbus: 3,
+  altocumulus: 4,
+  altostratus: 5,
+  nimbostratus: 6,
+  cirrus: 7,
+  cirrostratus: 8,
+  cirrocumulus: 9,
+} as const satisfies Record<CloudGenus, number>;
+
+export function isCloudGenus(value: string | null): value is CloudGenus {
+  return value !== null && (CLOUD_GENERA as readonly string[]).includes(value);
+}
+
+export function cloudGenusTypeMix(genus: CloudGenus, cumulusDevelopment: number): number {
+  if (genus === 'cumulonimbus') return 1;
+  if (genus === 'cumulus') return Math.min(1, Math.max(0, cumulusDevelopment)) * 0.5;
+  return 0;
+}
+
 export interface LayerParams {
   enabled: boolean;
+  genus: CloudGenus;
+  /** 0 = fair-weather Cu, 1 = towering Cu (TCu); ignored by other genera. */
+  cumulusDevelopment: number;
   baseKm: number;
   topKm: number;
   densityScale: number;
@@ -14,7 +55,8 @@ export interface LayerParams {
 
 export interface HeroParams {
   enabled: boolean;
-  typeCb: number;
+  genus: CloudGenus;
+  cumulusDevelopment: number;
   cx: number;
   cz: number;
   rx: number;
@@ -45,7 +87,6 @@ export interface DemoParams {
   loCovCoverContrast: number;
   loCovHeightIntensity: number;
   loCovHeightContrast: number;
-  cloudTypeOverride: number;
   hpShapeScaleX: number;
   hpShapeScaleY: number;
   hpShapeScaleZ: number;
@@ -171,12 +212,12 @@ export function createDefaultParams(): DemoParams {
     weatherMapCenterX: 205000,
     weatherMapCenterZ: 205000,
     weatherMapWorldSizeKm: 500,
-    windSpeed: 8,
+    windSpeed: 15,
     windAngleDeg: 35,
     detailStrength: 0.42,
     detailRepeat: 0.0009,
     wispyEdgeWidth: 0.28,
-    densityThreshold: 0.0,
+    densityThreshold: 0.03,
     wispyReach: 0.252,
     edgeSoftness: 0.25,
     wispyTopHeight: 0.55,
@@ -187,7 +228,6 @@ export function createDefaultParams(): DemoParams {
     loCovCoverContrast: 1.0,
     loCovHeightIntensity: 1.0,
     loCovHeightContrast: 1.0,
-    cloudTypeOverride: -1,
     hpShapeScaleX: 0.00011,
     hpShapeScaleY: 0.00011,
     hpShapeScaleZ: 0.00011,
@@ -284,6 +324,8 @@ export function createDefaultParams(): DemoParams {
     layers: [
       {
         enabled: true,
+        genus: 'cumulus',
+        cumulusDevelopment: 0.5,
         baseKm: 0.4,
         topKm: 2.8,
         densityScale: 0.85,
@@ -291,6 +333,8 @@ export function createDefaultParams(): DemoParams {
       },
       {
         enabled: false,
+        genus: 'altocumulus',
+        cumulusDevelopment: 0,
         baseKm: 3.0,
         topKm: 5.5,
         densityScale: 0.28,
@@ -298,6 +342,8 @@ export function createDefaultParams(): DemoParams {
       },
       {
         enabled: false,
+        genus: 'cirrus',
+        cumulusDevelopment: 0,
         baseKm: 7.0,
         topKm: 9.0,
         densityScale: 0.25,
@@ -306,7 +352,8 @@ export function createDefaultParams(): DemoParams {
     ],
     hero: {
       enabled: false,
-      typeCb: 1.0,
+      genus: 'cumulonimbus',
+      cumulusDevelopment: 0,
       cx: 0,
       cz: -2000,
       rx: 1800,

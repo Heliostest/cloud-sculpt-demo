@@ -1,5 +1,5 @@
 import { createGui } from './gui';
-import { createDefaultParams, isDebugMode, isToneMapper, type CameraPreset, type DemoParams } from './params';
+import { createDefaultParams, isCloudGenus, isDebugMode, isToneMapper, type CameraPreset, type DemoParams } from './params';
 import { createRenderer, type CameraState } from './renderer';
 import {
   applyCloudPreset,
@@ -90,7 +90,8 @@ function syncParameterDataset(params: DemoParams): void {
   data.colorSaturation = String(params.colorSaturation);
   data.colorContrast = String(params.colorContrast);
   data.scStrength = String(params.scStrength);
-  data.cloudTypeOverride = String(params.cloudTypeOverride);
+  data.layerGenera = params.layers.map((layer) => layer.genus).join(',');
+  data.cumulusDevelopment = params.layers.map((layer) => layer.cumulusDevelopment).join(',');
   data.loCovCoverIntensity = String(params.loCovCoverIntensity);
   data.loCovCoverContrast = String(params.loCovCoverContrast);
   data.densityMultiplier = String(params.densityMultiplier);
@@ -139,7 +140,27 @@ async function main(): Promise<void> {
   const densityMultiplier = Number(query.get('densityMultiplier'));
   if (query.has('densityMultiplier') && Number.isFinite(densityMultiplier)) params.densityMultiplier = Math.max(0, Math.min(4, densityMultiplier));
   const cloudType = Number(query.get('cloudType'));
-  if (query.has('cloudType') && Number.isFinite(cloudType)) params.cloudTypeOverride = Math.max(-1, Math.min(1, cloudType));
+  if (query.has('cloudType') && Number.isFinite(cloudType) && cloudType >= 0) {
+    // Legacy global Cu/TCu/Cb URL adapter. New URLs should use genusN and
+    // cuDevelopmentN so each layer keeps independent semantics.
+    for (const layer of params.layers) {
+      if (cloudType >= 0.75) {
+        layer.genus = 'cumulonimbus';
+        layer.cumulusDevelopment = 0;
+      } else {
+        layer.genus = 'cumulus';
+        layer.cumulusDevelopment = Math.max(0, Math.min(1, cloudType * 2));
+      }
+    }
+  }
+  for (let i = 0; i < params.layers.length; i++) {
+    const genus = query.get(`genus${i}`);
+    if (isCloudGenus(genus)) params.layers[i].genus = genus;
+    const development = Number(query.get(`cuDevelopment${i}`));
+    if (query.has(`cuDevelopment${i}`) && Number.isFinite(development)) {
+      params.layers[i].cumulusDevelopment = Math.max(0, Math.min(1, development));
+    }
+  }
   const weatherMapCenterX = Number(query.get('weatherCenterX'));
   if (query.has('weatherCenterX') && Number.isFinite(weatherMapCenterX)) params.weatherMapCenterX = Math.max(-1000000, Math.min(1000000, weatherMapCenterX));
   const weatherMapCenterZ = Number(query.get('weatherCenterZ'));

@@ -72,7 +72,7 @@ function worleyTile(x: number, y: number, period: number): number {
 
 export const LOW_WEATHER_CHANNELS = {
   coverage: 0,
-  cloudType: 1,
+  cumulusDevelopment: 1,
   scMask: 2,
   reserved: 3,
 } as const;
@@ -84,7 +84,7 @@ export function generateWeatherRGBA(size = 512): Uint8Array {
   // feature sizes while providing many unique cells inside one map.
   const macroP = 48;
   const mesoP = 96;
-  const typeP = 32;
+  const developmentP = 32;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const u = x / Math.max(1, size - 1);
@@ -93,13 +93,14 @@ export function generateWeatherRGBA(size = 512): Uint8Array {
       const edgeFade = fade(Math.min(1, Math.max(0, edgeDistance / 0.04)));
       const macro = Math.pow(fbmTile(u * macroP, v * macroP, macroP, 5), 0.9);
       const meso = 1 - worleyTile(u * mesoP, v * mesoP, mesoP);
-      const typeBase = fbmTile(u * typeP + 0.37, v * typeP + 0.11, typeP, 3);
-      const type = Math.min(1, Math.max(0, typeBase * 0.85 + meso * 0.15));
-      const scMask = Math.min(1, Math.max(0, (typeBase - 0.38) / 0.42));
+      const developmentBase = fbmTile(u * developmentP + 0.37, v * developmentP + 0.11, developmentP, 3);
+      const cumulusDevelopment = Math.min(1, Math.max(0, developmentBase * 0.85 + meso * 0.15));
+      const scMask = Math.min(1, Math.max(0, (developmentBase - 0.38) / 0.42));
       const i = (y * size + x) * 4;
-      // HP low-weather layout: R coverage, G cloud type, B Sc mask, A reserved.
+      // HP low-weather layout: R coverage, G Cu development variation,
+      // B Sc mask, A reserved. Genus is authored per layer, never in a texel.
       data[i + LOW_WEATHER_CHANNELS.coverage] = Math.round(Math.min(1, Math.max(0, macro * 1.12 * edgeFade)) * 255);
-      data[i + LOW_WEATHER_CHANNELS.cloudType] = Math.round(type * 255);
+      data[i + LOW_WEATHER_CHANNELS.cumulusDevelopment] = Math.round(cumulusDevelopment * 255);
       data[i + LOW_WEATHER_CHANNELS.scMask] = Math.round(scMask * 255);
       data[i + LOW_WEATHER_CHANNELS.reserved] = 0;
     }

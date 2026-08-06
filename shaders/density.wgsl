@@ -100,8 +100,28 @@ fn isInsideWeatherMap(uv: vec2f) -> bool {
   return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0));
 }
 
-fn selectedCloudType(w: vec4f) -> f32 {
-  return select(saturate(w.g), saturate(U.hpLow1.w), U.hpLow1.w >= 0.0);
+const GENUS_CUMULUS: f32 = 0.0;
+const GENUS_STRATUS: f32 = 1.0;
+const GENUS_STRATOCUMULUS: f32 = 2.0;
+const GENUS_CUMULONIMBUS: f32 = 3.0;
+const GENUS_ALTOCUMULUS: f32 = 4.0;
+const GENUS_ALTOSTRATUS: f32 = 5.0;
+const GENUS_NIMBOSTRATUS: f32 = 6.0;
+const GENUS_CIRRUS: f32 = 7.0;
+const GENUS_CIRROSTRATUS: f32 = 8.0;
+const GENUS_CIRROCUMULUS: f32 = 9.0;
+
+fn selectedCloudType(genusIndex: f32, cumulusDevelopment: f32) -> f32 {
+  if (abs(genusIndex - GENUS_CUMULONIMBUS) < 0.5) {
+    return 1.0;
+  }
+  if (abs(genusIndex - GENUS_CUMULUS) < 0.5) {
+    // Cu -> TCu occupies the first half of the legacy Cu/TCu/Cb LUT.
+    return saturate(cumulusDevelopment) * 0.5;
+  }
+  // Genera without a dedicated recipe use the neutral Cu compatibility shape
+  // until their morphology evaluators are implemented.
+  return 0.0;
 }
 
 fn hpLoCoverage(rawCoverage: f32) -> f32 {
@@ -318,6 +338,8 @@ fn evaluateLowCloudLayer(
   topM: f32,
   densScale: f32,
   detailAmt: f32,
+  genusIndex: f32,
+  cumulusDevelopment: f32,
   w: vec4f,
   stepLen: f32,
   simpleMode: bool,
@@ -334,7 +356,7 @@ fn evaluateLowCloudLayer(
   }
   let alt = altitude(worldPos);
   let h01 = saturate((alt - baseM) / max(1.0, topM - baseM));
-  let typeMix = selectedCloudType(w);
+  let typeMix = selectedCloudType(genusIndex, cumulusDevelopment);
   *outType = typeMix;
   *outH = h01;
   if (alt < baseM || alt > topM) {
@@ -346,7 +368,10 @@ fn evaluateLowCloudLayer(
   // A negative override preserves the authored weather-map Sc mask. Presets
   // can opt into a uniform Sc deck without changing any existing cloud type.
   let scMask = select(w.b, saturate(U.hpSc2.z), U.hpSc2.z >= 0.0);
-  let scStrength = saturate(U.hpSc0.x * scMask);
+  var scStrength = saturate(U.hpSc0.x * scMask);
+  if (abs(genusIndex - GENUS_STRATOCUMULUS) < 0.5) {
+    scStrength = 1.0;
+  }
   var scCell = 1.0;
   if (scStrength > 0.0) {
     scCell = saturate(textureSampleLevel(scCellTex, weatherSamp, weatherUv(worldPos) * U.hpSc2.xy, 0.0).r * U.hpSc1.y);
@@ -412,7 +437,7 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
 
   if (U.layer0.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLowCloudLayer(worldPos, U.layer0.x, U.layer0.y, U.layer0.z, U.layerShapeDetail0.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLowCloudLayer(worldPos, U.layer0.x, U.layer0.y, U.layer0.z, U.layerShapeDetail0.y, U.layerShapeDetail0.x, U.layerShapeDetail0.z, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     if (d >= bestDens) {
       bestSupport = s; bestAfter = a; bestDens = d; bestType = t; bestH = h;
@@ -422,7 +447,7 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   }
   if (U.layer1.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLowCloudLayer(worldPos, U.layer1.x, U.layer1.y, U.layer1.z, U.layerShapeDetail1.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLowCloudLayer(worldPos, U.layer1.x, U.layer1.y, U.layer1.z, U.layerShapeDetail1.y, U.layerShapeDetail1.x, U.layerShapeDetail1.z, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     bestSupport = max(bestSupport, s);
     if (d > bestDens) {
@@ -431,7 +456,7 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   }
   if (U.layer2.w > 0.5) {
     var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLowCloudLayer(worldPos, U.layer2.x, U.layer2.y, U.layer2.z, U.layerShapeDetail2.y, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
+    evaluateLowCloudLayer(worldPos, U.layer2.x, U.layer2.y, U.layer2.z, U.layerShapeDetail2.y, U.layerShapeDetail2.x, U.layerShapeDetail2.z, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
     bestDensityCoverage = max(bestDensityCoverage, c);
     bestSupport = max(bestSupport, s);
     if (d > bestDens) {

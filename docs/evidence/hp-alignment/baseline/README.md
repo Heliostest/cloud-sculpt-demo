@@ -23,7 +23,7 @@ Preset 由 `src/cloudPresets.ts` 定义，参数快照见 `presets.json`。同�
 
 - 相机位置约 `(-3.69, 282.80, 0)` m，目标 `(10000, 2000, 0)` m，垂直 FOV `55°`
 - 太阳方位角 `210°`、高度角 `35°`，曝光 `1.05`
-- cloud type 直接读取 weather G，低云 detail 开启，Sc 使用 `0.35 × weather B`，高空云关闭
+- L0 使用 `cumulus` 与 `cumulusDevelopment=0.5`，低云 detail 开启，Sc 使用 `0.35 × weather B`，高空云关闭
 - Lo coverage 强度 `0.62`、对比度 `1.5`，最终密度倍率 `0.6`
 - HP 低云光照开启：前/后双叶 HG、三阶 Hillaire MS、上下环境光和 upward AO
 - 参考图：`HPVolumeCloud/compare/Snipaste_2026-07-05_10-31-41.png`
@@ -42,11 +42,11 @@ Preset 由 `src/cloudPresets.ts` 定义，参数快照见 `presets.json`。同�
 ### HP 低云云量 A/B
 
 - 原始云量：`/?preset=hp-ocean-day&validation=1&loCovIntensity=1&loCovContrast=1&densityMultiplier=1&cloudType=0.5`
-- 收敛后的固定画面：`/?preset=hp-ocean-day&validation=1`，对应 `loCovIntensity=0.62`、`loCovContrast=1.5`、`densityMultiplier=0.6`、`cloudType=-1`、`sc=0.35`
-- `loCovIntensity` 与 `loCovContrast` 直接作用于 HP Lo weather coverage；`densityMultiplier` 只调节保留下来的云体厚度；`cloudType=-1` 表示从 weather G 读取空间类型，而不是固定覆盖。旧的全局 `coverage` 参数和第二套 support coverage 已删除。
+- 收敛后的固定画面：`/?preset=hp-ocean-day&validation=1`，对应 `loCovIntensity=0.62`、`loCovContrast=1.5`、`densityMultiplier=0.6`、`genus0=cumulus`、`cuDevelopment0=0.5`、`sc=0.35`
+- `loCovIntensity` 与 `loCovContrast` 直接作用于 HP Lo weather coverage；`densityMultiplier` 只调节保留下来的云体厚度。低云类型现由每层 `genus` 与 `cumulusDevelopment` 明确定义，不再从 weather G 隐式改变云属。旧的全局 `coverage` 参数和第二套 support coverage 已删除。
 - 本机 1280×720 WebGPU 证据为 `hp-ocean-day-density-before.png` / `hp-ocean-day-density-after.png`。调整后保留近景主云，但中央天空与中远景云列之间出现连续断口，地平线不再被同一层高密云毯完全封闭。
 
-上述四项可用同名 URL 参数独立覆盖；实际运行值也会写入 `body.dataset.cloudTypeOverride`、`loCovCoverIntensity`、`loCovCoverContrast` 和 `densityMultiplier`，便于自动截图核验。
+云属与积云发展度通过 `genus0..2`、`cuDevelopment0..2` 逐层覆盖；实际运行值写入 `body.dataset.layerGenera` 与 `body.dataset.cumulusDevelopment`。其余参数仍可用同名 URL 独立覆盖，并写入 `loCovCoverIntensity`、`loCovCoverContrast` 和 `densityMultiplier`，便于自动截图核验。
 
 ### HP 低云形态阶段 3 A/B
 
@@ -81,7 +81,7 @@ HP detail 纹理使用独立资源，通道为 R WispyLow、G WispyHigh、B Bill
 
 Sc 强对照使用 `&sc=1`；`hp-ocean-day` 默认用 `sc=0.35`，局部强度仍逐像素乘 weather B。可用 `&sc=0` 验证关闭时回退到非 Sc 低云。
 
-低云 weather 已恢复 HP 布局：R coverage、G cloud type、B Sc mask、A reserved。CloudLut 的 RGB 分别是 Cu/Tcu/Cb，`radialDist` 与 HP 一样由 `saturate(length(weatherUV - 0.5) * 2)` 计算。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
+低云 weather 使用 R coverage、G Cu development variation、B Sc mask、A reserved；genus 已迁移为逐层参数，不再由 weather G 隐式选择。CloudLut 的 RGB 分别是 Cu/TCu/Cb，`radialDist` 与 HP 一样由 `saturate(length(weatherUV - 0.5) * 2)` 计算。Hi-A 尚无独立空间纹理，先以显式 `hiAConstant` 驱动 edge softness；低云 darkness modulation 始终使用 density coverage。
 
 `&mod=<0..1>` 可覆盖低云 darkness modulation 强度；0 会在 shader 中完全旁路该计算，作为无变化基线。
 

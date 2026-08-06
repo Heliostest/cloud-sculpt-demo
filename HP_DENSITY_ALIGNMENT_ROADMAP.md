@@ -230,7 +230,7 @@ HP 的 Ac/As 走独立 `EvaluateHighCloudDensity`：只采样 2D high-weather、
 
 #### 后续形态改进 4：恢复天气图径向 LUT、cloud type 和 Sc 空间变化
 
-- [x] low weather 通道恢复为 HP 的 `R=coverage / G=cloud type / B=Sc mask / A=reserved`；demo 原有 meso support 通道删除。
+- [x] low weather 通道恢复为 `R=coverage / G=Cu development variation / B=Sc mask / A=reserved`；后续十云属迁移将 genus 改为逐层参数，G 不再编码云属，demo 原有 meso support 通道删除。
 - [x] 取消 `hp-ocean-day` 的固定 `cloudType=0.2`，改为逐像素读取 weather G；Sc 改为 `0.35 × weather B`，mask 为 0 的位置保持无变化。
 - [x] CloudLut 继续按 `(localHeight, saturate(length(weatherUV-0.5)*2))` 采样。天气中心从旧基线 `(210km,210km)` 微调为 `(205km,205km)`，保留天气相位，并让长视线进入径向坐标的未饱和区间。
 - [x] `Weather` 调试视图直接显示 HP RGB，并增加天气通道、Cu/Tcu/Cb 插值、Sc mask 乘法和径向坐标范围测试。

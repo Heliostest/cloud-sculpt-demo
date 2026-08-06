@@ -1,4 +1,4 @@
-import { createDefaultParams, type CameraPreset, type DebugMode, type DemoParams } from './params';
+import { createDefaultParams, type CameraPreset, type CloudGenus, type DebugMode, type DemoParams } from './params';
 
 type HpLightingFixture = Pick<
   DemoParams,
@@ -84,7 +84,8 @@ export interface CloudPreset {
   camera: CameraPreset;
   debugMode: DebugMode;
   detailOff: boolean;
-  cloudTypeOverride: number;
+  genus: CloudGenus;
+  cumulusDevelopment: number;
   frozenTime: number;
   sunAzimuthDeg?: number;
   sunElevationDeg?: number;
@@ -104,7 +105,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     camera: 'oblique45',
     debugMode: 'Final',
     detailOff: false,
-    cloudTypeOverride: -1,
+    genus: 'cumulus',
+    cumulusDevelopment: 0.5,
     frozenTime: 6,
   },
   'side-cu': {
@@ -113,7 +115,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     camera: 'side',
     debugMode: 'Final',
     detailOff: false,
-    cloudTypeOverride: 0,
+    genus: 'cumulus',
+    cumulusDevelopment: 0,
     frozenTime: 6,
   },
   'oblique-cb': {
@@ -122,7 +125,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     camera: 'oblique45',
     debugMode: 'Final',
     detailOff: false,
-    cloudTypeOverride: 1,
+    genus: 'cumulonimbus',
+    cumulusDevelopment: 0,
     frozenTime: 6,
   },
   'oblique-tcu': {
@@ -131,7 +135,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     camera: 'oblique45',
     debugMode: 'Final',
     detailOff: false,
-    cloudTypeOverride: 0.5,
+    genus: 'cumulus',
+    cumulusDevelopment: 1,
     frozenTime: 6,
   },
   'top-density': {
@@ -140,7 +145,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     camera: 'top',
     debugMode: 'FinalDensity',
     detailOff: false,
-    cloudTypeOverride: -1,
+    genus: 'cumulus',
+    cumulusDevelopment: 0.5,
     frozenTime: 6,
   },
   'detail-off': {
@@ -149,7 +155,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     camera: 'oblique45',
     debugMode: 'Final',
     detailOff: true,
-    cloudTypeOverride: -1,
+    genus: 'cumulus',
+    cumulusDevelopment: 0.5,
     frozenTime: 6,
   },
   'stratocumulus-sheet': {
@@ -160,7 +167,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     detailOff: false,
     // Keep the low-cloud type stable while the dedicated Sc path supplies the
     // flattened profile and cell field.
-    cloudTypeOverride: 0,
+    genus: 'stratocumulus',
+    cumulusDevelopment: 0,
     frozenTime: 6,
     highCloudEnabled: false,
     scStrength: 1,
@@ -225,7 +233,8 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     camera: 'hpOcean',
     debugMode: 'Final',
     detailOff: false,
-    cloudTypeOverride: -1,
+    genus: 'cumulus',
+    cumulusDevelopment: 0.5,
     frozenTime: 6,
     sunAzimuthDeg: 210,
     sunElevationDeg: 35,
@@ -326,7 +335,8 @@ export function applyCloudPreset(params: DemoParams, preset: CloudPreset): void 
 
   params.debugMode = preset.debugMode;
   params.detailOff = preset.detailOff;
-  params.cloudTypeOverride = preset.cloudTypeOverride;
+  params.layers[0].genus = preset.genus;
+  params.layers[0].cumulusDevelopment = preset.cumulusDevelopment;
   if (preset.sunAzimuthDeg !== undefined) params.sunAzimuthDeg = preset.sunAzimuthDeg;
   if (preset.sunElevationDeg !== undefined) params.sunElevationDeg = preset.sunElevationDeg;
   if (preset.exposure !== undefined) params.exposure = preset.exposure;

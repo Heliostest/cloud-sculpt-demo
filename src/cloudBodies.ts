@@ -1,6 +1,7 @@
 import {
   createDefaultParams,
   isHighCloudGenus,
+  MAX_VOLUME_CLOUD_BODIES,
   type CloudGenus,
   type DemoParams,
 } from './params';
@@ -8,14 +9,12 @@ import {
 export type CloudBodyPath = 'volume' | 'local-volume' | 'high-sheet';
 
 type CloudBodySlot =
-  | { kind: 'layer'; index: 0 | 1 | 2 }
+  | { kind: 'layer'; index: number }
   | { kind: 'hero' }
   | { kind: 'high' };
 
 const BODY_SLOTS: readonly CloudBodySlot[] = [
-  { kind: 'layer', index: 0 },
-  { kind: 'layer', index: 1 },
-  { kind: 'layer', index: 2 },
+  ...Array.from({ length: MAX_VOLUME_CLOUD_BODIES }, (_, index) => ({ kind: 'layer' as const, index })),
   { kind: 'hero' },
   { kind: 'high' },
 ];

@@ -64,6 +64,8 @@ export interface LayerParams {
   detailAmount: number;
 }
 
+export const MAX_VOLUME_CLOUD_BODIES = 8;
+
 export interface HeroParams {
   enabled: boolean;
   genus: CloudGenus;
@@ -191,7 +193,7 @@ export interface DemoParams {
   aoUpwardScale: number;
   scatterSourceODScale: number;
   scatterSourceCurvePow: number;
-  layers: [LayerParams, LayerParams, LayerParams];
+  layers: LayerParams[];
   hero: HeroParams;
   minPrimaryStep: number;
   maxPrimaryStep: number;
@@ -217,6 +219,80 @@ export interface DemoParams {
 }
 
 export function createDefaultParams(): DemoParams {
+  const layers: LayerParams[] = [
+    {
+      enabled: true,
+      genus: 'cumulus',
+      cumulusDevelopment: 0.5,
+      baseKm: 0.4,
+      topKm: 2.8,
+      densityScale: 0.85,
+      detailAmount: 1.0,
+    },
+    {
+      enabled: false,
+      genus: 'altocumulus',
+      cumulusDevelopment: 0,
+      baseKm: 3.0,
+      topKm: 5.5,
+      densityScale: 0.28,
+      detailAmount: 0.4,
+    },
+    {
+      enabled: false,
+      genus: 'cirrus',
+      cumulusDevelopment: 0,
+      baseKm: 7.0,
+      topKm: 9.0,
+      densityScale: 0.25,
+      detailAmount: 0.0,
+    },
+    {
+      enabled: false,
+      genus: 'cumulus',
+      cumulusDevelopment: 0,
+      baseKm: 0.8,
+      topKm: 2.4,
+      densityScale: 0.7,
+      detailAmount: 0.9,
+    },
+    {
+      enabled: false,
+      genus: 'stratocumulus',
+      cumulusDevelopment: 0,
+      baseKm: 1.0,
+      topKm: 2.2,
+      densityScale: 0.45,
+      detailAmount: 0.6,
+    },
+    {
+      enabled: false,
+      genus: 'altostratus',
+      cumulusDevelopment: 0,
+      baseKm: 3.5,
+      topKm: 6.0,
+      densityScale: 0.22,
+      detailAmount: 0.3,
+    },
+    {
+      enabled: false,
+      genus: 'cirrostratus',
+      cumulusDevelopment: 0,
+      baseKm: 7.5,
+      topKm: 10.0,
+      densityScale: 0.18,
+      detailAmount: 0.15,
+    },
+    {
+      enabled: false,
+      genus: 'cumulonimbus',
+      cumulusDevelopment: 0,
+      baseKm: 0.7,
+      topKm: 9.0,
+      densityScale: 0.8,
+      detailAmount: 1.2,
+    },
+  ];
   return {
     // Keep the tuned southwest weather phase while allowing the long view
     // rays to enter the active (non-saturated) HP radial-LUT range.
@@ -332,35 +408,7 @@ export function createDefaultParams(): DemoParams {
     aoUpwardScale: 1.0,
     scatterSourceODScale: 0.02,
     scatterSourceCurvePow: 1.0,
-    layers: [
-      {
-        enabled: true,
-        genus: 'cumulus',
-        cumulusDevelopment: 0.5,
-        baseKm: 0.4,
-        topKm: 2.8,
-        densityScale: 0.85,
-        detailAmount: 1.0,
-      },
-      {
-        enabled: false,
-        genus: 'altocumulus',
-        cumulusDevelopment: 0,
-        baseKm: 3.0,
-        topKm: 5.5,
-        densityScale: 0.28,
-        detailAmount: 0.4,
-      },
-      {
-        enabled: false,
-        genus: 'cirrus',
-        cumulusDevelopment: 0,
-        baseKm: 7.0,
-        topKm: 9.0,
-        densityScale: 0.25,
-        detailAmount: 0.0,
-      },
-    ],
+    layers,
     hero: {
       enabled: false,
       genus: 'cumulonimbus',

@@ -20,12 +20,14 @@ import {
 import {
   CLOUD_GENUS_INDEX,
   DEBUG_MODE_INDEX,
+  MAX_VOLUME_CLOUD_BODIES,
   TONE_MAPPER_INDEX,
   cloudGenusTypeMix,
   type DemoParams,
 } from './params';
 
 const UNIFORM_SIZE = 880;
+const CLOUD_BODY_UNIFORM_SIZE = MAX_VOLUME_CLOUD_BODIES * 2 * 16;
 
 export interface CameraState {
   position: [number, number, number];
@@ -271,6 +273,10 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     size: UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+  const cloudBodyUniformBuf = device.createBuffer({
+    size: CLOUD_BODY_UNIFORM_SIZE,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
 
   const timestampQuerySet = timestampSupported ? device.createQuerySet({ type: 'timestamp', count: 2 }) : null;
   const timestampResolveBuffer = timestampSupported ? device.createBuffer({
@@ -290,7 +296,9 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   const module = device.createShaderModule({ code });
   const info = await module.getCompilationInfo();
   for (const m of info.messages) {
-    console[m.type === 'error' ? 'error' : 'warn'](`[WGSL ${m.type}] ${m.message}`);
+    console[m.type === 'error' ? 'error' : 'warn'](
+      `[WGSL ${m.type}] ${m.lineNum}:${m.linePos} ${m.message}`,
+    );
   }
   if (info.messages.some((m) => m.type === 'error')) {
     throw new Error('WGSL compile failed');
@@ -319,12 +327,15 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       { binding: 12, resource: highWarpTex.createView() },
       { binding: 13, resource: highWispTex.createView() },
       { binding: 14, resource: weatherClampSamp },
+      { binding: 15, resource: { buffer: cloudBodyUniformBuf } },
     ],
   });
 
   const uniformCPU = new ArrayBuffer(UNIFORM_SIZE);
   const f32 = new Float32Array(uniformCPU);
   const u32 = new Uint32Array(uniformCPU);
+  const cloudBodyUniformCPU = new ArrayBuffer(CLOUD_BODY_UNIFORM_SIZE);
+  const cloudBodyF32 = new Float32Array(cloudBodyUniformCPU);
 
   function writeUniforms(
     params: DemoParams,
@@ -378,38 +389,27 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[41] = 0;
     f32[42] = 0;
     f32[43] = 0;
+    // Preserve the original main-uniform layout while cloud body records live
+    // in their own buffer. Keeping this range zero avoids stale compatibility
+    // data if writeUniforms is reused during hot reload.
+    f32.fill(0, 44, 68);
 
     const L = params.layers;
-    // layer0: base, top, densScale, enabled
-    f32[44] = L[0].baseKm * 1000;
-    f32[45] = L[0].topKm * 1000;
-    f32[46] = L[0].densityScale;
-    f32[47] = L[0].enabled ? 1 : 0;
+    cloudBodyF32.fill(0);
+    for (let layerIndex = 0; layerIndex < Math.min(L.length, MAX_VOLUME_CLOUD_BODIES); layerIndex++) {
+      const layer = L[layerIndex];
+      const recordOffset = layerIndex * 4;
+      cloudBodyF32[recordOffset] = layer.baseKm * 1000;
+      cloudBodyF32[recordOffset + 1] = layer.topKm * 1000;
+      cloudBodyF32[recordOffset + 2] = layer.densityScale;
+      cloudBodyF32[recordOffset + 3] = layer.enabled ? 1 : 0;
 
-    f32[48] = L[1].baseKm * 1000;
-    f32[49] = L[1].topKm * 1000;
-    f32[50] = L[1].densityScale;
-    f32[51] = L[1].enabled ? 1 : 0;
-
-    f32[52] = L[2].baseKm * 1000;
-    f32[53] = L[2].topKm * 1000;
-    f32[54] = L[2].densityScale;
-    f32[55] = L[2].enabled ? 1 : 0;
-
-    f32[56] = CLOUD_GENUS_INDEX[L[0].genus];
-    f32[57] = L[0].detailAmount;
-    f32[58] = L[0].cumulusDevelopment;
-    f32[59] = 0;
-
-    f32[60] = CLOUD_GENUS_INDEX[L[1].genus];
-    f32[61] = L[1].detailAmount;
-    f32[62] = L[1].cumulusDevelopment;
-    f32[63] = 0;
-
-    f32[64] = CLOUD_GENUS_INDEX[L[2].genus];
-    f32[65] = L[2].detailAmount;
-    f32[66] = L[2].cumulusDevelopment;
-    f32[67] = 0;
+      const shapeOffset = (MAX_VOLUME_CLOUD_BODIES + layerIndex) * 4;
+      cloudBodyF32[shapeOffset] = CLOUD_GENUS_INDEX[layer.genus];
+      cloudBodyF32[shapeOffset + 1] = layer.detailAmount;
+      cloudBodyF32[shapeOffset + 2] = layer.cumulusDevelopment;
+      cloudBodyF32[shapeOffset + 3] = 0;
+    }
 
     const h = params.hero;
     f32[68] = h.cx;
@@ -436,7 +436,8 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[85] = params.extinction;
     f32[86] = params.boxHalfKm * 1000;
     let topKm = 0.5;
-    for (const layer of L) {
+    for (let layerIndex = 0; layerIndex < Math.min(L.length, MAX_VOLUME_CLOUD_BODIES); layerIndex++) {
+      const layer = L[layerIndex];
       if (layer.enabled) topKm = Math.max(topKm, layer.topKm);
     }
     if (h.enabled) topKm = Math.max(topKm, h.baseKm + h.thicknessKm);
@@ -616,6 +617,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[219] = 0;
 
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
+    device.queue.writeBuffer(cloudBodyUniformBuf, 0, cloudBodyUniformCPU);
   }
 
   function resizeCanvas(): void {

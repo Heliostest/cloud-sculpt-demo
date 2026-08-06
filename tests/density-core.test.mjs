@@ -95,16 +95,21 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   for (const [index, genus] of genusConstants.entries()) {
     assert.match(densitySource, new RegExp(`const GENUS_${genus}: f32 = ${index}\\.0;`));
   }
-  assert.match(rendererSource, /CLOUD_GENUS_INDEX\[L\[0\]\.genus\]/);
-  assert.match(rendererSource, /f32\[58\] = L\[0\]\.cumulusDevelopment;/);
-  assert.match(rendererSource, /CLOUD_GENUS_INDEX\[L\[1\]\.genus\]/);
-  assert.match(rendererSource, /f32\[62\] = L\[1\]\.cumulusDevelopment;/);
-  assert.match(rendererSource, /CLOUD_GENUS_INDEX\[L\[2\]\.genus\]/);
-  assert.match(rendererSource, /f32\[66\] = L\[2\]\.cumulusDevelopment;/);
+  assert.match(commonSource, /struct CloudBodyUniforms/);
+  assert.match(commonSource, /layers: array<vec4f, 8>/);
+  assert.match(commonSource, /layerShapeDetails: array<vec4f, 8>/);
+  assert.match(commonSource, /@group\(0\) @binding\(15\) var<uniform> B: CloudBodyUniforms/);
+  assert.match(rendererSource, /Math\.min\(L\.length, MAX_VOLUME_CLOUD_BODIES\)/);
+  assert.match(rendererSource, /cloudBodyF32\[shapeOffset\] = CLOUD_GENUS_INDEX\[layer\.genus\]/);
+  assert.match(rendererSource, /cloudBodyF32\[shapeOffset \+ 2\] = layer\.cumulusDevelopment;/);
   assert.match(densitySource, /fn selectedCloudType\(genusIndex: f32, cumulusDevelopment: f32\)/);
-  assert.match(densitySource, /U\.layerShapeDetail0\.x, U\.layerShapeDetail0\.z/);
-  assert.match(densitySource, /U\.layerShapeDetail1\.x, U\.layerShapeDetail1\.z/);
-  assert.match(densitySource, /U\.layerShapeDetail2\.x, U\.layerShapeDetail2\.z/);
+  assert.match(densitySource, /for \(var layerIndex = 0u; layerIndex < 8u; layerIndex \+= 1u\)/);
+  assert.match(densitySource, /let layer = B\.layers\[layerIndex\]/);
+  assert.match(densitySource, /let shapeDetail = B\.layerShapeDetails\[layerIndex\]/);
+  assert.match(densitySource, /shapeDetail\.x,/);
+  assert.match(densitySource, /shapeDetail\.z,/);
+  assert.doesNotMatch(densitySource, /U\.layer[012]/);
+  assert.doesNotMatch(rendererSource, /L\[[012]\]\.genus/);
 });
 
 test('the independent high-cloud path maps an explicit Ac or As genus on the GPU', () => {

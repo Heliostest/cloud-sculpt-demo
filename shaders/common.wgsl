@@ -19,12 +19,8 @@ struct Uniforms {
   wispyEdgeWidth: f32,
   reserved3: vec3f,
   reserved4: f32,
-  layer0: vec4f,
-  layer1: vec4f,
-  layer2: vec4f,
-  layerShapeDetail0: vec4f,
-  layerShapeDetail1: vec4f,
-  layerShapeDetail2: vec4f,
+  reservedLayers: array<vec4f, 3>,
+  reservedLayerShapeDetails: array<vec4f, 3>,
   hero0: vec4f,
   hero1: vec4f,
   hero2: vec4f,
@@ -65,6 +61,11 @@ struct Uniforms {
   hpShapeBlend0: vec4f,
 };
 
+struct CloudBodyUniforms {
+  layers: array<vec4f, 8>,
+  layerShapeDetails: array<vec4f, 8>,
+};
+
 @group(0) @binding(0) var<uniform> U: Uniforms;
 @group(0) @binding(1) var weatherTex: texture_2d<f32>;
 @group(0) @binding(2) var weatherSamp: sampler;
@@ -79,6 +80,7 @@ struct Uniforms {
 @group(0) @binding(12) var highWarpTex: texture_2d<f32>;
 @group(0) @binding(13) var highWispTex: texture_2d<f32>;
 @group(0) @binding(14) var weatherClampSamp: sampler;
+@group(0) @binding(15) var<uniform> B: CloudBodyUniforms;
 
 fn saturate(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn saturate3(x: vec3f) -> vec3f { return clamp(x, vec3f(0.0), vec3f(1.0)); }

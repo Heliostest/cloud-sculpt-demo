@@ -25,7 +25,8 @@ test('cloud bodies are live object views over the legacy renderer parameters', (
   const store = new CloudBodyStore(params);
   const primary = store.find('body-layer-0');
 
-  assert.equal(store.capacity, 5);
+  assert.equal(params.layers.length, 8);
+  assert.equal(store.capacity, 10);
   assert.equal(store.activeCount, 1);
   primary.baseKm = 1.25;
   primary.densityScale = 0.55;
@@ -51,7 +52,7 @@ test('add, duplicate, and remove keep the fixed renderer slots valid', () => {
   assert.equal(store.activeCount, 1);
 });
 
-test('the fifth object routes to the existing independent high-cloud path', () => {
+test('the tenth object routes to the existing independent high-cloud path', () => {
   const params = createDefaultParams();
   const store = new CloudBodyStore(params);
   while (store.activeCount < store.capacity) store.add();

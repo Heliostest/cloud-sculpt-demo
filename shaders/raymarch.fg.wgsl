@@ -150,9 +150,10 @@ fn marchHighCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
 fn marchLowCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
   let topAlt = U.optical.w;
   var baseAlt = topAlt;
-  if (U.layer0.w > 0.5) { baseAlt = min(baseAlt, U.layer0.x); }
-  if (U.layer1.w > 0.5) { baseAlt = min(baseAlt, U.layer1.x); }
-  if (U.layer2.w > 0.5) { baseAlt = min(baseAlt, U.layer2.x); }
+  for (var layerIndex = 0u; layerIndex < 8u; layerIndex += 1u) {
+    let layer = B.layers[layerIndex];
+    if (layer.w > 0.5) { baseAlt = min(baseAlt, layer.x); }
+  }
   if (U.hero0.w > 0.5) { baseAlt = min(baseAlt, U.hero1.y); }
   if (baseAlt >= topAlt) { baseAlt = 0.0; }
 

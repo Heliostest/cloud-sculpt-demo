@@ -443,32 +443,45 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   var bestH = 0.0;
   var bestDensityCoverage = 0.0;
 
-  if (U.layer0.w > 0.5) {
-    var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLowCloudLayer(worldPos, U.layer0.x, U.layer0.y, U.layer0.z, U.layerShapeDetail0.y, U.layerShapeDetail0.x, U.layerShapeDetail0.z, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
-    bestDensityCoverage = max(bestDensityCoverage, c);
-    if (d >= bestDens) {
-      bestSupport = s; bestAfter = a; bestDens = d; bestType = t; bestH = h;
-    } else if (s > bestSupport) {
-      bestSupport = s;
+  for (var layerIndex = 0u; layerIndex < 8u; layerIndex += 1u) {
+    let layer = B.layers[layerIndex];
+    if (layer.w <= 0.5) {
+      continue;
     }
-  }
-  if (U.layer1.w > 0.5) {
-    var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLowCloudLayer(worldPos, U.layer1.x, U.layer1.y, U.layer1.z, U.layerShapeDetail1.y, U.layerShapeDetail1.x, U.layerShapeDetail1.z, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
-    bestDensityCoverage = max(bestDensityCoverage, c);
-    bestSupport = max(bestSupport, s);
-    if (d > bestDens) {
-      bestAfter = a; bestDens = d; bestType = t; bestH = h;
-    }
-  }
-  if (U.layer2.w > 0.5) {
-    var s = 0.0; var a = 0.0; var d = 0.0; var t = 0.0; var h = 0.0; var c = 0.0;
-    evaluateLowCloudLayer(worldPos, U.layer2.x, U.layer2.y, U.layer2.z, U.layerShapeDetail2.y, U.layerShapeDetail2.x, U.layerShapeDetail2.z, w, stepLen, simpleMode, &s, &a, &d, &t, &h, &c);
-    bestDensityCoverage = max(bestDensityCoverage, c);
-    bestSupport = max(bestSupport, s);
-    if (d > bestDens) {
-      bestAfter = a; bestDens = d; bestType = t; bestH = h;
+    let shapeDetail = B.layerShapeDetails[layerIndex];
+    var support = 0.0;
+    var afterShape = 0.0;
+    var density = 0.0;
+    var typeMix = 0.0;
+    var height01 = 0.0;
+    var densityCoverage = 0.0;
+    evaluateLowCloudLayer(
+      worldPos,
+      layer.x,
+      layer.y,
+      layer.z,
+      shapeDetail.y,
+      shapeDetail.x,
+      shapeDetail.z,
+      w,
+      stepLen,
+      simpleMode,
+      &support,
+      &afterShape,
+      &density,
+      &typeMix,
+      &height01,
+      &densityCoverage,
+    );
+    bestDensityCoverage = max(bestDensityCoverage, densityCoverage);
+    bestSupport = max(bestSupport, support);
+    // Preserve the legacy tie behaviour: an enabled first layer owns the
+    // zero-density baseline, while later layers must strictly exceed it.
+    if (density > bestDens || (layerIndex == 0u && density >= bestDens)) {
+      bestAfter = afterShape;
+      bestDens = density;
+      bestType = typeMix;
+      bestH = height01;
     }
   }
 

@@ -28,9 +28,6 @@ const UI = {
 const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
   cloudBodies: { label: copy('Cloud Bodies', '云体'), tip: copy('Add, duplicate, remove, and edit independent cloud objects.', '添加、复制、删除并编辑独立云体。') },
   cloudBody: { label: copy('Cloud Body', '云体'), tip: copy('One editable cloud object backed by the current renderer.', '一个可独立编辑并连接到当前渲染器的云体对象。') },
-  quick: { label: copy('Essential Controls', '核心控制'), tip: copy('The small set of controls used most often: cloud presence, primary shape, weather, and lighting.', '最常用的一组控制：云层存在、主云形态、天气与光照。') },
-  visibility: { label: copy('1 · Cloud Presence', '1 · 云层开关'), tip: copy('Hard on/off switches for every renderable cloud volume.', '所有可渲染云体积的直接开关。') },
-  primaryCloud: { label: copy('2 · Primary Cloud', '2 · 主云形态'), tip: copy('Genus, altitude, amount, and edge detail for the primary low-cloud layer.', '主低云层的云属、高度、云量和边缘细节。') },
   environment: { label: copy('Environment', '环境'), tip: copy('Wind, sun direction, and final exposure.', '风、太阳方向和最终曝光。') },
   diagnostics: { label: copy('Diagnostics', '诊断'), tip: copy('Intermediate visualizations for inspecting weather and density.', '用于检查天气图与密度的中间可视化。') },
   alignment: { label: copy('HP Alignment', 'HP 密度对齐'), tip: copy('Low-cloud density shaping aligned with the HP reference pipeline.', '与 HP 参考管线对齐的低云密度塑形参数。') },
@@ -48,15 +45,13 @@ const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
   zenith: { label: copy('Zenith RGB (linear)', '天顶 RGB（线性）'), tip: copy('Linear RGB color at the top of the sky.', '天空顶部的线性 RGB 颜色。') },
   horizon: { label: copy('Horizon RGB (linear)', '地平线 RGB（线性）'), tip: copy('Linear RGB color near the horizon.', '地平线附近的线性 RGB 颜色。') },
   hpLighting: { label: copy('HP Low-Cloud Lighting', 'HP 低云光照'), tip: copy('Phase scattering, multiple scattering, ambient light, and self-shadow response.', '相位散射、多重散射、环境光和自阴影响应。') },
-  layers: { label: copy('Cloud Layer Editor', '云层管理'), tip: copy('Three general cloud volumes. Use these for genus and altitude composition.', '三个通用云体积层，用于组合云属和高度。') },
-  hero: { label: copy('Hero Cloud', '主角云'), tip: copy('A focused local cloud used for composition and close inspection.', '用于构图和近距离观察的局部重点云。') },
   quality: { label: copy('Quality', '渲染质量'), tip: copy('Primary and light ray-march budgets. Higher values cost more GPU time.', '主光线与光照步进预算；数值越高，GPU 开销通常越大。') },
   camera: { label: copy('Camera', '相机'), tip: copy('Jump to useful cloud inspection viewpoints.', '快速切换到常用的云层观察视角。') },
 };
 
 const PARAMETERS: Record<string, ParameterCopy> = {
   cloudBody: parameter('Cloud', '云体', 'An independently editable cloud object.', '一个可独立编辑的云体对象。'),
-  addCloud: parameter('Add Cloud', '添加云体', 'Adds a cloud using the next available renderer slot.', '使用下一个可用渲染槽添加云体。'),
+  addCloud: parameter('Add Cloud', '添加云体', 'Adds another independent cloud body; this version supports up to ten.', '添加一个独立云体；当前版本最多支持十个。'),
   duplicateCloud: parameter('Duplicate', '复制', 'Copies this cloud into the next compatible slot.', '将这个云体复制到下一个兼容槽位。'),
   deleteCloud: parameter('Delete', '删除', 'Removes this cloud from the scene.', '从场景中删除这个云体。'),
   centerX: parameter('Center X (m)', '中心 X（米）', 'Horizontal center of a local cloud.', '局部云体的水平中心 X。'),
@@ -64,10 +59,6 @@ const PARAMETERS: Record<string, ParameterCopy> = {
   radiusX: parameter('Radius X (m)', '半径 X（米）', 'Horizontal X radius of a local cloud.', '局部云体在 X 方向的水平半径。'),
   radiusZ: parameter('Radius Z (m)', '半径 Z（米）', 'Horizontal Z radius of a local cloud.', '局部云体在 Z 方向的水平半径。'),
   preset: parameter('Preset', '预设', 'Load a tuned parameter and camera configuration.', '加载一组已调校的参数与相机配置。'),
-  layer0Enabled: parameter('Primary Low Cloud', '主低云层', 'Hard switch for the primary low-cloud layer.', '主低云层的直接开关。'),
-  layer1Enabled: parameter('Secondary Mid Cloud', '辅助中云层', 'Hard switch for the secondary generic mid-level layer.', '辅助通用中云层的直接开关。'),
-  layer2Enabled: parameter('Secondary High Cloud', '辅助高云层', 'Hard switch for the secondary generic high layer.', '辅助通用高云层的直接开关。'),
-  heroCloudEnabled: parameter('Hero Cloud', '主角云', 'Hard switch for the local hero cloud volume.', '局部主角云体积的直接开关。'),
   densityThreshold: parameter('Density Threshold', '密度阈值', 'Raises or lowers the cutoff where low-cloud density becomes visible.', '调整低云密度开始可见的截断阈值。'),
   wispyReach: parameter('Wispy Reach', '丝缕延伸', 'Extends thin eroded detail beyond the dense cloud body.', '让细薄侵蚀细节延伸到致密云体之外。'),
   edgeSoftness: parameter('Edge Softness', '边缘柔度', 'Widens the density transition at cloud edges.', '加宽云边缘的密度过渡带。'),

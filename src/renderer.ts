@@ -535,7 +535,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[154] = params.highTopKm * 1000;
     f32[155] = params.highSteps;
     f32[156] = params.highWeatherRepeat;
-    f32[157] = params.highCloudTypeOverride;
+    f32[157] = CLOUD_GENUS_INDEX[params.highCloudGenus];
     f32[158] = params.highDensityMultiplier;
     f32[159] = params.highCellWindSpeed;
     f32[160] = params.highCellScaleX;

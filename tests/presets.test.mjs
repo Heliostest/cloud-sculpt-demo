@@ -77,6 +77,16 @@ test('TCu is represented as cumulus development rather than an eleventh genus', 
   assert.equal(storm.layers[0].genus, 'cumulonimbus');
 });
 
+test('the independent high-cloud path selects Ac or As by genus, not a type slider', () => {
+  assert.deepEqual(paramsModule.HIGH_CLOUD_GENERA, ['altocumulus', 'altostratus']);
+  const params = paramsModule.createDefaultParams();
+  assert.equal(params.highCloudGenus, 'altocumulus');
+  assert.equal('highCloudTypeOverride' in params, false);
+  assert.equal(paramsModule.isHighCloudGenus('altocumulus'), true);
+  assert.equal(paramsModule.isHighCloudGenus('altostratus'), true);
+  assert.equal(paramsModule.isHighCloudGenus('cirrus'), false);
+});
+
 test('the interactive entry exposes default plus seven cloud presets', () => {
   const presets = Object.values(presetsModule.CLOUD_PRESETS);
   assert.equal(presets.length, 8);

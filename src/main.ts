@@ -1,5 +1,5 @@
 import { createGui } from './gui';
-import { createDefaultParams, isCloudGenus, isDebugMode, isToneMapper, type CameraPreset, type DemoParams } from './params';
+import { createDefaultParams, isCloudGenus, isDebugMode, isHighCloudGenus, isToneMapper, type CameraPreset, type DemoParams } from './params';
 import { createRenderer, type CameraState } from './renderer';
 import {
   applyCloudPreset,
@@ -76,7 +76,7 @@ function syncParameterDataset(params: DemoParams): void {
   data.forceSimpleMode = String(params.forceSimpleMode);
   data.detailFadeEnabled = String(params.detailFadeEnabled);
   data.highCloudEnabled = String(params.highCloudEnabled);
-  data.highCloudType = String(params.highCloudTypeOverride);
+  data.highCloudGenus = params.highCloudGenus;
   data.highDensityThreshold = String(params.highDensityThreshold);
   data.highDensitySoftness = String(params.highDensitySoftness);
   data.highViewAbsorption = String(params.highViewAbsorption);
@@ -221,8 +221,13 @@ async function main(): Promise<void> {
   if (detailFade !== null) params.detailFadeEnabled = detailFade !== '0' && detailFade !== 'false';
   const highCloud = query.get('high');
   if (highCloud !== null) params.highCloudEnabled = highCloud === '1' || highCloud === 'true';
+  const highGenus = query.get('highGenus');
+  if (isHighCloudGenus(highGenus)) params.highCloudGenus = highGenus;
   const highType = Number(query.get('highType'));
-  if (query.has('highType') && Number.isFinite(highType)) params.highCloudTypeOverride = Math.max(-1, Math.min(1, highType));
+  if (!isHighCloudGenus(highGenus) && query.has('highType') && Number.isFinite(highType) && highType >= 0) {
+    // Legacy Ac/As URL adapter: the old endpoints were 0 = As and 1 = Ac.
+    params.highCloudGenus = highType >= 0.5 ? 'altocumulus' : 'altostratus';
+  }
   const highDensity = Number(query.get('highDensity'));
   if (query.has('highDensity') && Number.isFinite(highDensity)) params.highDensityMultiplier = Math.max(0, Math.min(3, highDensity));
   const highThreshold = Number(query.get('highThreshold'));

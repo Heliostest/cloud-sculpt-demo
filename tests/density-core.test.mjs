@@ -107,6 +107,13 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.match(densitySource, /U\.layerShapeDetail2\.x, U\.layerShapeDetail2\.z/);
 });
 
+test('the independent high-cloud path maps an explicit Ac or As genus on the GPU', () => {
+  assert.match(rendererSource, /f32\[157\] = CLOUD_GENUS_INDEX\[params\.highCloudGenus\];/);
+  assert.match(densitySource, /fn highCloudTypeMix\(genusIndex: f32\) -> f32/);
+  assert.match(densitySource, /let typeMix = highCloudTypeMix\(U\.hpHigh1\.y\);/);
+  assert.doesNotMatch(densitySource, /select\(saturate\(weather\.g\), saturate\(U\.hpHigh1\.y\)/);
+});
+
 test('ground occludes far-side clouds before the cloud shell entry', () => {
   const planetRadius = 6_360_000;
   const cameraAltitude = 282.8;

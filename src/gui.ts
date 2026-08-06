@@ -1,5 +1,5 @@
 import GUI from 'lil-gui';
-import { CLOUD_GENERA, type CameraPreset, type DemoParams } from './params';
+import { CLOUD_GENERA, HIGH_CLOUD_GENERA, type CameraPreset, type DemoParams } from './params';
 import { CLOUD_PRESET_OPTIONS, type CloudPresetName } from './cloudPresets';
 
 export function createGui(
@@ -83,7 +83,7 @@ export function createGui(
 
   const high = gui.addFolder('HP High Cloud (Ac / As)');
   high.add(params, 'highCloudEnabled');
-  high.add(params, 'highCloudTypeOverride', -1, 1, 0.01).name('type override');
+  high.add(params, 'highCloudGenus', Array.from(HIGH_CLOUD_GENERA)).name('genus');
   high.add(params, 'highWeatherRepeat', 0.000005, 0.00008, 0.000001);
   high.add(params, 'highBaseKm', 3, 14, 0.1);
   high.add(params, 'highTopKm', 4, 18, 0.1);

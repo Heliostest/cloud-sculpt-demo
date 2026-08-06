@@ -98,7 +98,7 @@ Sc 强对照使用 `&sc=1`；`hp-ocean-day` 默认用 `sc=0.35`，局部强度�
 阶段 8 独立高空云入口：
 
 - `&high=1`：启用独立 Ac/As 路径；默认关闭，关闭时不改变低云结果。
-- `&highType=0|1`：强制 As 或 Ac；省略时使用 high-weather G。
+- `&highGenus=altocumulus|altostratus`：显式选择 Ac 或 As；云属不再由 high-weather G 空间混合。旧 `highType=0|1` 仍作为兼容参数。
 - `&highDensity=<value>&highSteps=<count>`：覆盖高云独立密度倍率与步数。
 - `&highThreshold=<value>&highSoftness=<value>`：控制 HP 高云的有效可见覆盖。
 - `&highViewAbsorption=<value>&highLightAbsorption=<value>&highCoverAbsorption=<value>`：分别覆盖 HP 高云视线吸收、太阳光吸收和 coverage 自阴影调制。

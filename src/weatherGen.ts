@@ -134,11 +134,13 @@ export function generateHighWeatherRGBA(size = 512): Uint8Array {
       const broad = fbmTile(u * 4 + 0.21, v * 4 + 0.63, 4, 5);
       const broken = 1 - worleyTile(u * 7 + 0.4, v * 7 + 0.2, 7);
       const coverage = Math.min(1, Math.max(0, (broad * 0.82 + broken * 0.18 - 0.28) / 0.72));
-      const type = Math.min(1, Math.max(0, fbmTile(u * 2 + 0.73, v * 2 + 0.19, 2, 4)));
+      const variation = Math.min(1, Math.max(0, fbmTile(u * 2 + 0.73, v * 2 + 0.19, 2, 4)));
       const msWeight = Math.min(1, Math.max(0, coverage * (0.7 + broken * 0.3)));
       const i = (y * size + x) * 4;
+      // High-weather layout: R coverage, G morphology variation (reserved),
+      // B reserved, A multiple-scattering weight. Genus is a uniform choice.
       data[i] = Math.round(coverage * 255);
-      data[i + 1] = Math.round(type * 255);
+      data[i + 1] = Math.round(variation * 255);
       data[i + 2] = 0;
       data[i + 3] = Math.round(msWeight * 255);
     }

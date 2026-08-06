@@ -1,4 +1,4 @@
-import { createDefaultParams, type CameraPreset, type CloudGenus, type DebugMode, type DemoParams } from './params';
+import { createDefaultParams, type CameraPreset, type CloudGenus, type DebugMode, type DemoParams, type HighCloudGenus } from './params';
 
 type HpLightingFixture = Pick<
   DemoParams,
@@ -91,6 +91,7 @@ export interface CloudPreset {
   sunElevationDeg?: number;
   exposure?: number;
   highCloudEnabled?: boolean;
+  highCloudGenus?: HighCloudGenus;
   scStrength?: number;
   hpLighting?: HpLightingFixture;
   hpDensity?: HpDensityFixture;
@@ -341,6 +342,7 @@ export function applyCloudPreset(params: DemoParams, preset: CloudPreset): void 
   if (preset.sunElevationDeg !== undefined) params.sunElevationDeg = preset.sunElevationDeg;
   if (preset.exposure !== undefined) params.exposure = preset.exposure;
   if (preset.highCloudEnabled !== undefined) params.highCloudEnabled = preset.highCloudEnabled;
+  if (preset.highCloudGenus !== undefined) params.highCloudGenus = preset.highCloudGenus;
   if (preset.scStrength !== undefined) params.scStrength = preset.scStrength;
   if (preset.hpLighting !== undefined) Object.assign(params, preset.hpLighting);
   if (preset.hpDensity !== undefined) Object.assign(params, preset.hpDensity);

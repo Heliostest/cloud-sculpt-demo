@@ -16,6 +16,17 @@ struct HighCloudSample {
   bandMask: f32,
 };
 
+const GENUS_CUMULUS: f32 = 0.0;
+const GENUS_STRATUS: f32 = 1.0;
+const GENUS_STRATOCUMULUS: f32 = 2.0;
+const GENUS_CUMULONIMBUS: f32 = 3.0;
+const GENUS_ALTOCUMULUS: f32 = 4.0;
+const GENUS_ALTOSTRATUS: f32 = 5.0;
+const GENUS_NIMBOSTRATUS: f32 = 6.0;
+const GENUS_CIRRUS: f32 = 7.0;
+const GENUS_CIRROSTRATUS: f32 = 8.0;
+const GENUS_CIRROCUMULUS: f32 = 9.0;
+
 fn emptyHighCloudSample() -> HighCloudSample {
   return HighCloudSample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 }
@@ -26,6 +37,14 @@ fn highWeatherUv(worldPos: vec3f) -> vec2f {
 
 fn sampleHighWeather(worldPos: vec3f) -> vec4f {
   return textureSampleLevel(highWeatherTex, weatherSamp, highWeatherUv(worldPos) + U.windOffset, 0.0);
+}
+
+fn highCloudTypeMix(genusIndex: f32) -> f32 {
+  if (abs(genusIndex - GENUS_ALTOCUMULUS) < 0.5) {
+    return 1.0;
+  }
+  // Altostratus is the broad-sheet endpoint and the safe fallback.
+  return 0.0;
 }
 
 fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
@@ -41,10 +60,10 @@ fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
   let normalizedHeight = saturate((alt - baseAlt) / (topAlt - baseAlt));
   let weather = sampleHighWeather(worldPos);
   let coverage = saturate(weather.r);
+  let typeMix = highCloudTypeMix(U.hpHigh1.y);
   if (coverage < 0.001) {
-    return HighCloudSample(0.0, coverage, saturate(weather.a), weather.g, normalizedHeight, 0.0);
+    return HighCloudSample(0.0, coverage, saturate(weather.a), typeMix, normalizedHeight, 0.0);
   }
-  let typeMix = select(saturate(weather.g), saturate(U.hpHigh1.y), U.hpHigh1.y >= 0.0);
   let cellStrength = mix(U.hpHigh3.z, U.hpHigh3.y, typeMix);
   let baseUv = highWeatherUv(worldPos);
   let windUv = U.windOffset * U.hpHigh1.w;
@@ -99,17 +118,6 @@ fn weatherUv(worldPos: vec3f) -> vec2f {
 fn isInsideWeatherMap(uv: vec2f) -> bool {
   return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0));
 }
-
-const GENUS_CUMULUS: f32 = 0.0;
-const GENUS_STRATUS: f32 = 1.0;
-const GENUS_STRATOCUMULUS: f32 = 2.0;
-const GENUS_CUMULONIMBUS: f32 = 3.0;
-const GENUS_ALTOCUMULUS: f32 = 4.0;
-const GENUS_ALTOSTRATUS: f32 = 5.0;
-const GENUS_NIMBOSTRATUS: f32 = 6.0;
-const GENUS_CIRRUS: f32 = 7.0;
-const GENUS_CIRROSTRATUS: f32 = 8.0;
-const GENUS_CIRROCUMULUS: f32 = 9.0;
 
 fn selectedCloudType(genusIndex: f32, cumulusDevelopment: f32) -> f32 {
   if (abs(genusIndex - GENUS_CUMULONIMBUS) < 0.5) {

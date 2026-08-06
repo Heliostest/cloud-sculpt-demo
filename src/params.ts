@@ -19,6 +19,13 @@ export const CLOUD_GENERA = [
 
 export type CloudGenus = (typeof CLOUD_GENERA)[number];
 
+export const HIGH_CLOUD_GENERA = [
+  'altocumulus',
+  'altostratus',
+] as const satisfies readonly CloudGenus[];
+
+export type HighCloudGenus = (typeof HIGH_CLOUD_GENERA)[number];
+
 export const CLOUD_GENUS_INDEX = {
   cumulus: 0,
   stratus: 1,
@@ -34,6 +41,10 @@ export const CLOUD_GENUS_INDEX = {
 
 export function isCloudGenus(value: string | null): value is CloudGenus {
   return value !== null && (CLOUD_GENERA as readonly string[]).includes(value);
+}
+
+export function isHighCloudGenus(value: string | null): value is HighCloudGenus {
+  return value !== null && (HIGH_CLOUD_GENERA as readonly string[]).includes(value);
 }
 
 export function cloudGenusTypeMix(genus: CloudGenus, cumulusDevelopment: number): number {
@@ -140,7 +151,7 @@ export interface DemoParams {
   highBaseKm: number;
   highTopKm: number;
   highSteps: number;
-  highCloudTypeOverride: number;
+  highCloudGenus: HighCloudGenus;
   highCellScaleX: number;
   highCellScaleZ: number;
   highCellWindSpeed: number;
@@ -281,7 +292,7 @@ export function createDefaultParams(): DemoParams {
     highBaseKm: 6.5,
     highTopKm: 10.5,
     highSteps: 96,
-    highCloudTypeOverride: -1,
+    highCloudGenus: 'altocumulus',
     highCellScaleX: 4.0,
     highCellScaleZ: 4.0,
     highCellWindSpeed: 1.5,

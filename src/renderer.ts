@@ -27,7 +27,7 @@ import {
 } from './params';
 
 const UNIFORM_SIZE = 880;
-const CLOUD_BODY_UNIFORM_SIZE = MAX_VOLUME_CLOUD_BODIES * 2 * 16;
+const CLOUD_BODY_UNIFORM_SIZE = MAX_VOLUME_CLOUD_BODIES * 4 * 16;
 
 export interface CameraState {
   position: [number, number, number];
@@ -409,6 +409,18 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       cloudBodyF32[shapeOffset + 1] = layer.detailAmount;
       cloudBodyF32[shapeOffset + 2] = layer.cumulusDevelopment;
       cloudBodyF32[shapeOffset + 3] = 0;
+
+      const boundsOffset = (MAX_VOLUME_CLOUD_BODIES * 2 + layerIndex) * 4;
+      cloudBodyF32[boundsOffset] = layer.centerX;
+      cloudBodyF32[boundsOffset + 1] = layer.centerZ;
+      cloudBodyF32[boundsOffset + 2] = Math.max(1, layer.radiusX);
+      cloudBodyF32[boundsOffset + 3] = Math.max(1, layer.radiusZ);
+
+      const transformOffset = (MAX_VOLUME_CLOUD_BODIES * 3 + layerIndex) * 4;
+      cloudBodyF32[transformOffset] = (layer.rotationDeg * Math.PI) / 180;
+      cloudBodyF32[transformOffset + 1] = Math.min(0.95, Math.max(0.001, layer.feather));
+      cloudBodyF32[transformOffset + 2] = layer.bounded ? 1 : 0;
+      cloudBodyF32[transformOffset + 3] = 0;
     }
 
     const h = params.hero;

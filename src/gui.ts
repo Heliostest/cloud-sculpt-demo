@@ -39,10 +39,13 @@ export function createGui(
     initialCloudPreset: CloudPresetName;
     onCloudPreset: (preset: CloudPresetName) => void;
     onCameraPreset: (preset: CameraPreset) => void;
+    onCloudSelection: (body: CloudBody | null) => void;
   },
 ): GUI {
   const gui = new GUI({ title: uiText('title'), closeFolders: true });
   const bodyStore = new CloudBodyStore(params);
+  let selectedBodyId: string | null = null;
+  let bodyIdToOpen: string | null = null;
   const localizedFolders: LocalizedFolder[] = [];
   const genusControllers: Controller[] = [];
   const debugModes = ['Final', 'Support', 'AfterShape', 'FinalDensity', 'Weather', 'DensityCoverage', 'HighWeather', 'HighBand', 'HighDensity'] as const;
@@ -60,13 +63,18 @@ export function createGui(
   const presetController = gui.add(presetSelection, 'preset', cloudPresetOptions(presetNames))
     .onChange((value: string) => {
       hooks.onCloudPreset(value as CloudPresetName);
+      bodyStore.reloadFromParams();
       refreshCloudBodies();
     });
 
   const cloudBodies = addFolder(gui, 'cloudBodies');
   const bodyActions = {
     addCloud: () => {
-      bodyStore.add();
+      const added = bodyStore.add();
+      if (added) {
+        selectedBodyId = added.id;
+        bodyIdToOpen = added.id;
+      }
       refreshCloudBodies();
     },
   };
@@ -330,49 +338,101 @@ export function createGui(
   const bodyTitle = (body: CloudBody, index: number): string =>
     `${parameterLabel('cloudBody')} B${index + 1} · ${cloudGenusLabel(body.genus)}`;
 
+  const selectBody = (body: CloudBody | null): void => {
+    selectedBodyId = body?.id ?? null;
+    const activeBodies = bodyStore.active();
+    bodyFolders.forEach((folder, index) => {
+      folder.domElement.classList.toggle('cloud-body-selected', activeBodies[index]?.id === selectedBodyId);
+    });
+    hooks.onCloudSelection(body);
+  };
+
   const rebuildCloudBodies = (): void => {
     for (const folder of bodyFolders) folder.destroy();
     bodyFolders = [];
     genusControllers.length = 0;
 
-    bodyStore.active().forEach((body, index) => {
+    const activeBodies = bodyStore.active();
+    const selectedBody = activeBodies.find((body) => body.id === selectedBodyId)
+      ?? activeBodies.find((body) => body.hasSpatialBounds)
+      ?? activeBodies[0]
+      ?? null;
+
+    activeBodies.forEach((body, index) => {
       const folder = cloudBodies.addFolder(bodyTitle(body, index));
       bodyFolders.push(folder);
       folder.$title.title = folderTip('cloudBody');
+      folder.$title.addEventListener('pointerdown', () => selectBody(body));
 
       const genera = body.isHighSheet ? HIGH_CLOUD_GENERA : CLOUD_GENERA;
       const genusController = folder.add(body, 'genus', cloudGenusOptions(genera))
-        .onChange(() => folder.title(bodyTitle(body, index)));
+        .onChange(() => {
+          folder.title(bodyTitle(body, index));
+          bodyIdToOpen = body.id;
+          refreshCloudBodies();
+        });
       genusControllers.push(genusController);
+      folder.add(body, 'placementLocked');
       if (!body.isHighSheet) folder.add(body, 'cumulusDevelopment', 0, 1, 0.01);
       folder.add(body, 'baseKm', 0.2, 14, 0.05);
       folder.add(body, 'topKm', 0.5, 18, 0.05);
       folder.add(body, 'densityScale', 0, 3, 0.01);
       if (!body.isLocal) folder.add(body, 'detailAmount', 0, 1.5, 0.01);
+      if (body.canToggleBounds) {
+        folder.add(body, 'bounded').onChange(() => {
+          selectBody(body);
+          bodyIdToOpen = body.id;
+          refreshCloudBodies();
+        });
+      }
       if (body.isLocal) {
         folder.add(body, 'coverage', 0, 1, 0.01);
-        folder.add(body, 'centerX', -120000, 120000, 100);
-        folder.add(body, 'centerZ', -120000, 120000, 100);
-        folder.add(body, 'radiusX', 100, 30000, 100);
-        folder.add(body, 'radiusZ', 100, 30000, 100);
+      }
+      if (body.hasSpatialBounds) {
+        folder.add(body, 'centerX', -500000, 500000, 100);
+        folder.add(body, 'centerZ', -500000, 500000, 100);
+        folder.add(body, 'radiusX', 100, 250000, 100);
+        folder.add(body, 'radiusZ', 100, 250000, 100);
+        if (body.canToggleBounds) {
+          folder.add(body, 'rotationDeg', -180, 180, 1);
+          folder.add(body, 'feather', 0.01, 0.95, 0.01);
+        }
       }
 
       const actions = {
+        applyGenusDefaults: () => {
+          body.applyGenusDefaults();
+          selectBody(body);
+          bodyIdToOpen = body.id;
+          refreshCloudBodies();
+        },
         duplicateCloud: () => {
-          bodyStore.duplicate(body.id);
+          const duplicate = bodyStore.duplicate(body.id);
+          if (duplicate) {
+            selectedBodyId = duplicate.id;
+            bodyIdToOpen = duplicate.id;
+          }
           refreshCloudBodies();
         },
         deleteCloud: () => {
+          if (selectedBodyId === body.id) selectedBodyId = null;
           bodyStore.remove(body.id);
           refreshCloudBodies();
         },
       };
+      folder.add(actions, 'applyGenusDefaults');
       if (bodyStore.canDuplicate(body.id)) folder.add(actions, 'duplicateCloud');
       folder.add(actions, 'deleteCloud');
     });
 
     if (bodyStore.canAdd()) addCloudController.enable();
     else addCloudController.disable();
+    selectBody(selectedBody);
+    if (bodyIdToOpen) {
+      const folderIndex = activeBodies.findIndex((body) => body.id === bodyIdToOpen);
+      if (folderIndex >= 0) bodyFolders[folderIndex].open();
+      bodyIdToOpen = null;
+    }
   };
 
   refreshCloudBodies = (): void => {

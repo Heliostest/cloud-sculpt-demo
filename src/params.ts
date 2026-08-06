@@ -62,6 +62,15 @@ export interface LayerParams {
   topKm: number;
   densityScale: number;
   detailAmount: number;
+  /** When false, the layer remains a global weather-map deck. */
+  bounded: boolean;
+  centerX: number;
+  centerZ: number;
+  radiusX: number;
+  radiusZ: number;
+  rotationDeg: number;
+  /** Normalized width of the soft edge inside the ellipse. */
+  feather: number;
 }
 
 export const MAX_VOLUME_CLOUD_BODIES = 8;
@@ -219,8 +228,18 @@ export interface DemoParams {
 }
 
 export function createDefaultParams(): DemoParams {
+  const defaultBounds = {
+    bounded: false,
+    centerX: 0,
+    centerZ: 0,
+    radiusX: 20000,
+    radiusZ: 15000,
+    rotationDeg: 0,
+    feather: 0.25,
+  };
   const layers: LayerParams[] = [
     {
+      ...defaultBounds,
       enabled: true,
       genus: 'cumulus',
       cumulusDevelopment: 0.5,
@@ -230,6 +249,7 @@ export function createDefaultParams(): DemoParams {
       detailAmount: 1.0,
     },
     {
+      ...defaultBounds,
       enabled: false,
       genus: 'altocumulus',
       cumulusDevelopment: 0,
@@ -239,6 +259,7 @@ export function createDefaultParams(): DemoParams {
       detailAmount: 0.4,
     },
     {
+      ...defaultBounds,
       enabled: false,
       genus: 'cirrus',
       cumulusDevelopment: 0,
@@ -248,6 +269,7 @@ export function createDefaultParams(): DemoParams {
       detailAmount: 0.0,
     },
     {
+      ...defaultBounds,
       enabled: false,
       genus: 'cumulus',
       cumulusDevelopment: 0,
@@ -257,6 +279,7 @@ export function createDefaultParams(): DemoParams {
       detailAmount: 0.9,
     },
     {
+      ...defaultBounds,
       enabled: false,
       genus: 'stratocumulus',
       cumulusDevelopment: 0,
@@ -266,6 +289,7 @@ export function createDefaultParams(): DemoParams {
       detailAmount: 0.6,
     },
     {
+      ...defaultBounds,
       enabled: false,
       genus: 'altostratus',
       cumulusDevelopment: 0,
@@ -275,6 +299,7 @@ export function createDefaultParams(): DemoParams {
       detailAmount: 0.3,
     },
     {
+      ...defaultBounds,
       enabled: false,
       genus: 'cirrostratus',
       cumulusDevelopment: 0,
@@ -284,6 +309,7 @@ export function createDefaultParams(): DemoParams {
       detailAmount: 0.15,
     },
     {
+      ...defaultBounds,
       enabled: false,
       genus: 'cumulonimbus',
       cumulusDevelopment: 0,

@@ -1,4 +1,6 @@
 import { createGui } from './gui';
+import { CloudGizmo } from './cloudGizmo';
+import type { CloudBody } from './cloudBodies';
 import { createDefaultParams, isCloudGenus, isDebugMode, isHighCloudGenus, isToneMapper, type CameraPreset, type DemoParams } from './params';
 import { createRenderer, type CameraState } from './renderer';
 import {
@@ -279,19 +281,42 @@ async function main(): Promise<void> {
   document.body.dataset.validationScenario = validationMode ? currentPresetName : 'interactive';
   syncParameterDataset(params);
 
+  let selectedCloudBody: CloudBody | null = null;
+  let gui: ReturnType<typeof createGui> | null = null;
+  const gizmo = new CloudGizmo(canvas, () => {
+    if (!selectedCloudBody || !gui) return;
+    for (const controller of gui.controllersRecursive()) {
+      if (controller.object === selectedCloudBody) controller.updateDisplay();
+    }
+  });
+
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
   canvas.addEventListener('pointerdown', (e) => {
+    if (gizmo.pointerDown(e)) {
+      dragging = false;
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     dragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
     canvas.setPointerCapture(e.pointerId);
   });
-  canvas.addEventListener('pointerup', () => {
+  const endPointerInteraction = (e: PointerEvent): void => {
+    gizmo.pointerUp();
     dragging = false;
-  });
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+  };
+  canvas.addEventListener('pointerup', endPointerInteraction);
+  canvas.addEventListener('pointercancel', endPointerInteraction);
   canvas.addEventListener('pointermove', (e) => {
+    if (gizmo.pointerMove(e)) {
+      e.preventDefault();
+      return;
+    }
     if (!dragging) return;
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
@@ -313,7 +338,6 @@ async function main(): Promise<void> {
   let last = performance.now();
   let time = currentPreset.frozenTime;
   let validationReady = false;
-  let gui: ReturnType<typeof createGui>;
   gui = createGui(params, {
     initialCloudPreset: currentPresetName,
     onCloudPreset(presetName: CloudPresetName) {
@@ -332,10 +356,13 @@ async function main(): Promise<void> {
       url.search = '';
       if (presetName !== 'default') url.searchParams.set('preset', presetName);
       window.history.replaceState(null, '', url);
-      for (const controller of gui.controllersRecursive()) controller.updateDisplay();
+      for (const controller of gui?.controllersRecursive() ?? []) controller.updateDisplay();
     },
     onCameraPreset(preset) {
       applyCameraPreset(preset, orbit);
+    },
+    onCloudSelection(body) {
+      selectedCloudBody = body;
     },
   });
   if (validationMode) gui.hide();
@@ -367,6 +394,7 @@ async function main(): Promise<void> {
     document.body.dataset.sunAzimuthDeg = params.sunAzimuthDeg.toFixed(2);
     document.body.dataset.sunElevationDeg = params.sunElevationDeg.toFixed(2);
     document.body.dataset.exposure = params.exposure.toFixed(3);
+    gizmo.update(cam, validationMode ? null : selectedCloudBody);
     renderer.render(params, cam, time, windOffset);
     const gpuTiming = renderer.getGpuTimingInfo();
     document.body.dataset.gpuTimingSupported = String(gpuTiming.supported);

@@ -12,6 +12,7 @@
     "test:weather": "node --test tests/weather-map.test.mjs",
     "test:presets": "node --test tests/presets.test.mjs",
     "test:bodies": "node --test tests/cloud-bodies.test.mjs",
+    "test:gizmo": "node --test tests/cloud-gizmo.test.mjs",
     "test:lighting": "node --test tests/lighting-core.test.mjs",
     "preview": "vite preview"
   },

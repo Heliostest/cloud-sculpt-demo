@@ -35,6 +35,22 @@ function raySphereDistances(origin, direction, radius) {
   return [-b - root, -b + root];
 }
 
+function ellipseSmoothstep(edge0, edge1, value) {
+  const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function horizontalEllipseMask(point, bounds, rotationDeg, feather, bounded = true) {
+  if (!bounded) return 1;
+  const angle = rotationDeg * Math.PI / 180;
+  const dx = point[0] - bounds[0];
+  const dz = point[1] - bounds[1];
+  const localX = Math.cos(angle) * dx + Math.sin(angle) * dz;
+  const localZ = -Math.sin(angle) * dx + Math.cos(angle) * dz;
+  const distance = Math.hypot(localX / bounds[2], localZ / bounds[3]);
+  return 1 - ellipseSmoothstep(1 - feather, 1, distance);
+}
+
 test('thin foreground edges cannot exhaust the ray budget before the far cloud interval', () => {
   const totalDistance = 13_800;
   const maxIterations = 512;
@@ -98,18 +114,39 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.match(commonSource, /struct CloudBodyUniforms/);
   assert.match(commonSource, /layers: array<vec4f, 8>/);
   assert.match(commonSource, /layerShapeDetails: array<vec4f, 8>/);
+  assert.match(commonSource, /layerBounds: array<vec4f, 8>/);
+  assert.match(commonSource, /layerBoundTransforms: array<vec4f, 8>/);
   assert.match(commonSource, /@group\(0\) @binding\(15\) var<uniform> B: CloudBodyUniforms/);
+  assert.match(rendererSource, /MAX_VOLUME_CLOUD_BODIES \* 4 \* 16/);
   assert.match(rendererSource, /Math\.min\(L\.length, MAX_VOLUME_CLOUD_BODIES\)/);
   assert.match(rendererSource, /cloudBodyF32\[shapeOffset\] = CLOUD_GENUS_INDEX\[layer\.genus\]/);
   assert.match(rendererSource, /cloudBodyF32\[shapeOffset \+ 2\] = layer\.cumulusDevelopment;/);
+  assert.match(rendererSource, /cloudBodyF32\[boundsOffset\] = layer\.centerX;/);
+  assert.match(rendererSource, /cloudBodyF32\[transformOffset\] = \(layer\.rotationDeg \* Math\.PI\) \/ 180;/);
+  assert.match(rendererSource, /cloudBodyF32\[transformOffset \+ 2\] = layer\.bounded \? 1 : 0;/);
   assert.match(densitySource, /fn selectedCloudType\(genusIndex: f32, cumulusDevelopment: f32\)/);
   assert.match(densitySource, /for \(var layerIndex = 0u; layerIndex < 8u; layerIndex \+= 1u\)/);
   assert.match(densitySource, /let layer = B\.layers\[layerIndex\]/);
   assert.match(densitySource, /let shapeDetail = B\.layerShapeDetails\[layerIndex\]/);
+  assert.match(densitySource, /fn layerHorizontalMask\(worldPos: vec3f, bounds: vec4f, transform: vec4f\) -> f32/);
+  assert.match(densitySource, /B\.layerBounds\[layerIndex\]/);
+  assert.match(densitySource, /B\.layerBoundTransforms\[layerIndex\]/);
+  assert.match(densitySource, /density \*= horizontalMask;/);
   assert.match(densitySource, /shapeDetail\.x,/);
   assert.match(densitySource, /shapeDetail\.z,/);
   assert.doesNotMatch(densitySource, /U\.layer[012]/);
   assert.doesNotMatch(rendererSource, /L\[[012]\]\.genus/);
+});
+
+test('rotated elliptical bounds preserve global decks and feather local cloud edges', () => {
+  const bounds = [100, -200, 1000, 400];
+  assert.equal(horizontalEllipseMask([100000, 100000], bounds, 0, 0.25, false), 1);
+  assert.equal(horizontalEllipseMask([100, -200], bounds, 0, 0.25), 1);
+  assert.equal(horizontalEllipseMask([1200, -200], bounds, 0, 0.25), 0);
+  assert.ok(horizontalEllipseMask([950, -200], bounds, 0, 0.25) > 0);
+  assert.ok(horizontalEllipseMask([950, -200], bounds, 0, 0.25) < 1);
+  assert.equal(horizontalEllipseMask([100, 500], bounds, 90, 0.25), 1);
+  assert.equal(horizontalEllipseMask([950, -200], bounds, 90, 0.25), 0);
 });
 
 test('the independent high-cloud path maps an explicit Ac or As genus on the GPU', () => {

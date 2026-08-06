@@ -426,6 +426,19 @@ fn distanceFade(worldPos: vec3f) -> f32 {
   return 1.0 - softstep(maxD * 0.82, maxD, d);
 }
 
+fn layerHorizontalMask(worldPos: vec3f, bounds: vec4f, transform: vec4f) -> f32 {
+  if (transform.z < 0.5) {
+    return 1.0;
+  }
+  let delta = worldPos.xz - bounds.xy;
+  let c = cos(transform.x);
+  let s = sin(transform.x);
+  let localPos = vec2f(c * delta.x + s * delta.y, -s * delta.x + c * delta.y);
+  let ellipseDistance = length(localPos / max(bounds.zw, vec2f(1.0)));
+  let feather = clamp(transform.y, 0.001, 0.95);
+  return 1.0 - smoothstep(1.0 - feather, 1.0, ellipseDistance);
+}
+
 fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensitySample {
   let edgeFade = distanceFade(worldPos);
   if (edgeFade <= 0.0) {
@@ -449,6 +462,14 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
       continue;
     }
     let shapeDetail = B.layerShapeDetails[layerIndex];
+    let horizontalMask = layerHorizontalMask(
+      worldPos,
+      B.layerBounds[layerIndex],
+      B.layerBoundTransforms[layerIndex],
+    );
+    if (horizontalMask <= 0.0) {
+      continue;
+    }
     var support = 0.0;
     var afterShape = 0.0;
     var density = 0.0;
@@ -473,6 +494,10 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
       &height01,
       &densityCoverage,
     );
+    support *= horizontalMask;
+    afterShape *= horizontalMask;
+    density *= horizontalMask;
+    densityCoverage *= horizontalMask;
     bestDensityCoverage = max(bestDensityCoverage, densityCoverage);
     bestSupport = max(bestSupport, support);
     // Preserve the legacy tie behaviour: an enabled first layer owns the

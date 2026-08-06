@@ -50,14 +50,19 @@ const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
 };
 
 const PARAMETERS: Record<string, ParameterCopy> = {
+  placementLocked: parameter('Keep Placement', '保留摆放', 'When enabled, changing the cloud genus keeps the hand-edited position and size.', '启用后，切换云属时保留手工调整的位置和尺寸。'),
+  applyGenusDefaults: parameter('Apply Genus Placement', '应用云属摆放', 'Applies the recommended altitude and horizontal size for this cloud genus.', '应用该云属建议的高度和水平尺寸。'),
   cloudBody: parameter('Cloud', '云体', 'An independently editable cloud object.', '一个可独立编辑的云体对象。'),
   addCloud: parameter('Add Cloud', '添加云体', 'Adds another independent cloud body; this version supports up to ten.', '添加一个独立云体；当前版本最多支持十个。'),
   duplicateCloud: parameter('Duplicate', '复制', 'Copies this cloud into the next compatible slot.', '将这个云体复制到下一个兼容槽位。'),
   deleteCloud: parameter('Delete', '删除', 'Removes this cloud from the scene.', '从场景中删除这个云体。'),
-  centerX: parameter('Center X (m)', '中心 X（米）', 'Horizontal center of a local cloud.', '局部云体的水平中心 X。'),
-  centerZ: parameter('Center Z (m)', '中心 Z（米）', 'Horizontal center of a local cloud.', '局部云体的水平中心 Z。'),
-  radiusX: parameter('Radius X (m)', '半径 X（米）', 'Horizontal X radius of a local cloud.', '局部云体在 X 方向的水平半径。'),
-  radiusZ: parameter('Radius Z (m)', '半径 Z（米）', 'Horizontal Z radius of a local cloud.', '局部云体在 Z 方向的水平半径。'),
+  bounded: parameter('Local Bounds', '局部边界', 'Limits this deck to an editable horizontal ellipse.', '将这层云限制在一个可编辑的水平椭圆区域内。'),
+  centerX: parameter('Center X (m)', '中心 X（米）', 'Horizontal center of this cloud body.', '这个云体的水平中心 X。'),
+  centerZ: parameter('Center Z (m)', '中心 Z（米）', 'Horizontal center of this cloud body.', '这个云体的水平中心 Z。'),
+  radiusX: parameter('Radius X (m)', '半径 X（米）', 'Ellipse radius along its local X axis.', '椭圆沿局部 X 轴方向的半径。'),
+  radiusZ: parameter('Radius Z (m)', '半径 Z（米）', 'Ellipse radius along its local Z axis.', '椭圆沿局部 Z 轴方向的半径。'),
+  rotationDeg: parameter('Rotation (°)', '旋转（°）', 'Rotates the horizontal ellipse around its center.', '让水平椭圆围绕中心旋转。'),
+  feather: parameter('Edge Feather', '边缘羽化', 'Width of the soft density fade inside the ellipse edge.', '椭圆边缘向内柔和淡出的宽度。'),
   preset: parameter('Preset', '预设', 'Load a tuned parameter and camera configuration.', '加载一组已调校的参数与相机配置。'),
   densityThreshold: parameter('Density Threshold', '密度阈值', 'Raises or lowers the cutoff where low-cloud density becomes visible.', '调整低云密度开始可见的截断阈值。'),
   wispyReach: parameter('Wispy Reach', '丝缕延伸', 'Extends thin eroded detail beyond the dense cloud body.', '让细薄侵蚀细节延伸到致密云体之外。'),

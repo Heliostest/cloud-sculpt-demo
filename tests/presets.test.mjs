@@ -138,6 +138,8 @@ test('switching presets restores defaults without replacing nested GUI targets',
   assert.equal(params.scStrength, 0.35);
   assert.equal(params.hpLightingEnabled, true);
   params.layers[0].densityScale = 0.1;
+  params.layers[0].bounded = true;
+  params.layers[0].centerX = 42000;
   params.layers[7].enabled = true;
   params.hero.enabled = true;
 
@@ -150,6 +152,8 @@ test('switching presets restores defaults without replacing nested GUI targets',
   assert.equal(params.layers.every((layer, index) => layer === layerObjects[index]), true);
   assert.equal(params.hero, hero);
   assert.equal(params.layers[0].densityScale, 0.85);
+  assert.equal(params.layers[0].bounded, false);
+  assert.equal(params.layers[0].centerX, 0);
   assert.equal(params.hero.enabled, false);
   assert.equal(params.layers[7].enabled, false);
   assert.equal(params.scStrength, 0);

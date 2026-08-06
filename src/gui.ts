@@ -1,7 +1,9 @@
 import GUI, { Controller } from 'lil-gui';
 import { CLOUD_GENERA, HIGH_CLOUD_GENERA, type CameraPreset, type DemoParams } from './params';
 import { CLOUD_PRESET_OPTIONS, type CloudPresetName } from './cloudPresets';
+import { CloudBodyStore, type CloudBody } from './cloudBodies';
 import {
+  cloudGenusLabel,
   cloudGenusOptions,
   cloudPresetOptions,
   debugModeOptions,
@@ -19,6 +21,8 @@ interface LocalizedFolder {
   gui: GUI;
   key: string;
 }
+
+type GuiMode = 'basic' | 'advanced';
 
 function helpMark(tip: string): HTMLSpanElement {
   const mark = document.createElement('span');
@@ -38,18 +42,44 @@ export function createGui(
   },
 ): GUI {
   const gui = new GUI({ title: uiText('title'), closeFolders: true });
+  const bodyStore = new CloudBodyStore(params);
   const localizedFolders: LocalizedFolder[] = [];
   const genusControllers: Controller[] = [];
   const debugModes = ['Final', 'Support', 'AfterShape', 'FinalDensity', 'Weather', 'DensityCoverage', 'HighWeather', 'HighBand', 'HighDensity'] as const;
   const presetNames = Object.values(CLOUD_PRESET_OPTIONS);
+  let guiMode: GuiMode = typeof localStorage !== 'undefined' && localStorage.getItem('cloud-sculpt-gui-mode') === 'advanced'
+    ? 'advanced'
+    : 'basic';
   const addFolder = (parent: GUI, key: string): GUI => {
     const folder = parent.addFolder(folderLabel(key));
     localizedFolders.push({ gui: folder, key });
     return folder;
   };
+  let refreshCloudBodies = (): void => {};
   const presetSelection = { preset: hooks.initialCloudPreset };
   const presetController = gui.add(presetSelection, 'preset', cloudPresetOptions(presetNames))
-    .onChange((value: string) => hooks.onCloudPreset(value as CloudPresetName));
+    .onChange((value: string) => {
+      hooks.onCloudPreset(value as CloudPresetName);
+      refreshCloudBodies();
+    });
+
+  const cloudBodies = addFolder(gui, 'cloudBodies');
+  const bodyActions = {
+    addCloud: () => {
+      bodyStore.add();
+      refreshCloudBodies();
+    },
+  };
+  const addCloudController = cloudBodies.add(bodyActions, 'addCloud');
+
+  const environment = addFolder(gui, 'environment');
+  environment.add(params, 'windSpeed', 0, 40, 0.1);
+  environment.add(params, 'windAngleDeg', 0, 360, 1);
+  environment.add(params, 'sunAzimuthDeg', 0, 360, 1);
+  environment.add(params, 'sunElevationDeg', 5, 80, 1);
+  environment.add(params, 'exposure', 0.05, 4, 0.01);
+  cloudBodies.open();
+  environment.open();
 
   const alignment = addFolder(gui, 'alignment');
   alignment.add(params, 'densityThreshold', 0, 0.5, 0.005);
@@ -117,9 +147,6 @@ export function createGui(
   hpLod.add(params, 'detailFadeEnabled');
 
   const high = addFolder(gui, 'highCloud');
-  high.add(params, 'highCloudEnabled');
-  const highCloudGenusController = high.add(params, 'highCloudGenus', cloudGenusOptions(HIGH_CLOUD_GENERA));
-  genusControllers.push(highCloudGenusController);
   high.add(params, 'highWeatherRepeat', 0.000005, 0.00008, 0.000001);
   high.add(params, 'highBaseKm', 3, 14, 0.1);
   high.add(params, 'highTopKm', 4, 18, 0.1);
@@ -197,34 +224,14 @@ export function createGui(
   hpLighting.add(params, 'scatterSourceODScale', 0.005, 0.3, 0.005);
   hpLighting.add(params, 'scatterSourceCurvePow', 0.1, 4, 0.05);
 
-  const layers = addFolder(gui, 'layers');
-  for (let i = 0; i < params.layers.length; i++) {
-    const L = params.layers[i];
-    const f = layers.addFolder(`L${i}`);
-    f.add(L, 'enabled');
-    genusControllers.push(f.add(L, 'genus', cloudGenusOptions(CLOUD_GENERA)));
-    f.add(L, 'cumulusDevelopment', 0, 1, 0.01);
-    f.add(L, 'baseKm', 0.2, 10, 0.05);
-    f.add(L, 'topKm', 0.5, 12, 0.05);
-    f.add(L, 'densityScale', 0, 2, 0.01);
-    f.add(L, 'detailAmount', 0, 1.5, 0.01);
-  }
-
-  const hero = addFolder(gui, 'hero');
-  hero.add(params.hero, 'enabled');
-  genusControllers.push(hero.add(params.hero, 'genus', cloudGenusOptions(CLOUD_GENERA)));
-  hero.add(params.hero, 'cumulusDevelopment', 0, 1, 0.01);
-  hero.add(params.hero, 'coverage', 0, 1, 0.01);
-  hero.add(params.hero, 'densityMul', 0.2, 2.5, 0.01);
-
   const quality = addFolder(gui, 'quality');
   quality.add(params, 'minPrimaryStep', 20, 200, 1);
   quality.add(params, 'maxPrimaryStep', 200, 1200, 1);
   quality.add(params, 'maxIterations', 64, 512, 1);
   quality.add(params, 'lightSteps', 4, 8, 1);
-  quality.add(params, 'exposure', 0.2, 3, 0.01);
 
-  const debugController = gui.add(params, 'debugMode', debugModeOptions(debugModes));
+  const diagnostics = addFolder(gui, 'diagnostics');
+  const debugController = diagnostics.add(params, 'debugMode', debugModeOptions(debugModes));
 
   const cam = {
     side: () => hooks.onCameraPreset('side'),
@@ -241,53 +248,150 @@ export function createGui(
   const titleText = document.createElement('span');
   titleText.className = 'gui-title-text';
   const titleHelp = helpMark(uiText('helpHint'));
+  const modeSelect = document.createElement('select');
+  modeSelect.className = 'gui-toolbar-select gui-mode';
   const langSelect = document.createElement('select');
-  langSelect.className = 'gui-language';
+  langSelect.className = 'gui-toolbar-select gui-language';
   for (const [label, value] of [['English', 'en'], ['中文', 'zh']] as const) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
     langSelect.appendChild(option);
   }
+  modeSelect.addEventListener('click', (event) => event.stopPropagation());
   langSelect.addEventListener('click', (event) => event.stopPropagation());
   gui.$title.textContent = '';
-  gui.$title.append(titleText, titleHelp, langSelect);
+  gui.$title.append(titleText, titleHelp, modeSelect, langSelect);
+
+  const advancedFolders = [alignment, high, weather, sculpt, sun, post, hpLighting, quality];
+  const applyMode = (): void => {
+    const isBasic = guiMode === 'basic';
+    for (const folder of advancedFolders) folder.show(!isBasic);
+    modeSelect.value = guiMode;
+  };
+
+  const localizeModeSelect = (): void => {
+    modeSelect.textContent = '';
+    for (const [value, label] of [['basic', uiText('basicMode')], ['advanced', uiText('advancedMode')]] as const) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      modeSelect.appendChild(option);
+    }
+    modeSelect.value = guiMode;
+    modeSelect.title = uiText('viewMode');
+    modeSelect.setAttribute('aria-label', uiText('viewMode'));
+  };
 
   const applyLanguage = (): void => {
     document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en';
     titleText.textContent = uiText('title');
     titleHelp.title = uiText('helpHint');
     titleHelp.setAttribute('aria-label', uiText('helpHint'));
+    localizeModeSelect();
     langSelect.value = getLang();
     langSelect.title = uiText('language');
     langSelect.setAttribute('aria-label', uiText('language'));
 
     presetController.options(cloudPresetOptions(presetNames));
-    for (const controller of genusControllers) {
-      const values = controller === highCloudGenusController ? HIGH_CLOUD_GENERA : CLOUD_GENERA;
-      controller.options(cloudGenusOptions(values));
-    }
+    const activeBodies = bodyStore.active();
+    genusControllers.forEach((controller, index) => {
+      const body = activeBodies[index];
+      controller.options(cloudGenusOptions(body?.isHighSheet ? HIGH_CLOUD_GENERA : CLOUD_GENERA));
+    });
     debugController.options(debugModeOptions(debugModes));
 
     for (const controller of gui.controllersRecursive()) {
       const tip = parameterTip(controller.property);
       controller.name(parameterLabel(controller.property));
       controller.domElement.title = tip;
+      for (const child of Array.from(controller.$name.children)) {
+        if (child.classList.contains('gui-help')) child.remove();
+      }
       controller.$name.appendChild(helpMark(tip));
     }
     for (const item of localizedFolders) {
       const tip = folderTip(item.key);
       item.gui.title(folderLabel(item.key));
       item.gui.$title.title = tip;
+      for (const child of Array.from(item.gui.$title.children)) {
+        if (child.classList.contains('gui-help')) child.remove();
+      }
       item.gui.$title.appendChild(helpMark(tip));
     }
+    bodyFolders.forEach((folder, index) => {
+      const body = activeBodies[index];
+      if (body) folder.title(bodyTitle(body, index));
+      folder.$title.title = folderTip('cloudBody');
+    });
   };
 
+  let bodyFolders: GUI[] = [];
+  const bodyTitle = (body: CloudBody, index: number): string =>
+    `${parameterLabel('cloudBody')} B${index + 1} · ${cloudGenusLabel(body.genus)}`;
+
+  const rebuildCloudBodies = (): void => {
+    for (const folder of bodyFolders) folder.destroy();
+    bodyFolders = [];
+    genusControllers.length = 0;
+
+    bodyStore.active().forEach((body, index) => {
+      const folder = cloudBodies.addFolder(bodyTitle(body, index));
+      bodyFolders.push(folder);
+      folder.$title.title = folderTip('cloudBody');
+
+      const genera = body.isHighSheet ? HIGH_CLOUD_GENERA : CLOUD_GENERA;
+      const genusController = folder.add(body, 'genus', cloudGenusOptions(genera))
+        .onChange(() => folder.title(bodyTitle(body, index)));
+      genusControllers.push(genusController);
+      if (!body.isHighSheet) folder.add(body, 'cumulusDevelopment', 0, 1, 0.01);
+      folder.add(body, 'baseKm', 0.2, 14, 0.05);
+      folder.add(body, 'topKm', 0.5, 18, 0.05);
+      folder.add(body, 'densityScale', 0, 3, 0.01);
+      if (!body.isLocal) folder.add(body, 'detailAmount', 0, 1.5, 0.01);
+      if (body.isLocal) {
+        folder.add(body, 'coverage', 0, 1, 0.01);
+        folder.add(body, 'centerX', -120000, 120000, 100);
+        folder.add(body, 'centerZ', -120000, 120000, 100);
+        folder.add(body, 'radiusX', 100, 30000, 100);
+        folder.add(body, 'radiusZ', 100, 30000, 100);
+      }
+
+      const actions = {
+        duplicateCloud: () => {
+          bodyStore.duplicate(body.id);
+          refreshCloudBodies();
+        },
+        deleteCloud: () => {
+          bodyStore.remove(body.id);
+          refreshCloudBodies();
+        },
+      };
+      if (bodyStore.canDuplicate(body.id)) folder.add(actions, 'duplicateCloud');
+      folder.add(actions, 'deleteCloud');
+    });
+
+    if (bodyStore.canAdd()) addCloudController.enable();
+    else addCloudController.disable();
+  };
+
+  refreshCloudBodies = (): void => {
+    rebuildCloudBodies();
+    applyLanguage();
+  };
+
+  modeSelect.addEventListener('change', () => {
+    guiMode = modeSelect.value as GuiMode;
+    if (typeof localStorage !== 'undefined') localStorage.setItem('cloud-sculpt-gui-mode', guiMode);
+    applyMode();
+  });
   langSelect.addEventListener('change', () => {
     setLang(langSelect.value as Lang);
     applyLanguage();
   });
+  rebuildCloudBodies();
   applyLanguage();
+  applyMode();
 
   return gui;
 }

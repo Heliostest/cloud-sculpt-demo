@@ -7,11 +7,10 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
       #canvas { width: 100%; height: 100%; display: block; }
-      .lil-gui.root { --width: 340px; max-height: 100vh; }
-      .lil-gui.root > .title { display: flex; align-items: center; gap: 5px; }
+      .lil-gui.lil-root { --width: 360px; max-height: 100vh; }
+      .lil-gui.lil-root > .lil-title { display: flex; align-items: center; gap: 5px; }
       .gui-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .gui-language {
-        margin-left: auto;
+      .gui-toolbar-select {
         padding: 1px 4px;
         border: 1px solid #555;
         border-radius: 3px;
@@ -20,6 +19,7 @@
         font: 11px sans-serif;
         cursor: pointer;
       }
+      .gui-mode { margin-left: auto; }
       .gui-help {
         margin-left: 4px;
         color: #7fb6ee;
@@ -29,9 +29,9 @@
         cursor: help;
         opacity: 0.85;
       }
-      .lil-gui .controller .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .lil-gui .controller:hover .gui-help,
-      .lil-gui .title:hover .gui-help { color: #b8dcff; opacity: 1; }
+      .lil-gui .lil-controller .lil-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .lil-gui .lil-controller:hover .gui-help,
+      .lil-gui .lil-title:hover .gui-help { color: #b8dcff; opacity: 1; }
     </style>
   </head>
   <body>

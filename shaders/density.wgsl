@@ -21,6 +21,11 @@ struct HighCloudSample {
 // transport, lifecycle, weather sampling, or the ray marcher.
 struct CloudGenusDensityContext {
   worldPos: vec3f,
+  bodyIndex: u32,
+  bodyLocalMeters: vec3f,
+  bodyLocalUnit: vec3f,
+  normalizedHeight: f32,
+  bodyPhase: vec3f,
   baseM: f32,
   topM: f32,
   densityScale: f32,
@@ -43,6 +48,71 @@ const GENUS_NIMBOSTRATUS: f32 = 6.0;
 const GENUS_CIRRUS: f32 = 7.0;
 const GENUS_CIRROSTRATUS: f32 = 8.0;
 const GENUS_CIRROCUMULUS: f32 = 9.0;
+const UNBOUNDED_BODY_LOCAL_SCALE_M: f32 = 10000.0;
+
+struct CloudBodyLocalFrame {
+  meters: vec3f,
+  unit: vec3f,
+  normalizedHeight: f32,
+  phase: vec3f,
+};
+
+fn hashCloudBodyPhase(seed: u32) -> u32 {
+  var value = seed;
+  value = value ^ (value >> 16u);
+  value *= 0x7feb352du;
+  value = value ^ (value >> 15u);
+  value *= 0x846ca68bu;
+  return value ^ (value >> 16u);
+}
+
+fn cloudBodyPhase(bodyIndex: u32, center: vec2f) -> vec3f {
+  let centerSeed = hashCloudBodyPhase(bitcast<u32>(center.x) ^ 0x68bc21ebu)
+    ^ hashCloudBodyPhase(bitcast<u32>(center.y) ^ 0x02e5be93u);
+  let seed = hashCloudBodyPhase(bodyIndex ^ centerSeed ^ 0x9e3779b9u);
+  return vec3f(
+    f32(hashCloudBodyPhase(seed ^ 0xa341316cu)),
+    f32(hashCloudBodyPhase(seed ^ 0xc8013ea4u)),
+    f32(hashCloudBodyPhase(seed ^ 0xad90777du)),
+  ) / 4294967295.0;
+}
+
+fn deriveCloudBodyLocalFrame(
+  bodyIndex: u32,
+  worldPos: vec3f,
+  baseM: f32,
+  topM: f32,
+  bounds: vec4f,
+  transform: vec4f,
+) -> CloudBodyLocalFrame {
+  let centerOffset = worldPos.xz - bounds.xy;
+  let c = cos(transform.x);
+  let s = sin(transform.x);
+  let localXZ = vec2f(
+    c * centerOffset.x + s * centerOffset.y,
+    -s * centerOffset.x + c * centerOffset.y,
+  );
+  let heightMeters = altitude(worldPos) - baseM;
+  let heightSpan = max(topM - baseM, 1.0);
+  let boundedScale = max(bounds.zw, vec2f(1.0));
+  let horizontalScale = select(
+    vec2f(UNBOUNDED_BODY_LOCAL_SCALE_M),
+    boundedScale,
+    transform.z >= 0.5,
+  );
+  let localMeters = vec3f(localXZ.x, heightMeters, localXZ.y);
+  let localUnit = vec3f(
+    localXZ.x / horizontalScale.x,
+    heightMeters / heightSpan,
+    localXZ.y / horizontalScale.y,
+  );
+  return CloudBodyLocalFrame(
+    localMeters,
+    localUnit,
+    saturate(heightMeters / heightSpan),
+    cloudBodyPhase(bodyIndex, bounds.xy),
+  );
+}
 
 fn emptyHighCloudSample() -> HighCloudSample {
   return HighCloudSample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
@@ -642,8 +712,21 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
     if (horizontalMask <= 0.0) {
       continue;
     }
+    let localFrame = deriveCloudBodyLocalFrame(
+      layerIndex,
+      densityPos,
+      layer.x,
+      layer.y,
+      B.layerBounds[layerIndex],
+      B.layerBoundTransforms[layerIndex],
+    );
     let context = CloudGenusDensityContext(
       densityPos,
+      layerIndex,
+      localFrame.meters,
+      localFrame.unit,
+      localFrame.normalizedHeight,
+      localFrame.phase,
       layer.x,
       layer.y,
       layer.z * lifeScale,

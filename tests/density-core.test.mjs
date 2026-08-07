@@ -52,6 +52,61 @@ function horizontalEllipseMask(point, bounds, rotationDeg, feather, bounded = tr
   return 1 - ellipseSmoothstep(1 - feather, 1, distance);
 }
 
+const floatBits = new DataView(new ArrayBuffer(4));
+
+function f32Bits(value) {
+  floatBits.setFloat32(0, Math.fround(value), true);
+  return floatBits.getUint32(0, true);
+}
+
+function hashCloudBodyPhase(seed) {
+  let value = seed >>> 0;
+  value = (value ^ (value >>> 16)) >>> 0;
+  value = Math.imul(value, 0x7feb352d) >>> 0;
+  value = (value ^ (value >>> 15)) >>> 0;
+  value = Math.imul(value, 0x846ca68b) >>> 0;
+  return (value ^ (value >>> 16)) >>> 0;
+}
+
+function cloudBodyPhase(bodyIndex, center) {
+  const centerSeed = (
+    hashCloudBodyPhase(f32Bits(center[0]) ^ 0x68bc21eb)
+    ^ hashCloudBodyPhase(f32Bits(center[1]) ^ 0x02e5be93)
+  ) >>> 0;
+  const seed = hashCloudBodyPhase((bodyIndex ^ centerSeed ^ 0x9e3779b9) >>> 0);
+  return [0xa341316c, 0xc8013ea4, 0xad90777d]
+    .map((salt) => hashCloudBodyPhase((seed ^ salt) >>> 0) / 0xffffffff);
+}
+
+function deriveCloudBodyLocalFrame({
+  bodyIndex,
+  worldXZ,
+  altitudeM,
+  baseM,
+  topM,
+  center,
+  radii,
+  rotationDeg,
+  bounded,
+}) {
+  const angle = rotationDeg * Math.PI / 180;
+  const dx = worldXZ[0] - center[0];
+  const dz = worldXZ[1] - center[1];
+  const localX = Math.cos(angle) * dx + Math.sin(angle) * dz;
+  const localZ = -Math.sin(angle) * dx + Math.cos(angle) * dz;
+  const heightMeters = altitudeM - baseM;
+  const heightSpan = Math.max(topM - baseM, 1);
+  const horizontalScale = bounded
+    ? radii.map((radius) => Math.max(radius, 1))
+    : [10_000, 10_000];
+  return {
+    meters: [localX, heightMeters, localZ],
+    unit: [localX / horizontalScale[0], heightMeters / heightSpan, localZ / horizontalScale[1]],
+    normalizedHeight: Math.min(1, Math.max(0, heightMeters / heightSpan)),
+    phase: cloudBodyPhase(bodyIndex, center),
+  };
+}
+
 function bodyLifecycleScale(enabled, life, peak, time) {
   if (!enabled) return 1;
   const birth = life[0];
@@ -184,6 +239,90 @@ test('all ten cloud genera have explicit density evaluators behind one dispatche
     assert.match(dispatcher, new RegExp(`evaluate${evaluatorName}Density\\(context\\)`));
   }
   assert.match(densitySource, /let layerSample = dispatchCloudGenusDensity\(context, shapeDetail\.x\);/);
+});
+
+test('cloud genus contexts expose deterministic body-local morphology coordinates without consuming them yet', () => {
+  const contextStart = densitySource.indexOf('struct CloudGenusDensityContext');
+  const contextEnd = densitySource.indexOf('\n};', contextStart);
+  const context = densitySource.slice(contextStart, contextEnd);
+  for (const field of [
+    'bodyIndex: u32',
+    'bodyLocalMeters: vec3f',
+    'bodyLocalUnit: vec3f',
+    'normalizedHeight: f32',
+    'bodyPhase: vec3f',
+  ]) {
+    assert.match(context, new RegExp(field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+
+  assert.match(densitySource, /const UNBOUNDED_BODY_LOCAL_SCALE_M: f32 = 10000\.0;/);
+  assert.match(densitySource, /fn deriveCloudBodyLocalFrame\(/);
+  assert.match(densitySource, /let centerOffset = worldPos\.xz - bounds\.xy;/);
+  assert.match(densitySource, /c \* centerOffset\.x \+ s \* centerOffset\.y/);
+  assert.match(densitySource, /-s \* centerOffset\.x \+ c \* centerOffset\.y/);
+  assert.match(densitySource, /let heightMeters = altitude\(worldPos\) - baseM;/);
+  assert.match(densitySource, /let localFrame = deriveCloudBodyLocalFrame\(\s*layerIndex,\s*densityPos,/);
+
+  const compatibilityStart = densitySource.indexOf('fn evaluateCompatibilityDensity');
+  const compatibilityEnd = densitySource.indexOf('\nfn evaluateCumulusDensity', compatibilityStart);
+  const compatibility = densitySource.slice(compatibilityStart, compatibilityEnd);
+  for (const unusedField of ['bodyIndex', 'bodyLocalMeters', 'bodyLocalUnit', 'normalizedHeight', 'bodyPhase']) {
+    assert.doesNotMatch(compatibility, new RegExp(`context\\.${unusedField}`));
+  }
+
+  const evaluatorNames = [
+    'Cumulus', 'Stratus', 'Stratocumulus', 'Cumulonimbus', 'Altocumulus',
+    'Altostratus', 'Nimbostratus', 'Cirrus', 'Cirrostratus', 'Cirrocumulus',
+  ];
+  for (const evaluatorName of evaluatorNames) {
+    assert.match(
+      densitySource,
+      new RegExp(`fn evaluate${evaluatorName}Density\\(context: CloudGenusDensityContext\\) -> DensitySample \\{\\s*return evaluateCompatibilityDensity\\(context, GENUS_`),
+    );
+  }
+});
+
+test('body-local coordinates invert rotation and stay finite for bounded and unbounded bodies', () => {
+  const baseInput = {
+    bodyIndex: 3,
+    worldXZ: [370, -140],
+    altitudeM: 2100,
+    baseM: 1500,
+    topM: 3500,
+    center: [120, -340],
+    radii: [1000, 500],
+    rotationDeg: 0,
+    bounded: true,
+  };
+  const zeroRotation = deriveCloudBodyLocalFrame(baseInput);
+  assert.deepEqual(zeroRotation.meters, [250, 600, 200]);
+  assert.deepEqual(zeroRotation.unit, [0.25, 0.3, 0.4]);
+  assert.equal(zeroRotation.normalizedHeight, 0.3);
+
+  const quarterTurn = deriveCloudBodyLocalFrame({ ...baseInput, rotationDeg: 90 });
+  assert.ok(Math.abs(quarterTurn.meters[0] - 200) < 1e-9);
+  assert.ok(Math.abs(quarterTurn.meters[2] + 250) < 1e-9);
+
+  const unbounded = deriveCloudBodyLocalFrame({
+    ...baseInput,
+    worldXZ: [9e8, -7e8],
+    radii: [Number.MAX_VALUE, Number.MAX_VALUE],
+    topM: 1500,
+    bounded: false,
+  });
+  assert.equal(unbounded.unit[0], unbounded.meters[0] / 10_000);
+  assert.equal(unbounded.unit[2], unbounded.meters[2] / 10_000);
+  for (const value of [...unbounded.meters, ...unbounded.unit, unbounded.normalizedHeight, ...unbounded.phase]) {
+    assert.ok(Number.isFinite(value));
+  }
+});
+
+test('body morphology phase is stable for the same body and distinguishes centers and indices', () => {
+  const phase = cloudBodyPhase(2, [1200, -4500]);
+  assert.deepEqual(cloudBodyPhase(2, [1200, -4500]), phase);
+  assert.notDeepEqual(cloudBodyPhase(3, [1200, -4500]), phase);
+  assert.notDeepEqual(cloudBodyPhase(2, [-4500, 1200]), phase);
+  assert.equal(phase.every((value) => Number.isFinite(value) && value >= 0 && value <= 1), true);
 });
 
 test('per-body motion transports the density domain and lifecycle scales density smoothly', () => {

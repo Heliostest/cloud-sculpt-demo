@@ -20,8 +20,13 @@ async function compileTypeScriptUrl(relativePath, replacements = {}) {
 
 const paramsUrl = await compileTypeScriptUrl('../src/params.ts');
 const paramsModule = await import(paramsUrl);
+const bodiesUrl = await compileTypeScriptUrl('../src/cloudBodies.ts', {
+  "from './params'": `from '${paramsUrl}'`,
+});
+const bodiesModule = await import(bodiesUrl);
 const presetsUrl = await compileTypeScriptUrl('../src/cloudPresets.ts', {
   "from './params'": `from '${paramsUrl}'`,
+  "from './cloudBodies'": `from '${bodiesUrl}'`,
 });
 const presetsModule = await import(presetsUrl);
 
@@ -31,7 +36,7 @@ test('density model selector is removed from the public parameter surface', () =
   assert.equal('isDensityModel' in paramsModule, false);
 });
 
-test('the parameter model exposes the canonical ten cloud genera per layer', () => {
+test('the cloud model exposes the canonical ten genera through object defaults', () => {
   const expectedGenera = [
     'cumulus',
     'stratus',
@@ -52,36 +57,40 @@ test('the parameter model exposes the canonical ten cloud genera per layer', () 
 
   const params = paramsModule.createDefaultParams();
   assert.equal('cloudTypeOverride' in params, false);
-  for (const layer of params.layers) {
-    assert.ok(expectedGenera.includes(layer.genus));
-    assert.ok(layer.cumulusDevelopment >= 0 && layer.cumulusDevelopment <= 1);
-  }
+  assert.equal('layers' in params, false);
+  assert.equal('hero' in params, false);
+  const primary = bodiesModule.CloudBodyStore.createDefault().bodies[0];
+  assert.ok(expectedGenera.includes(primary.genus));
+  assert.ok(primary.cumulusDevelopment >= 0 && primary.cumulusDevelopment <= 1);
 });
 
 test('TCu is represented as cumulus development rather than an eleventh genus', () => {
   assert.equal(paramsModule.CLOUD_GENERA.includes('tcu'), false);
   assert.equal(paramsModule.CLOUD_GENERA.includes('towering-cumulus'), false);
 
-  const side = paramsModule.createDefaultParams();
-  presetsModule.applyCloudPreset(side, presetsModule.CLOUD_PRESETS['side-cu']);
-  assert.equal(side.layers[0].genus, 'cumulus');
-  assert.equal(side.layers[0].cumulusDevelopment, 0);
+  const side = bodiesModule.CloudBodyStore.createDefault();
+  presetsModule.applyCloudBodyPreset(side, presetsModule.CLOUD_PRESETS['side-cu']);
+  assert.equal(side.bodies[0].genus, 'cumulus');
+  assert.equal(side.bodies[0].cumulusDevelopment, 0);
 
-  const towering = paramsModule.createDefaultParams();
-  presetsModule.applyCloudPreset(towering, presetsModule.CLOUD_PRESETS['oblique-tcu']);
-  assert.equal(towering.layers[0].genus, 'cumulus');
-  assert.equal(towering.layers[0].cumulusDevelopment, 1);
+  const towering = bodiesModule.CloudBodyStore.createDefault();
+  presetsModule.applyCloudBodyPreset(towering, presetsModule.CLOUD_PRESETS['oblique-tcu']);
+  assert.equal(towering.bodies[0].genus, 'cumulus');
+  assert.equal(towering.bodies[0].cumulusDevelopment, 1);
 
-  const storm = paramsModule.createDefaultParams();
-  presetsModule.applyCloudPreset(storm, presetsModule.CLOUD_PRESETS['oblique-cb']);
-  assert.equal(storm.layers[0].genus, 'cumulonimbus');
+  const storm = bodiesModule.CloudBodyStore.createDefault();
+  presetsModule.applyCloudBodyPreset(storm, presetsModule.CLOUD_PRESETS['oblique-cb']);
+  assert.equal(storm.bodies[0].genus, 'cumulonimbus');
 });
 
 test('the independent high-cloud path selects Ac or As by genus, not a type slider', () => {
   assert.deepEqual(paramsModule.HIGH_CLOUD_GENERA, ['altocumulus', 'altostratus']);
   const params = paramsModule.createDefaultParams();
-  assert.equal(params.highCloudGenus, 'altocumulus');
+  assert.equal('highCloudGenus' in params, false);
   assert.equal('highCloudTypeOverride' in params, false);
+  const store = bodiesModule.CloudBodyStore.createDefault();
+  const high = store.add('high-sheet', true);
+  assert.equal(high.genus, 'altocumulus');
   assert.equal(paramsModule.isHighCloudGenus('altocumulus'), true);
   assert.equal(paramsModule.isHighCloudGenus('altostratus'), true);
   assert.equal(paramsModule.isHighCloudGenus('cirrus'), false);
@@ -98,17 +107,19 @@ test('the interactive entry exposes default plus seven cloud presets', () => {
 
 test('stratocumulus preset is a shallow connected deck with softened erosion', () => {
   const params = paramsModule.createDefaultParams();
+  const store = bodiesModule.CloudBodyStore.createDefault();
   presetsModule.applyCloudPreset(params, presetsModule.CLOUD_PRESETS['stratocumulus-sheet']);
+  presetsModule.applyCloudBodyPreset(store, presetsModule.CLOUD_PRESETS['stratocumulus-sheet']);
 
   assert.equal(params.scStrength, 1);
   assert.equal(params.scMaskOverride, 1);
-  assert.equal(params.layers[0].genus, 'stratocumulus');
+  assert.equal(store.bodies[0].genus, 'stratocumulus');
   assert.ok(params.scHeightScale <= 0.25);
   assert.ok(params.scCoverageIntensity > 1);
   assert.ok(params.scDetailStrength < paramsModule.createDefaultParams().scDetailStrength);
   assert.ok(params.edgeSoftness > paramsModule.createDefaultParams().edgeSoftness);
   assert.ok(params.wispyReach < 0.1);
-  assert.equal(params.highCloudEnabled, false);
+  assert.equal(store.bodies.some((body) => body.path === 'high-sheet'), false);
 });
 
 test('preset URLs stay interactive unless validation is explicitly requested', () => {
@@ -129,38 +140,35 @@ test('legacy scenario URLs resolve to the same preset in validation mode', () =>
   );
 });
 
-test('switching presets restores defaults without replacing nested GUI targets', () => {
+test('switching presets resets scalar params and rebuilds cloud objects directly', () => {
   const params = paramsModule.createDefaultParams();
-  const layers = params.layers;
-  const layerObjects = [...params.layers];
-  const hero = params.hero;
+  const store = bodiesModule.CloudBodyStore.createDefault();
   presetsModule.applyCloudPreset(params, presetsModule.CLOUD_PRESETS['hp-ocean-day']);
+  presetsModule.applyCloudBodyPreset(store, presetsModule.CLOUD_PRESETS['hp-ocean-day']);
   assert.equal(params.scStrength, 0.35);
   assert.equal(params.hpLightingEnabled, true);
-  params.layers[0].densityScale = 0.1;
-  params.layers[0].bounded = true;
-  params.layers[0].centerX = 42000;
-  params.layers[7].enabled = true;
-  params.hero.enabled = true;
+  store.bodies[0].densityScale = 0.1;
+  store.bodies[0].bounded = true;
+  store.bodies[0].centerX = 42000;
+  store.add();
+  store.add('local-volume');
 
   presetsModule.applyCloudPreset(params, presetsModule.CLOUD_PRESETS['stratocumulus-sheet']);
+  presetsModule.applyCloudBodyPreset(store, presetsModule.CLOUD_PRESETS['stratocumulus-sheet']);
   assert.equal(params.scStrength, 1);
   assert.equal(params.edgeSoftness, 0.4);
 
   presetsModule.applyCloudPreset(params, presetsModule.CLOUD_PRESETS['side-cu']);
-  assert.equal(params.layers, layers);
-  assert.equal(params.layers.every((layer, index) => layer === layerObjects[index]), true);
-  assert.equal(params.hero, hero);
-  assert.equal(params.layers[0].densityScale, 0.85);
-  assert.equal(params.layers[0].bounded, false);
-  assert.equal(params.layers[0].centerX, 0);
-  assert.equal(params.hero.enabled, false);
-  assert.equal(params.layers[7].enabled, false);
+  presetsModule.applyCloudBodyPreset(store, presetsModule.CLOUD_PRESETS['side-cu']);
+  assert.equal(store.bodies.length, 1);
+  assert.equal(store.bodies[0].densityScale, 0.85);
+  assert.equal(store.bodies[0].bounded, false);
+  assert.equal(store.bodies[0].centerX, 0);
   assert.equal(params.scStrength, 0);
   assert.equal(params.scMaskOverride, -1);
   assert.equal(params.hpLightingEnabled, false);
-  assert.equal(params.layers[0].genus, 'cumulus');
-  assert.equal(params.layers[0].cumulusDevelopment, 0);
+  assert.equal(store.bodies[0].genus, 'cumulus');
+  assert.equal(store.bodies[0].cumulusDevelopment, 0);
   assert.equal(params.windSpeed, 15);
   assert.equal(params.densityThreshold, 0.03);
 });

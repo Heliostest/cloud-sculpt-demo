@@ -131,8 +131,10 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.match(commonSource, /layerBoundTransforms: array<vec4f, 8>/);
   assert.match(commonSource, /layerMotion: array<vec4f, 8>/);
   assert.match(commonSource, /layerLife: array<vec4f, 8>/);
+  assert.match(commonSource, /layerMorphology0: array<vec4f, 8>/);
+  assert.match(commonSource, /layerMorphology1: array<vec4f, 8>/);
   assert.match(commonSource, /@group\(0\) @binding\(15\) var<uniform> B: CloudBodyUniforms/);
-  assert.match(packingSource, /CLOUD_BODY_FLOATS_PER_RECORD_SET = 6 \* 4/);
+  assert.match(packingSource, /CLOUD_BODY_FLOATS_PER_RECORD_SET = 8 \* 4/);
   assert.match(packingSource, /selectVolumeCloudBodies\(bodies/);
   assert.match(packingSource, /target\[shapeOffset\] = CLOUD_GENUS_INDEX\[body\.genus\]/);
   assert.match(packingSource, /target\[shapeOffset \+ 2\] = body\.cumulusDevelopment;/);
@@ -142,6 +144,8 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.match(packingSource, /target\[transformOffset \+ 3\] = body\.lifeStart;/);
   assert.match(packingSource, /target\[motionOffset \+ 2\] = body\.morphRate;/);
   assert.match(packingSource, /target\[lifeOffset \+ 3\] = body\.lifeDeath;/);
+  assert.match(packingSource, /target\[morphology0Offset\] = body\.morphology\.verticalDevelopment;/);
+  assert.match(packingSource, /target\[morphology1Offset \+ 1\] = \(body\.morphology\.fiberAngleDeg \* Math\.PI\) \/ 180;/);
   assert.match(rendererSource, /packVolumeCloudBodies\(volumeBodies, cloudBodyF32\)/);
   assert.doesNotMatch(rendererSource, /params\.layers/);
   assert.match(rendererSource, /const localBody = cloudBodies\.find/);
@@ -150,14 +154,36 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.match(densitySource, /for \(var layerIndex = 0u; layerIndex < 8u; layerIndex \+= 1u\)/);
   assert.match(densitySource, /let layer = B\.layers\[layerIndex\]/);
   assert.match(densitySource, /let shapeDetail = B\.layerShapeDetails\[layerIndex\]/);
+  assert.match(densitySource, /B\.layerMorphology0\[layerIndex\]/);
+  assert.match(densitySource, /B\.layerMorphology1\[layerIndex\]/);
   assert.match(densitySource, /fn layerHorizontalMask\(worldPos: vec3f, bounds: vec4f, transform: vec4f\) -> f32/);
   assert.match(densitySource, /B\.layerBounds\[layerIndex\]/);
   assert.match(densitySource, /B\.layerBoundTransforms\[layerIndex\]/);
   assert.match(densitySource, /density \*= horizontalMask;/);
-  assert.match(densitySource, /shapeDetail\.x,/);
+  assert.match(densitySource, /dispatchCloudGenusDensity\(context, shapeDetail\.x\)/);
   assert.match(densitySource, /shapeDetail\.z,/);
   assert.doesNotMatch(densitySource, /U\.layer[012]/);
   assert.doesNotMatch(packingSource, /params\.layers/);
+});
+
+test('all ten cloud genera have explicit density evaluators behind one dispatcher', () => {
+  const evaluatorNames = [
+    'Cumulus', 'Stratus', 'Stratocumulus', 'Cumulonimbus', 'Altocumulus',
+    'Altostratus', 'Nimbostratus', 'Cirrus', 'Cirrostratus', 'Cirrocumulus',
+  ];
+  for (const evaluatorName of evaluatorNames) {
+    assert.match(densitySource, new RegExp(`fn evaluate${evaluatorName}Density\\(`));
+  }
+
+  const dispatcherStart = densitySource.indexOf('fn dispatchCloudGenusDensity');
+  const dispatcherEnd = densitySource.indexOf('\nfn distanceFade', dispatcherStart);
+  assert.ok(dispatcherStart >= 0, 'missing WGSL function dispatchCloudGenusDensity');
+  assert.ok(dispatcherEnd > dispatcherStart, 'missing WGSL marker after dispatchCloudGenusDensity');
+  const dispatcher = densitySource.slice(dispatcherStart, dispatcherEnd);
+  for (const evaluatorName of evaluatorNames) {
+    assert.match(dispatcher, new RegExp(`evaluate${evaluatorName}Density\\(context\\)`));
+  }
+  assert.match(densitySource, /let layerSample = dispatchCloudGenusDensity\(context, shapeDetail\.x\);/);
 });
 
 test('per-body motion transports the density domain and lifecycle scales density smoothly', () => {

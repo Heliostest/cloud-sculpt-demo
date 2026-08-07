@@ -1,4 +1,5 @@
-import { createDefaultParams, type CameraPreset, type CloudGenus, type DebugMode, type DemoParams, type HighCloudGenus } from './params';
+import type { CloudBodyStore } from './cloudBodies';
+import { createDefaultParams, type CameraPreset, type CloudGenus, type DebugMode, type DemoParams } from './params';
 
 type HpLightingFixture = Pick<
   DemoParams,
@@ -90,8 +91,6 @@ export interface CloudPreset {
   sunAzimuthDeg?: number;
   sunElevationDeg?: number;
   exposure?: number;
-  highCloudEnabled?: boolean;
-  highCloudGenus?: HighCloudGenus;
   scStrength?: number;
   hpLighting?: HpLightingFixture;
   hpDensity?: HpDensityFixture;
@@ -171,7 +170,6 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     genus: 'stratocumulus',
     cumulusDevelopment: 0,
     frozenTime: 6,
-    highCloudEnabled: false,
     scStrength: 1,
     hpDensity: {
       // Raise broad weather-map coverage without closing every sky gap.
@@ -240,7 +238,6 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     sunAzimuthDeg: 210,
     sunElevationDeg: 35,
     exposure: 0.45,
-    highCloudEnabled: false,
     scStrength: 0.35,
     hpDensity: {
       loCovCoverIntensity: 0.62,
@@ -324,28 +321,21 @@ export function resolvePresetRequest(query: URLSearchParams): PresetRequest {
 }
 
 export function applyCloudPreset(params: DemoParams, preset: CloudPreset): void {
-  // Preserve nested object identities because lil-gui controllers bind to them.
-  const targetLayers = params.layers;
-  const targetHero = params.hero;
   const defaults = createDefaultParams();
-  Object.assign(params, defaults, { layers: targetLayers, hero: targetHero });
-  for (let i = 0; i < targetLayers.length; i++) {
-    Object.assign(targetLayers[i], defaults.layers[i]);
-  }
-  Object.assign(targetHero, defaults.hero);
+  Object.assign(params, defaults);
 
   params.debugMode = preset.debugMode;
   params.detailOff = preset.detailOff;
-  params.layers[0].genus = preset.genus;
-  params.layers[0].cumulusDevelopment = preset.cumulusDevelopment;
   if (preset.sunAzimuthDeg !== undefined) params.sunAzimuthDeg = preset.sunAzimuthDeg;
   if (preset.sunElevationDeg !== undefined) params.sunElevationDeg = preset.sunElevationDeg;
   if (preset.exposure !== undefined) params.exposure = preset.exposure;
-  if (preset.highCloudEnabled !== undefined) params.highCloudEnabled = preset.highCloudEnabled;
-  if (preset.highCloudGenus !== undefined) params.highCloudGenus = preset.highCloudGenus;
   if (preset.scStrength !== undefined) params.scStrength = preset.scStrength;
   if (preset.hpLighting !== undefined) Object.assign(params, preset.hpLighting);
   if (preset.hpDensity !== undefined) Object.assign(params, preset.hpDensity);
   if (preset.hpMorphology !== undefined) Object.assign(params, preset.hpMorphology);
   if (preset.hpStratocumulus !== undefined) Object.assign(params, preset.hpStratocumulus);
+}
+
+export function applyCloudBodyPreset(store: CloudBodyStore, preset: CloudPreset): void {
+  store.reset(preset.genus, preset.cumulusDevelopment);
 }

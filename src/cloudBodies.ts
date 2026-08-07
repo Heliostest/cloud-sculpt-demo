@@ -1,13 +1,39 @@
 import {
-  createDefaultParams,
   isCloudGenus,
   isHighCloudGenus,
   MAX_VOLUME_CLOUD_BODIES,
   type CloudGenus,
-  type DemoParams,
 } from './params';
 
 export type CloudBodyPath = 'volume' | 'local-volume' | 'high-sheet';
+
+export interface CloudMorphologyRecipe {
+  verticalDevelopment: number;
+  cellScale: number;
+  cellStrength: number;
+  sheetUniformity: number;
+  fiberStrength: number;
+  fiberAngleDeg: number;
+  anvilStrength: number;
+  erosionScale: number;
+}
+
+const GENUS_MORPHOLOGY_DEFAULTS: Readonly<Record<CloudGenus, Readonly<CloudMorphologyRecipe>>> = {
+  cumulus: { verticalDevelopment: 0.55, cellScale: 1, cellStrength: 0.8, sheetUniformity: 0.1, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 1 },
+  stratus: { verticalDevelopment: 0.1, cellScale: 2, cellStrength: 0.05, sheetUniformity: 0.95, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.35 },
+  stratocumulus: { verticalDevelopment: 0.2, cellScale: 1.2, cellStrength: 0.7, sheetUniformity: 0.6, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.75 },
+  cumulonimbus: { verticalDevelopment: 1, cellScale: 0.8, cellStrength: 1, sheetUniformity: 0.15, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 1, erosionScale: 1.2 },
+  altocumulus: { verticalDevelopment: 0.25, cellScale: 0.7, cellStrength: 0.8, sheetUniformity: 0.4, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.8 },
+  altostratus: { verticalDevelopment: 0.15, cellScale: 2.5, cellStrength: 0.1, sheetUniformity: 0.9, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.3 },
+  nimbostratus: { verticalDevelopment: 0.35, cellScale: 2.8, cellStrength: 0.2, sheetUniformity: 0.98, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.25 },
+  cirrus: { verticalDevelopment: 0.08, cellScale: 0.45, cellStrength: 0.15, sheetUniformity: 0.25, fiberStrength: 1, fiberAngleDeg: 20, anvilStrength: 0, erosionScale: 1.3 },
+  cirrostratus: { verticalDevelopment: 0.05, cellScale: 3, cellStrength: 0.05, sheetUniformity: 0.98, fiberStrength: 0.25, fiberAngleDeg: 15, anvilStrength: 0, erosionScale: 0.25 },
+  cirrocumulus: { verticalDevelopment: 0.1, cellScale: 0.35, cellStrength: 0.85, sheetUniformity: 0.35, fiberStrength: 0.15, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 1.1 },
+};
+
+export function createCloudMorphologyRecipe(genus: CloudGenus): CloudMorphologyRecipe {
+  return { ...GENUS_MORPHOLOGY_DEFAULTS[genus] };
+}
 
 export interface CloudBodySnapshot {
   id: string;
@@ -37,10 +63,11 @@ export interface CloudBodySnapshot {
   lifeDeath: number;
   lifePeak: number;
   lifeStart: number;
+  morphology: CloudMorphologyRecipe;
 }
 
 export interface CloudBodyCollectionSnapshot {
-  version: 2;
+  version: 3;
   bodies: CloudBodySnapshot[];
 }
 
@@ -92,9 +119,29 @@ const SNAPSHOT_NUMBER_FIELDS = [
   'lifePeak',
   'lifeStart',
 ] as const satisfies readonly (keyof CloudBodySnapshot)[];
+const MORPHOLOGY_NUMBER_FIELDS = [
+  'verticalDevelopment',
+  'cellScale',
+  'cellStrength',
+  'sheetUniformity',
+  'fiberStrength',
+  'fiberAngleDeg',
+  'anvilStrength',
+  'erosionScale',
+] as const satisfies readonly (keyof CloudMorphologyRecipe)[];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function parseCloudMorphologyRecipe(value: unknown, bodyId: string): CloudMorphologyRecipe {
+  if (!isRecord(value)) throw new Error(`Cloud body ${bodyId} has an invalid morphology recipe.`);
+  for (const field of MORPHOLOGY_NUMBER_FIELDS) {
+    if (typeof value[field] !== 'number' || !Number.isFinite(value[field])) {
+      throw new Error(`Cloud body ${bodyId} has an invalid morphology.${field} value.`);
+    }
+  }
+  return { ...value } as unknown as CloudMorphologyRecipe;
 }
 
 function parseCloudBodySnapshot(value: unknown): CloudBodySnapshot {
@@ -119,16 +166,33 @@ function parseCloudBodySnapshot(value: unknown): CloudBodySnapshot {
       throw new Error(`Cloud body ${value.id} has an invalid ${field} value.`);
     }
   }
-  return value as unknown as CloudBodySnapshot;
+  const morphology = parseCloudMorphologyRecipe(value.morphology, value.id);
+  return { ...value, morphology } as unknown as CloudBodySnapshot;
 }
 
 export function parseCloudBodyCollectionSnapshot(value: unknown): CloudBodyCollectionSnapshot {
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2) || !Array.isArray(value.bodies)) {
+  if (!isRecord(value) || !Array.isArray(value.bodies)) {
     throw new Error('Unsupported cloud-body collection snapshot.');
   }
-  const bodies = value.bodies.map((body) => parseCloudBodySnapshot(
-    value.version === 1 && isRecord(body) ? { ...LEGACY_RUNTIME_DEFAULTS, ...body } : body,
-  ));
+  const version = value.version;
+  if (version !== 1 && version !== 2 && version !== 3) {
+    throw new Error('Unsupported cloud-body collection snapshot.');
+  }
+  const bodies = value.bodies.map((body) => {
+    if (!isRecord(body)) return parseCloudBodySnapshot(body);
+    const runtimeBody = version === 1 ? { ...LEGACY_RUNTIME_DEFAULTS, ...body } : body;
+    const migratedBody = version <= 2
+      ? {
+        ...runtimeBody,
+        morphology: createCloudMorphologyRecipe(
+          typeof runtimeBody.genus === 'string' && isCloudGenus(runtimeBody.genus)
+            ? runtimeBody.genus
+            : 'cumulus',
+        ),
+      }
+      : runtimeBody;
+    return parseCloudBodySnapshot(migratedBody);
+  });
   const ids = new Set<string>();
   const pathCounts: Record<CloudBodyPath, number> = { volume: 0, 'local-volume': 0, 'high-sheet': 0 };
   for (const body of bodies) {
@@ -139,75 +203,138 @@ export function parseCloudBodyCollectionSnapshot(value: unknown): CloudBodyColle
   if (pathCounts.volume > MAX_VOLUME_CLOUD_BODIES || pathCounts['local-volume'] > 1 || pathCounts['high-sheet'] > 1) {
     throw new Error('Cloud-body collection exceeds renderer capacity.');
   }
-  return { version: 2, bodies };
+  return { version: 3, bodies };
 }
 
-type CloudBodySlot =
-  | { kind: 'layer'; index: number }
-  | { kind: 'hero' }
-  | { kind: 'high' };
+export type CloudBodySeed = Omit<CloudBodySnapshot, 'id' | 'morphology'> & {
+  morphology?: CloudMorphologyRecipe;
+};
 
-function cloudBodySlotKey(slot: CloudBodySlot): string {
-  return slot.kind === 'layer' ? `layer-${slot.index}` : slot.kind;
-}
+const PATH_CAPACITY: Record<CloudBodyPath, number> = {
+  volume: MAX_VOLUME_CLOUD_BODIES,
+  'local-volume': 1,
+  'high-sheet': 1,
+};
 
-const BODY_SLOTS: readonly CloudBodySlot[] = [
-  ...Array.from({ length: MAX_VOLUME_CLOUD_BODIES }, (_, index) => ({ kind: 'layer' as const, index })),
-  { kind: 'hero' },
-  { kind: 'high' },
+const DEFAULT_BODY_BOUNDS = {
+  coverage: 1,
+  bounded: false,
+  centerX: 0,
+  centerZ: 0,
+  radiusX: 20000,
+  radiusZ: 15000,
+  rotationDeg: 0,
+  feather: 0.25,
+  placementLocked: true,
+  ...LEGACY_RUNTIME_DEFAULTS,
+} as const;
+
+const DEFAULT_VOLUME_BODY_SEEDS: readonly CloudBodySeed[] = [
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'cumulus', cumulusDevelopment: 0.5, baseKm: 0.4, topKm: 2.8, densityScale: 0.85, detailAmount: 1.0 },
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'altocumulus', cumulusDevelopment: 0, baseKm: 3.0, topKm: 5.5, densityScale: 0.28, detailAmount: 0.4 },
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'cirrus', cumulusDevelopment: 0, baseKm: 7.0, topKm: 9.0, densityScale: 0.25, detailAmount: 0.0 },
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'cumulus', cumulusDevelopment: 0, baseKm: 0.8, topKm: 2.4, densityScale: 0.7, detailAmount: 0.9 },
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'stratocumulus', cumulusDevelopment: 0, baseKm: 1.0, topKm: 2.2, densityScale: 0.45, detailAmount: 0.6 },
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'altostratus', cumulusDevelopment: 0, baseKm: 3.5, topKm: 6.0, densityScale: 0.22, detailAmount: 0.3 },
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'cirrostratus', cumulusDevelopment: 0, baseKm: 7.5, topKm: 10.0, densityScale: 0.18, detailAmount: 0.15 },
+  { ...DEFAULT_BODY_BOUNDS, path: 'volume', genus: 'cumulonimbus', cumulusDevelopment: 0, baseKm: 0.7, topKm: 9.0, densityScale: 0.8, detailAmount: 1.2 },
 ];
 
-/**
- * Object-oriented view over the current fixed renderer slots.
- *
- * The renderer still consumes DemoParams directly. Keeping this class as a
- * live adapter lets the editor move to cloud objects without changing shader
- * output in the same step.
- */
+const DEFAULT_LOCAL_VOLUME_BODY_SEED: CloudBodySeed = {
+  ...DEFAULT_BODY_BOUNDS,
+  path: 'local-volume',
+  genus: 'cumulonimbus',
+  cumulusDevelopment: 0,
+  baseKm: 0.7,
+  topKm: 9.2,
+  densityScale: 1.35,
+  detailAmount: 0.42,
+  coverage: 0.9,
+  bounded: true,
+  centerZ: -2000,
+  radiusX: 1800,
+  radiusZ: 1600,
+};
+
+const DEFAULT_HIGH_SHEET_BODY_SEED: CloudBodySeed = {
+  ...DEFAULT_BODY_BOUNDS,
+  path: 'high-sheet',
+  genus: 'altocumulus',
+  cumulusDevelopment: 0,
+  baseKm: 6.5,
+  topKm: 10.5,
+  densityScale: 0.06,
+  detailAmount: 0.28,
+  bounded: false,
+  radiusX: 0,
+  radiusZ: 0,
+};
+
+function defaultBodySeed(path: CloudBodyPath, volumeIndex = 0): CloudBodySeed {
+  const seed = path === 'volume'
+    ? DEFAULT_VOLUME_BODY_SEEDS[Math.min(volumeIndex, DEFAULT_VOLUME_BODY_SEEDS.length - 1)]
+    : path === 'local-volume'
+      ? DEFAULT_LOCAL_VOLUME_BODY_SEED
+      : DEFAULT_HIGH_SHEET_BODY_SEED;
+  return {
+    ...seed,
+    morphology: seed.morphology ? { ...seed.morphology } : undefined,
+  };
+}
+
+/** Independent authoring entity consumed directly by the GUI, gizmo and renderer. */
 export class CloudBody {
   private suppressPlacementLock = false;
+  private genusValue: CloudGenus = 'cumulus';
+  private placementIsLocked = true;
+  private baseKmValue = 1;
+  private topKmValue = 2.5;
+  private centerXValue = 0;
+  private centerZValue = 0;
+  private radiusXValue = 1000;
+  private radiusZValue = 1000;
+  private boundedValue = false;
+  private rotationDegValue = 0;
+  private featherValue = 0.25;
+  private lifeEnabledValue = false;
+
+  enabled = true;
+  cumulusDevelopment = 0;
+  densityScale = 1;
+  detailAmount = 0.4;
+  coverage = 1;
+  windDeg: number = LEGACY_RUNTIME_DEFAULTS.windDeg;
+  windSpeedMps: number = LEGACY_RUNTIME_DEFAULTS.windSpeedMps;
+  morphRate: number = LEGACY_RUNTIME_DEFAULTS.morphRate;
+  lifeBirth: number = LEGACY_RUNTIME_DEFAULTS.lifeBirth;
+  lifeGrow: number = LEGACY_RUNTIME_DEFAULTS.lifeGrow;
+  lifeDecay: number = LEGACY_RUNTIME_DEFAULTS.lifeDecay;
+  lifeDeath: number = LEGACY_RUNTIME_DEFAULTS.lifeDeath;
+  lifePeak: number = LEGACY_RUNTIME_DEFAULTS.lifePeak;
+  lifeStart: number = LEGACY_RUNTIME_DEFAULTS.lifeStart;
+  morphology: CloudMorphologyRecipe = createCloudMorphologyRecipe('cumulus');
+  readonly id: string;
+  readonly path: CloudBodyPath;
 
   constructor(
-    private readonly params: DemoParams,
-    private readonly slot: CloudBodySlot,
-    readonly id: string,
-    private placementIsLocked = true,
-  ) {}
-
-  get rendererSlot(): string {
-    return cloudBodySlotKey(this.slot);
-  }
-
-  get path(): CloudBodyPath {
-    if (this.slot.kind === 'hero') return 'local-volume';
-    if (this.slot.kind === 'high') return 'high-sheet';
-    return 'volume';
-  }
-
-  get enabled(): boolean {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].enabled;
-    if (this.slot.kind === 'hero') return this.params.hero.enabled;
-    return this.params.highCloudEnabled;
-  }
-
-  set enabled(value: boolean) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].enabled = value;
-    else if (this.slot.kind === 'hero') this.params.hero.enabled = value;
-    else this.params.highCloudEnabled = value;
+    snapshot: CloudBodySnapshot,
+    private readonly currentSceneTime: () => number = () => 0,
+  ) {
+    this.id = snapshot.id;
+    this.path = snapshot.path;
+    this.applySnapshot(snapshot);
   }
 
   get genus(): CloudGenus {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].genus;
-    if (this.slot.kind === 'hero') return this.params.hero.genus;
-    return this.params.highCloudGenus;
+    return this.genusValue;
   }
 
   set genus(value: CloudGenus) {
-    const previous = this.genus;
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].genus = value;
-    else if (this.slot.kind === 'hero') this.params.hero.genus = value;
-    else if (isHighCloudGenus(value)) this.params.highCloudGenus = value;
-    if (this.genus !== previous && !this.placementLocked) this.applyGenusDefaults();
+    if (this.isHighSheet && !isHighCloudGenus(value)) return;
+    const changed = this.genusValue !== value;
+    this.genusValue = value;
+    if (changed) this.morphology = createCloudMorphologyRecipe(value);
+    if (changed && !this.placementLocked) this.applyGenusDefaults();
   }
 
   get placementLocked(): boolean {
@@ -218,253 +345,119 @@ export class CloudBody {
     this.placementIsLocked = value;
   }
 
-  get cumulusDevelopment(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].cumulusDevelopment;
-    if (this.slot.kind === 'hero') return this.params.hero.cumulusDevelopment;
-    return 0;
-  }
-
-  set cumulusDevelopment(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].cumulusDevelopment = value;
-    else if (this.slot.kind === 'hero') this.params.hero.cumulusDevelopment = value;
-  }
-
   get baseKm(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].baseKm;
-    if (this.slot.kind === 'hero') return this.params.hero.baseKm;
-    return this.params.highBaseKm;
+    return this.baseKmValue;
   }
 
   set baseKm(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].baseKm = value;
-    else if (this.slot.kind === 'hero') this.params.hero.baseKm = value;
-    else this.params.highBaseKm = value;
+    this.baseKmValue = value;
     this.markPlacementChanged();
   }
 
   get topKm(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].topKm;
-    if (this.slot.kind === 'hero') return this.params.hero.baseKm + this.params.hero.thicknessKm;
-    return this.params.highTopKm;
+    return this.topKmValue;
   }
 
   set topKm(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].topKm = value;
-    else if (this.slot.kind === 'hero') this.params.hero.thicknessKm = Math.max(0.1, value - this.params.hero.baseKm);
-    else this.params.highTopKm = value;
+    this.topKmValue = this.isLocal ? Math.max(this.baseKm + 0.1, value) : value;
     this.markPlacementChanged();
   }
 
-  get densityScale(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].densityScale;
-    if (this.slot.kind === 'hero') return this.params.hero.densityMul;
-    return this.params.highDensityMultiplier;
-  }
-
-  set densityScale(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].densityScale = value;
-    else if (this.slot.kind === 'hero') this.params.hero.densityMul = value;
-    else this.params.highDensityMultiplier = value;
-  }
-
-  get detailAmount(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].detailAmount;
-    if (this.slot.kind === 'high') return this.params.highWispStrength;
-    return this.params.detailStrength;
-  }
-
-  set detailAmount(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].detailAmount = value;
-    else if (this.slot.kind === 'high') this.params.highWispStrength = value;
-    else this.params.detailStrength = value;
-  }
-
-  get coverage(): number {
-    return this.slot.kind === 'hero' ? this.params.hero.coverage : this.params.loCovCoverIntensity;
-  }
-
-  set coverage(value: number) {
-    if (this.slot.kind === 'hero') this.params.hero.coverage = value;
-    else this.params.loCovCoverIntensity = value;
-  }
-
   get centerX(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].centerX;
-    return this.slot.kind === 'hero' ? this.params.hero.cx : 0;
+    return this.centerXValue;
   }
 
   set centerX(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].centerX = value;
-    else if (this.slot.kind === 'hero') this.params.hero.cx = value;
+    this.centerXValue = value;
     this.markPlacementChanged();
   }
 
   get centerZ(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].centerZ;
-    return this.slot.kind === 'hero' ? this.params.hero.cz : 0;
+    return this.centerZValue;
   }
 
   set centerZ(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].centerZ = value;
-    else if (this.slot.kind === 'hero') this.params.hero.cz = value;
+    this.centerZValue = value;
     this.markPlacementChanged();
   }
 
   get radiusX(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].radiusX;
-    return this.slot.kind === 'hero' ? this.params.hero.rx : 0;
+    return this.radiusXValue;
   }
 
   set radiusX(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].radiusX = value;
-    else if (this.slot.kind === 'hero') this.params.hero.rx = value;
+    this.radiusXValue = value;
     this.markPlacementChanged();
   }
 
   get radiusZ(): number {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].radiusZ;
-    return this.slot.kind === 'hero' ? this.params.hero.rz : 0;
+    return this.radiusZValue;
   }
 
   set radiusZ(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].radiusZ = value;
-    else if (this.slot.kind === 'hero') this.params.hero.rz = value;
+    this.radiusZValue = value;
     this.markPlacementChanged();
   }
 
   get bounded(): boolean {
-    if (this.slot.kind === 'layer') return this.params.layers[this.slot.index].bounded;
-    return this.slot.kind === 'hero';
+    return this.isLocal || this.boundedValue;
   }
 
   set bounded(value: boolean) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].bounded = value;
+    if (this.canToggleBounds) this.boundedValue = value;
     this.markPlacementChanged();
   }
 
   get rotationDeg(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].rotationDeg : 0;
+    return this.rotationDegValue;
   }
 
   set rotationDeg(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].rotationDeg = value;
+    if (this.canToggleBounds) this.rotationDegValue = value;
     this.markPlacementChanged();
   }
 
   get feather(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].feather : 0.25;
+    return this.featherValue;
   }
 
   set feather(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].feather = value;
+    if (this.canToggleBounds) this.featherValue = value;
     this.markPlacementChanged();
   }
 
   get isLocal(): boolean {
-    return this.slot.kind === 'hero';
+    return this.path === 'local-volume';
   }
 
   get supportsBounds(): boolean {
-    return this.slot.kind !== 'high';
+    return !this.isHighSheet;
   }
 
   get canToggleBounds(): boolean {
-    return this.slot.kind === 'layer';
+    return this.path === 'volume';
   }
 
   get hasSpatialBounds(): boolean {
-    return this.slot.kind === 'hero' || (this.slot.kind === 'layer' && this.bounded);
+    return this.isLocal || (this.path === 'volume' && this.bounded);
   }
 
   get isHighSheet(): boolean {
-    return this.slot.kind === 'high';
+    return this.path === 'high-sheet';
   }
 
   get supportsRuntimeControls(): boolean {
-    return this.slot.kind === 'layer';
-  }
-
-  get windDeg(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].windDeg : 0;
-  }
-
-  set windDeg(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].windDeg = value;
-  }
-
-  get windSpeedMps(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].windSpeedMps : 0;
-  }
-
-  set windSpeedMps(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].windSpeedMps = value;
-  }
-
-  get morphRate(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].morphRate : 0;
-  }
-
-  set morphRate(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].morphRate = value;
+    return this.path === 'volume';
   }
 
   get lifeEnabled(): boolean {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeEnabled : false;
+    return this.lifeEnabledValue;
   }
 
   set lifeEnabled(value: boolean) {
-    if (this.slot.kind !== 'layer') return;
-    const layer = this.params.layers[this.slot.index];
-    if (value && !layer.lifeEnabled) layer.lifeStart = this.params.sceneTime;
-    layer.lifeEnabled = value;
-  }
-
-  get lifeBirth(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeBirth : 0;
-  }
-
-  set lifeBirth(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeBirth = value;
-  }
-
-  get lifeGrow(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeGrow : 0;
-  }
-
-  set lifeGrow(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeGrow = value;
-  }
-
-  get lifeDecay(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeDecay : 0;
-  }
-
-  set lifeDecay(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeDecay = value;
-  }
-
-  get lifeDeath(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeDeath : 0;
-  }
-
-  set lifeDeath(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeDeath = value;
-  }
-
-  get lifePeak(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifePeak : 1;
-  }
-
-  set lifePeak(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifePeak = value;
-  }
-
-  get lifeStart(): number {
-    return this.slot.kind === 'layer' ? this.params.layers[this.slot.index].lifeStart : 0;
-  }
-
-  set lifeStart(value: number) {
-    if (this.slot.kind === 'layer') this.params.layers[this.slot.index].lifeStart = value;
+    if (!this.supportsRuntimeControls) return;
+    if (value && !this.lifeEnabledValue) this.lifeStart = this.currentSceneTime();
+    this.lifeEnabledValue = value;
   }
 
   toSnapshot(): CloudBodySnapshot {
@@ -496,10 +489,12 @@ export class CloudBody {
       lifeDeath: this.lifeDeath,
       lifePeak: this.lifePeak,
       lifeStart: this.lifeStart,
+      morphology: { ...this.morphology },
     };
   }
 
   applySnapshot(snapshot: CloudBodySnapshot): void {
+    if (snapshot.path !== this.path) throw new Error(`Cloud body ${this.id} cannot change render path.`);
     this.withoutPlacementLock(() => {
       this.genus = snapshot.genus;
       this.cumulusDevelopment = snapshot.cumulusDevelopment;
@@ -525,6 +520,7 @@ export class CloudBody {
       this.lifeDeath = snapshot.lifeDeath;
       this.lifePeak = snapshot.lifePeak;
       this.lifeStart = snapshot.lifeStart;
+      this.morphology = { ...snapshot.morphology };
     });
     this.placementLocked = snapshot.placementLocked;
   }
@@ -580,6 +576,7 @@ export class CloudBody {
         target.lifePeak = this.supportsRuntimeControls ? this.lifePeak : 1;
         target.lifeStart = this.supportsRuntimeControls ? this.lifeStart : 0;
       }
+      target.morphology = { ...this.morphology };
     });
     target.placementLocked = this.placementLocked;
     target.enabled = true;
@@ -604,8 +601,12 @@ export class CloudBodyStore {
   private bodyList: CloudBody[] = [];
   private nextBodyNumber = 1;
 
-  constructor(private readonly params: DemoParams) {
-    this.reloadFromParams();
+  constructor(private readonly currentSceneTime: () => number = () => 0) {}
+
+  static createDefault(currentSceneTime: () => number = () => 0): CloudBodyStore {
+    const store = new CloudBodyStore(currentSceneTime);
+    store.reset();
+    return store;
   }
 
   get bodies(): readonly CloudBody[] {
@@ -620,33 +621,26 @@ export class CloudBodyStore {
     return this.bodyList.find((body) => body.id === id);
   }
 
-  /**
-   * Reconciles the authoring collection after legacy code (notably presets)
-   * has changed the renderer parameters directly. Existing bodies keep their
-   * stable editor identity as long as their renderer slot remains active.
-   */
-  reloadFromParams(): void {
-    const previousBySlot = new Map(this.bodyList.map((body) => [body.rendererSlot, body]));
-    this.bodyList = BODY_SLOTS.flatMap((slot) => {
-      const probe = new CloudBody(this.params, slot, 'probe');
-      if (!probe.enabled) return [];
-      return [previousBySlot.get(probe.rendererSlot) ?? this.createBody(slot)];
-    });
+  reset(primaryGenus: CloudGenus = 'cumulus', cumulusDevelopment = 0.5): CloudBody {
+    this.bodyList = [];
+    const primary = this.createDefaultBody('volume');
+    primary.placementLocked = true;
+    primary.genus = primaryGenus;
+    primary.cumulusDevelopment = cumulusDevelopment;
+    this.bodyList.push(primary);
+    return primary;
   }
 
   canAdd(): boolean {
-    return this.bodyList.length < BODY_SLOTS.length;
+    return this.findAvailablePath(['volume', 'local-volume', 'high-sheet']) !== undefined;
   }
 
-  add(): CloudBody | undefined {
-    const slot = this.findAvailableSlot(['volume', 'local-volume', 'high-sheet']);
-    if (!slot) return undefined;
-
-    const target = this.createBody(slot);
-    const defaults = new CloudBody(createDefaultParams(), slot, 'defaults');
-    defaults.copyTo(target);
-    target.placementLocked = false;
-    target.enabled = true;
+  add(requestedPath?: CloudBodyPath, placementLocked = false): CloudBody | undefined {
+    const path = requestedPath ?? this.findAvailablePath(['volume', 'local-volume', 'high-sheet']);
+    if (requestedPath && !this.findAvailablePath([requestedPath])) return undefined;
+    if (!path) return undefined;
+    const target = this.createDefaultBody(path);
+    target.placementLocked = placementLocked;
     this.bodyList.push(target);
     return target;
   }
@@ -654,15 +648,15 @@ export class CloudBodyStore {
   canDuplicate(id: string): boolean {
     const source = this.find(id);
     if (!source || source.isHighSheet) return false;
-    return this.findAvailableSlot(['volume', 'local-volume']) !== undefined;
+    return this.findAvailablePath(['volume', 'local-volume']) !== undefined;
   }
 
   duplicate(id: string): CloudBody | undefined {
     const source = this.find(id);
     if (!source || source.isHighSheet) return undefined;
-    const slot = this.findAvailableSlot(['volume', 'local-volume']);
-    if (!slot) return undefined;
-    const target = this.createBody(slot);
+    const path = this.findAvailablePath(['volume', 'local-volume']);
+    if (!path) return undefined;
+    const target = this.createDefaultBody(path);
     source.copyTo(target);
     this.bodyList.push(target);
     return target;
@@ -679,7 +673,7 @@ export class CloudBodyStore {
 
   exportSnapshot(): CloudBodyCollectionSnapshot {
     return {
-      version: 2,
+      version: 3,
       bodies: this.bodyList.map((body) => body.toSnapshot()),
     };
   }
@@ -687,14 +681,12 @@ export class CloudBodyStore {
   restoreSnapshot(value: unknown): void {
     const snapshot = parseCloudBodyCollectionSnapshot(value);
 
-    for (const slot of BODY_SLOTS) new CloudBody(this.params, slot, 'reset').enabled = false;
     this.bodyList = [];
     for (const bodySnapshot of snapshot.bodies) {
-      const slot = this.findAvailableSlot([bodySnapshot.path]);
-      if (!slot) throw new Error(`No renderer slot is available for cloud body ${bodySnapshot.id}.`);
-      const body = new CloudBody(this.params, slot, bodySnapshot.id);
-      body.applySnapshot(bodySnapshot);
-      body.enabled = true;
+      if (!this.findAvailablePath([bodySnapshot.path])) {
+        throw new Error(`No renderer path is available for cloud body ${bodySnapshot.id}.`);
+      }
+      const body = new CloudBody(bodySnapshot, this.currentSceneTime);
       this.bodyList.push(body);
     }
   }
@@ -704,23 +696,29 @@ export class CloudBodyStore {
   }
 
   get capacity(): number {
-    return BODY_SLOTS.length;
+    return MAX_VOLUME_CLOUD_BODIES + 2;
   }
 
-  private createBody(slot: CloudBodySlot): CloudBody {
+  private allocateId(): string {
     let id = `cloud-${this.nextBodyNumber++}`;
     while (this.bodyList.some((body) => body.id === id)) id = `cloud-${this.nextBodyNumber++}`;
-    return new CloudBody(this.params, slot, id);
+    return id;
   }
 
-  private findAvailableSlot(pathOrder: readonly CloudBodyPath[]): CloudBodySlot | undefined {
-    const usedSlots = new Set(this.bodyList.map((body) => body.rendererSlot));
+  private createDefaultBody(path: CloudBodyPath): CloudBody {
+    const volumeIndex = this.bodyList.filter((body) => body.path === 'volume').length;
+    const data = defaultBodySeed(path, volumeIndex);
+    const id = this.allocateId();
+    return new CloudBody({
+      id,
+      ...data,
+      morphology: data.morphology ?? createCloudMorphologyRecipe(data.genus),
+    }, this.currentSceneTime);
+  }
+
+  private findAvailablePath(pathOrder: readonly CloudBodyPath[]): CloudBodyPath | undefined {
     for (const path of pathOrder) {
-      const slot = BODY_SLOTS.find((candidate) => {
-        if (usedSlots.has(cloudBodySlotKey(candidate))) return false;
-        return new CloudBody(this.params, candidate, 'probe').path === path;
-      });
-      if (slot) return slot;
+      if (this.bodyList.filter((body) => body.path === path).length < PATH_CAPACITY[path]) return path;
     }
     return undefined;
   }

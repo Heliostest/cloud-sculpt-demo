@@ -16,6 +16,23 @@ struct HighCloudSample {
   bandMask: f32,
 };
 
+// Immutable inputs shared by every genus evaluator. Keeping this context
+// stable lets each genus replace only its morphology without touching body
+// transport, lifecycle, weather sampling, or the ray marcher.
+struct CloudGenusDensityContext {
+  worldPos: vec3f,
+  baseM: f32,
+  topM: f32,
+  densityScale: f32,
+  detailAmount: f32,
+  cumulusDevelopment: f32,
+  weather: vec4f,
+  morphology0: vec4f,
+  morphology1: vec4f,
+  stepLen: f32,
+  simpleMode: bool,
+};
+
 const GENUS_CUMULUS: f32 = 0.0;
 const GENUS_STRATUS: f32 = 1.0;
 const GENUS_STRATOCUMULUS: f32 = 2.0;
@@ -419,6 +436,120 @@ fn evaluateLowCloudLayer(
   *outDensity = density;
 }
 
+// Compatibility bridge: all genus entry points intentionally share the
+// pre-dispatch density implementation in this first structural step. Replacing
+// an individual evaluator later can therefore be reviewed and tested per genus.
+fn evaluateCompatibilityDensity(
+  context: CloudGenusDensityContext,
+  genusIndex: f32
+) -> DensitySample {
+  var support = 0.0;
+  var afterShape = 0.0;
+  var density = 0.0;
+  var typeMix = 0.0;
+  var height01 = 0.0;
+  var densityCoverage = 0.0;
+  evaluateLowCloudLayer(
+    context.worldPos,
+    context.baseM,
+    context.topM,
+    context.densityScale,
+    context.detailAmount,
+    genusIndex,
+    context.cumulusDevelopment,
+    context.weather,
+    context.stepLen,
+    context.simpleMode,
+    &support,
+    &afterShape,
+    &density,
+    &typeMix,
+    &height01,
+    &densityCoverage,
+  );
+  return DensitySample(support, afterShape, density, typeMix, height01, densityCoverage);
+}
+
+fn evaluateCumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_CUMULUS);
+}
+
+fn evaluateStratusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_STRATUS);
+}
+
+fn evaluateStratocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_STRATOCUMULUS);
+}
+
+fn evaluateCumulonimbusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_CUMULONIMBUS);
+}
+
+fn evaluateAltocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_ALTOCUMULUS);
+}
+
+fn evaluateAltostratusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_ALTOSTRATUS);
+}
+
+fn evaluateNimbostratusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_NIMBOSTRATUS);
+}
+
+fn evaluateCirrusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_CIRRUS);
+}
+
+fn evaluateCirrostratusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_CIRROSTRATUS);
+}
+
+fn evaluateCirrocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
+  return evaluateCompatibilityDensity(context, GENUS_CIRROCUMULUS);
+}
+
+fn dispatchCloudGenusDensity(
+  context: CloudGenusDensityContext,
+  genusIndex: f32
+) -> DensitySample {
+  if (abs(genusIndex - GENUS_CUMULUS) < 0.5) {
+    return evaluateCumulusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_STRATUS) < 0.5) {
+    return evaluateStratusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_STRATOCUMULUS) < 0.5) {
+    return evaluateStratocumulusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_CUMULONIMBUS) < 0.5) {
+    return evaluateCumulonimbusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_ALTOCUMULUS) < 0.5) {
+    return evaluateAltocumulusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_ALTOSTRATUS) < 0.5) {
+    return evaluateAltostratusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_NIMBOSTRATUS) < 0.5) {
+    return evaluateNimbostratusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_CIRRUS) < 0.5) {
+    return evaluateCirrusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_CIRROSTRATUS) < 0.5) {
+    return evaluateCirrostratusDensity(context);
+  }
+  if (abs(genusIndex - GENUS_CIRROCUMULUS) < 0.5) {
+    return evaluateCirrocumulusDensity(context);
+  }
+
+  // Preserve the old unknown-index behaviour: neutral Cu-compatible shape,
+  // without applying the Cu development continuum.
+  return evaluateCompatibilityDensity(context, -1.0);
+}
+
 fn distanceFade(worldPos: vec3f) -> f32 {
   // 相对相机距离淡出，替代世界原点 XZ 硬边
   let maxD = max(5000.0, U.quality.w * 0.92);
@@ -511,30 +642,26 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
     if (horizontalMask <= 0.0) {
       continue;
     }
-    var support = 0.0;
-    var afterShape = 0.0;
-    var density = 0.0;
-    var typeMix = 0.0;
-    var height01 = 0.0;
-    var densityCoverage = 0.0;
-    evaluateLowCloudLayer(
+    let context = CloudGenusDensityContext(
       densityPos,
       layer.x,
       layer.y,
       layer.z * lifeScale,
       shapeDetail.y,
-      shapeDetail.x,
       shapeDetail.z,
       bodyWeather,
+      B.layerMorphology0[layerIndex],
+      B.layerMorphology1[layerIndex],
       stepLen,
       simpleMode,
-      &support,
-      &afterShape,
-      &density,
-      &typeMix,
-      &height01,
-      &densityCoverage,
     );
+    let layerSample = dispatchCloudGenusDensity(context, shapeDetail.x);
+    var support = layerSample.support;
+    var afterShape = layerSample.afterShape;
+    var density = layerSample.density;
+    let typeMix = layerSample.typeMix;
+    let height01 = layerSample.height01;
+    var densityCoverage = layerSample.densityCoverage;
     support *= horizontalMask;
     afterShape *= horizontalMask;
     density *= horizontalMask;

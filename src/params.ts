@@ -53,54 +53,7 @@ export function cloudGenusTypeMix(genus: CloudGenus, cumulusDevelopment: number)
   return 0;
 }
 
-export interface LayerParams {
-  enabled: boolean;
-  genus: CloudGenus;
-  /** 0 = fair-weather Cu, 1 = towering Cu (TCu); ignored by other genera. */
-  cumulusDevelopment: number;
-  baseKm: number;
-  topKm: number;
-  densityScale: number;
-  detailAmount: number;
-  /** When false, the layer remains a global weather-map deck. */
-  bounded: boolean;
-  centerX: number;
-  centerZ: number;
-  radiusX: number;
-  radiusZ: number;
-  rotationDeg: number;
-  /** Normalized width of the soft edge inside the ellipse. */
-  feather: number;
-  /** Per-body horizontal transport, independent from global noise advection. */
-  windDeg: number;
-  windSpeedMps: number;
-  /** Cycles per second used to vary the internal density domain. */
-  morphRate: number;
-  lifeEnabled: boolean;
-  lifeBirth: number;
-  lifeGrow: number;
-  lifeDecay: number;
-  lifeDeath: number;
-  lifePeak: number;
-  /** Scene time captured when the lifecycle was enabled. */
-  lifeStart: number;
-}
-
 export const MAX_VOLUME_CLOUD_BODIES = 8;
-
-export interface HeroParams {
-  enabled: boolean;
-  genus: CloudGenus;
-  cumulusDevelopment: number;
-  cx: number;
-  cz: number;
-  rx: number;
-  rz: number;
-  baseKm: number;
-  thicknessKm: number;
-  coverage: number;
-  densityMul: number;
-}
 
 export interface DemoParams {
   /** Runtime-only scene clock used to restart per-body lifecycles interactively. */
@@ -172,12 +125,8 @@ export interface DemoParams {
   erosionMipOffset: number;
   forceSimpleMode: boolean;
   detailFadeEnabled: boolean;
-  highCloudEnabled: boolean;
   highWeatherRepeat: number;
-  highBaseKm: number;
-  highTopKm: number;
   highSteps: number;
-  highCloudGenus: HighCloudGenus;
   highCellScaleX: number;
   highCellScaleZ: number;
   highCellWindSpeed: number;
@@ -196,8 +145,6 @@ export interface DemoParams {
   highCloudSoftness: number;
   highWispScaleX: number;
   highWispScaleZ: number;
-  highWispStrength: number;
-  highDensityMultiplier: number;
   highViewAbsorption: number;
   highLightAbsorption: number;
   highCoverAbsorptionStrength: number;
@@ -217,8 +164,6 @@ export interface DemoParams {
   aoUpwardScale: number;
   scatterSourceODScale: number;
   scatterSourceCurvePow: number;
-  layers: LayerParams[];
-  hero: HeroParams;
   minPrimaryStep: number;
   maxPrimaryStep: number;
   maxIterations: number;
@@ -243,107 +188,6 @@ export interface DemoParams {
 }
 
 export function createDefaultParams(): DemoParams {
-  const defaultBounds = {
-    bounded: false,
-    centerX: 0,
-    centerZ: 0,
-    radiusX: 20000,
-    radiusZ: 15000,
-    rotationDeg: 0,
-    feather: 0.25,
-    windDeg: 35,
-    windSpeedMps: 0,
-    morphRate: 0,
-    lifeEnabled: false,
-    lifeBirth: 2,
-    lifeGrow: 32,
-    lifeDecay: 60,
-    lifeDeath: 90,
-    lifePeak: 1,
-    lifeStart: 0,
-  };
-  const layers: LayerParams[] = [
-    {
-      ...defaultBounds,
-      enabled: true,
-      genus: 'cumulus',
-      cumulusDevelopment: 0.5,
-      baseKm: 0.4,
-      topKm: 2.8,
-      densityScale: 0.85,
-      detailAmount: 1.0,
-    },
-    {
-      ...defaultBounds,
-      enabled: false,
-      genus: 'altocumulus',
-      cumulusDevelopment: 0,
-      baseKm: 3.0,
-      topKm: 5.5,
-      densityScale: 0.28,
-      detailAmount: 0.4,
-    },
-    {
-      ...defaultBounds,
-      enabled: false,
-      genus: 'cirrus',
-      cumulusDevelopment: 0,
-      baseKm: 7.0,
-      topKm: 9.0,
-      densityScale: 0.25,
-      detailAmount: 0.0,
-    },
-    {
-      ...defaultBounds,
-      enabled: false,
-      genus: 'cumulus',
-      cumulusDevelopment: 0,
-      baseKm: 0.8,
-      topKm: 2.4,
-      densityScale: 0.7,
-      detailAmount: 0.9,
-    },
-    {
-      ...defaultBounds,
-      enabled: false,
-      genus: 'stratocumulus',
-      cumulusDevelopment: 0,
-      baseKm: 1.0,
-      topKm: 2.2,
-      densityScale: 0.45,
-      detailAmount: 0.6,
-    },
-    {
-      ...defaultBounds,
-      enabled: false,
-      genus: 'altostratus',
-      cumulusDevelopment: 0,
-      baseKm: 3.5,
-      topKm: 6.0,
-      densityScale: 0.22,
-      detailAmount: 0.3,
-    },
-    {
-      ...defaultBounds,
-      enabled: false,
-      genus: 'cirrostratus',
-      cumulusDevelopment: 0,
-      baseKm: 7.5,
-      topKm: 10.0,
-      densityScale: 0.18,
-      detailAmount: 0.15,
-    },
-    {
-      ...defaultBounds,
-      enabled: false,
-      genus: 'cumulonimbus',
-      cumulusDevelopment: 0,
-      baseKm: 0.7,
-      topKm: 9.0,
-      densityScale: 0.8,
-      detailAmount: 1.2,
-    },
-  ];
   return {
     sceneTime: 0,
     // Keep the tuned southwest weather phase while allowing the long view
@@ -415,12 +259,8 @@ export function createDefaultParams(): DemoParams {
     erosionMipOffset: 0.0,
     forceSimpleMode: false,
     detailFadeEnabled: true,
-    highCloudEnabled: false,
     highWeatherRepeat: 0.000018,
-    highBaseKm: 6.5,
-    highTopKm: 10.5,
     highSteps: 96,
-    highCloudGenus: 'altocumulus',
     highCellScaleX: 4.0,
     highCellScaleZ: 4.0,
     highCellWindSpeed: 1.5,
@@ -439,8 +279,6 @@ export function createDefaultParams(): DemoParams {
     highCloudSoftness: 0.055,
     highWispScaleX: 7.0,
     highWispScaleZ: 7.0,
-    highWispStrength: 0.28,
-    highDensityMultiplier: 0.06,
     highViewAbsorption: 0.012,
     highLightAbsorption: 0.012,
     highCoverAbsorptionStrength: 0.35,
@@ -460,20 +298,6 @@ export function createDefaultParams(): DemoParams {
     aoUpwardScale: 1.0,
     scatterSourceODScale: 0.02,
     scatterSourceCurvePow: 1.0,
-    layers,
-    hero: {
-      enabled: false,
-      genus: 'cumulonimbus',
-      cumulusDevelopment: 0,
-      cx: 0,
-      cz: -2000,
-      rx: 1800,
-      rz: 1600,
-      baseKm: 0.7,
-      thicknessKm: 8.5,
-      coverage: 0.9,
-      densityMul: 1.35,
-    },
     minPrimaryStep: 16,
     maxPrimaryStep: 220,
     maxIterations: 512,

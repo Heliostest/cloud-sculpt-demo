@@ -18,36 +18,32 @@ const bodiesUrl = await compileTypeScriptUrl('../src/cloudBodies.ts', {
   "from './params'": `from '${paramsUrl}'`,
 });
 const { createDefaultParams } = await import(paramsUrl);
-const { CloudBodyStore } = await import(bodiesUrl);
+const { CloudBodyStore, createCloudMorphologyRecipe } = await import(bodiesUrl);
 
-test('cloud bodies have stable editor identities over legacy renderer slots', () => {
+test('cloud bodies are independent authoring entities', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   const primary = store.active()[0];
 
-  assert.equal(params.layers.length, 8);
   assert.equal(store.capacity, 10);
   assert.equal(store.activeCount, 1);
   assert.equal(primary.id, 'cloud-1');
-  assert.equal(primary.rendererSlot, 'layer-0');
+  assert.equal('rendererSlot' in primary, false);
   primary.baseKm = 1.25;
   primary.densityScale = 0.55;
   primary.bounded = true;
   primary.centerX = 12000;
   primary.rotationDeg = 35;
   primary.feather = 0.4;
-  assert.equal(params.layers[0].baseKm, 1.25);
-  assert.equal(params.layers[0].densityScale, 0.55);
-  assert.equal(params.layers[0].bounded, true);
-  assert.equal(params.layers[0].centerX, 12000);
-  assert.equal(params.layers[0].rotationDeg, 35);
-  assert.equal(params.layers[0].feather, 0.4);
+  assert.equal(primary.baseKm, 1.25);
+  assert.equal(primary.densityScale, 0.55);
+  assert.equal(primary.centerX, 12000);
   assert.equal(primary.hasSpatialBounds, true);
 });
 
-test('add, duplicate, and remove keep the fixed renderer slots valid', () => {
+test('add, duplicate, and remove operate directly on the object collection', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   const primary = store.active()[0];
   primary.genus = 'stratocumulus';
   primary.baseKm = 0.8;
@@ -58,63 +54,59 @@ test('add, duplicate, and remove keep the fixed renderer slots valid', () => {
 
   const duplicate = store.duplicate(primary.id);
   assert.equal(duplicate.id, 'cloud-2');
-  assert.equal(duplicate.rendererSlot, 'layer-1');
+  assert.equal(duplicate.path, 'volume');
   assert.equal(duplicate.genus, 'stratocumulus');
-  assert.equal(params.layers[1].enabled, true);
-  assert.equal(params.layers[1].baseKm, 0.8);
-  assert.equal(params.layers[1].bounded, true);
-  assert.equal(params.layers[1].centerZ, -4500);
-  assert.equal(params.layers[1].radiusX, 9000);
-  assert.equal(params.layers[1].rotationDeg, -25);
+  assert.equal(duplicate.baseKm, 0.8);
+  assert.equal(duplicate.bounded, true);
+  assert.equal(duplicate.centerZ, -4500);
+  assert.equal(duplicate.radiusX, 9000);
+  assert.equal(duplicate.rotationDeg, -25);
 
   assert.equal(store.remove(primary.id), true);
-  assert.equal(params.layers[0].enabled, false);
   assert.equal(store.activeCount, 1);
 
   const replacement = store.add();
   assert.equal(replacement.id, 'cloud-3');
-  assert.equal(replacement.rendererSlot, 'layer-0');
+  assert.equal(replacement.path, 'volume');
   assert.equal(store.find(primary.id), undefined);
 });
 
 test('the tenth object routes to the existing independent high-cloud path', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   while (store.activeCount < store.capacity) store.add();
 
   const high = store.active().find((body) => body.path === 'high-sheet');
   assert.equal(high.enabled, true);
   assert.equal(high.path, 'high-sheet');
   high.genus = 'altostratus';
-  assert.equal(params.highCloudGenus, 'altostratus');
+  assert.equal(high.genus, 'altostratus');
   high.genus = 'cirrus';
-  assert.equal(params.highCloudGenus, 'altostratus');
+  assert.equal(high.genus, 'altostratus');
   assert.equal(store.add(), undefined);
 });
 
-test('preset-style parameter reload preserves surviving identities and reconciles membership', () => {
+test('preset reset rebuilds the collection directly without a parameter compatibility layer', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   const primary = store.active()[0];
 
-  params.layers[1].enabled = true;
-  store.reloadFromParams();
+  const second = store.add();
   assert.equal(store.activeCount, 2);
   assert.equal(store.active()[0].id, primary.id);
-  const second = store.active()[1];
-  assert.equal(second.rendererSlot, 'layer-1');
+  assert.equal(second.path, 'volume');
 
-  params.layers[0].enabled = false;
-  params.hero.enabled = true;
-  store.reloadFromParams();
+  const reset = store.reset('stratocumulus', 0);
+  assert.equal(store.activeCount, 1);
   assert.equal(store.find(primary.id), undefined);
-  assert.equal(store.active().some((body) => body.id === second.id), true);
-  assert.equal(store.active().some((body) => body.path === 'local-volume'), true);
+  assert.equal(store.find(second.id), undefined);
+  assert.equal(reset.genus, 'stratocumulus');
+  assert.equal(reset.cumulusDevelopment, 0);
 });
 
 test('cloud-body collections survive a JSON snapshot round trip with stable identities', () => {
   const sourceParams = createDefaultParams();
-  const source = new CloudBodyStore(sourceParams);
+  const source = CloudBodyStore.createDefault(() => sourceParams.sceneTime);
   const primary = source.active()[0];
   primary.genus = 'stratocumulus';
   primary.bounded = true;
@@ -125,19 +117,19 @@ test('cloud-body collections survive a JSON snapshot round trip with stable iden
 
   const encoded = JSON.stringify(source.exportSnapshot());
   const targetParams = createDefaultParams();
-  const target = new CloudBodyStore(targetParams);
+  const target = CloudBodyStore.createDefault(() => targetParams.sceneTime);
   target.restoreSnapshot(JSON.parse(encoded));
 
   assert.deepEqual(target.exportSnapshot(), source.exportSnapshot());
   assert.equal(target.active()[0].id, primary.id);
   assert.equal(target.active()[1].id, duplicate.id);
-  assert.equal(targetParams.layers[0].genus, 'stratocumulus');
-  assert.equal(targetParams.layers[1].centerX, -9000);
+  assert.equal(target.active()[0].genus, 'stratocumulus');
+  assert.equal(target.active()[1].centerX, -9000);
 });
 
 test('invalid or over-capacity cloud-body snapshots are rejected before mutation', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   const before = store.exportSnapshot();
   const invalid = structuredClone(before);
   invalid.bodies[0].baseKm = Number.NaN;
@@ -153,7 +145,7 @@ test('invalid or over-capacity cloud-body snapshots are rejected before mutation
 
 test('version one snapshots migrate to the runtime-control schema', () => {
   const params = createDefaultParams();
-  const source = new CloudBodyStore(params).exportSnapshot();
+  const source = CloudBodyStore.createDefault(() => params.sceneTime).exportSnapshot();
   const legacy = structuredClone(source);
   legacy.version = 1;
   for (const body of legacy.bodies) {
@@ -163,18 +155,50 @@ test('version one snapshots migrate to the runtime-control schema', () => {
     ]) delete body[key];
   }
 
-  const target = new CloudBodyStore(createDefaultParams());
+  const target = CloudBodyStore.createDefault();
   target.restoreSnapshot(legacy);
   const migrated = target.exportSnapshot();
-  assert.equal(migrated.version, 2);
+  assert.equal(migrated.version, 3);
   assert.equal(migrated.bodies[0].windSpeedMps, 0);
   assert.equal(migrated.bodies[0].lifeEnabled, false);
   assert.equal(migrated.bodies[0].lifeDeath, 90);
+  assert.deepEqual(migrated.bodies[0].morphology, createCloudMorphologyRecipe(migrated.bodies[0].genus));
+});
+
+test('cloud bodies own independent genus morphology recipes that survive snapshots', () => {
+  const store = CloudBodyStore.createDefault();
+  const primary = store.active()[0];
+  primary.genus = 'cirrus';
+  assert.deepEqual(primary.morphology, createCloudMorphologyRecipe('cirrus'));
+
+  primary.morphology.fiberStrength = 0.73;
+  primary.morphology.fiberAngleDeg = 42;
+  const duplicate = store.duplicate(primary.id);
+  assert.deepEqual(duplicate.morphology, primary.morphology);
+  assert.notEqual(duplicate.morphology, primary.morphology);
+
+  duplicate.morphology.fiberStrength = 0.2;
+  assert.equal(primary.morphology.fiberStrength, 0.73);
+  const snapshot = store.exportSnapshot();
+  assert.equal(snapshot.version, 3);
+  assert.equal(snapshot.bodies[0].morphology.fiberAngleDeg, 42);
+});
+
+test('version two snapshots receive morphology defaults from their genus', () => {
+  const source = CloudBodyStore.createDefault().exportSnapshot();
+  const legacy = structuredClone(source);
+  legacy.version = 2;
+  legacy.bodies[0].genus = 'nimbostratus';
+  delete legacy.bodies[0].morphology;
+
+  const target = CloudBodyStore.createDefault();
+  target.restoreSnapshot(legacy);
+  assert.deepEqual(target.active()[0].morphology, createCloudMorphologyRecipe('nimbostratus'));
 });
 
 test('genus defaults respect manual placement until explicitly applied', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   const added = store.add();
 
   assert.equal(added.placementLocked, false);
@@ -200,7 +224,7 @@ test('genus defaults respect manual placement until explicitly applied', () => {
 
 test('volume bodies own independent motion and lifecycle authoring data', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   const primary = store.active()[0];
   const second = store.duplicate(primary.id);
 
@@ -215,12 +239,9 @@ test('volume bodies own independent motion and lifecycle authoring data', () => 
   primary.lifeDeath = 55;
   primary.lifePeak = 1.4;
 
-  assert.equal(params.layers[0].windDeg, 120);
-  assert.equal(params.layers[0].windSpeedMps, 18);
-  assert.equal(params.layers[0].lifeEnabled, true);
-  assert.equal(params.layers[0].lifeStart, 17);
-  assert.equal(params.layers[0].lifePeak, 1.4);
-  assert.notEqual(params.layers[1].windDeg, primary.windDeg);
+  assert.equal(primary.lifeStart, 17);
+  assert.equal(primary.lifePeak, 1.4);
+  assert.notEqual(second.windDeg, primary.windDeg);
   assert.equal(second.supportsRuntimeControls, true);
 
   const snapshot = store.exportSnapshot();

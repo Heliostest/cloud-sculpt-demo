@@ -63,7 +63,6 @@ export function createGui(
   const presetController = gui.add(presetSelection, 'preset', cloudPresetOptions(presetNames))
     .onChange((value: string) => {
       hooks.onCloudPreset(value as CloudPresetName);
-      bodyStore.reloadFromParams();
       refreshCloudBodies();
     });
 
@@ -156,8 +155,6 @@ export function createGui(
 
   const high = addFolder(gui, 'highCloud');
   high.add(params, 'highWeatherRepeat', 0.000005, 0.00008, 0.000001);
-  high.add(params, 'highBaseKm', 3, 14, 0.1);
-  high.add(params, 'highTopKm', 4, 18, 0.1);
   high.add(params, 'highSteps', 8, 192, 1);
   high.add(params, 'highBandBottom', 0, 1, 0.01);
   high.add(params, 'highBandTop', 0, 1, 0.01);
@@ -166,7 +163,6 @@ export function createGui(
   high.add(params, 'highDensityThreshold', 0, 1, 0.01);
   high.add(params, 'highDensitySoftness', 0.001, 1, 0.01);
   high.add(params, 'highCloudSoftness', 0.001, 0.3, 0.001);
-  high.add(params, 'highDensityMultiplier', 0, 3, 0.01);
   high.add(params, 'highViewAbsorption', 0, 0.1, 0.001).name('view absorption');
   high.add(params, 'highLightAbsorption', 0, 0.1, 0.001).name('light absorption');
   high.add(params, 'highCoverAbsorptionStrength', 0, 2, 0.01).name('cover shadow');
@@ -182,7 +178,6 @@ export function createGui(
   highCell.add(params, 'highCellPow', 0.05, 4, 0.01);
   highCell.add(params, 'highWispScaleX', 0.1, 16, 0.1);
   highCell.add(params, 'highWispScaleZ', 0.1, 16, 0.1);
-  highCell.add(params, 'highWispStrength', 0, 1, 0.01);
   highCell.add(params, 'highHorizonStartKm', 0, 250, 1);
   highCell.add(params, 'highHorizonEndKm', 1, 400, 1);
 

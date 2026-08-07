@@ -1,7 +1,7 @@
 import type { CloudBody } from './cloudBodies';
 import { CLOUD_GENUS_INDEX, MAX_VOLUME_CLOUD_BODIES } from './params';
 
-export const CLOUD_BODY_FLOATS_PER_RECORD_SET = 6 * 4;
+export const CLOUD_BODY_FLOATS_PER_RECORD_SET = 8 * 4;
 export const CLOUD_BODY_FLOAT_COUNT = MAX_VOLUME_CLOUD_BODIES * CLOUD_BODY_FLOATS_PER_RECORD_SET;
 
 export function selectVolumeCloudBodies(bodies: readonly CloudBody[]): CloudBody[] {
@@ -57,6 +57,18 @@ export function packVolumeCloudBodies(
     target[lifeOffset + 1] = body.lifeGrow;
     target[lifeOffset + 2] = body.lifeDecay;
     target[lifeOffset + 3] = body.lifeDeath;
+
+    const morphology0Offset = (MAX_VOLUME_CLOUD_BODIES * 6 + bodyIndex) * 4;
+    target[morphology0Offset] = body.morphology.verticalDevelopment;
+    target[morphology0Offset + 1] = body.morphology.cellScale;
+    target[morphology0Offset + 2] = body.morphology.cellStrength;
+    target[morphology0Offset + 3] = body.morphology.sheetUniformity;
+
+    const morphology1Offset = (MAX_VOLUME_CLOUD_BODIES * 7 + bodyIndex) * 4;
+    target[morphology1Offset] = body.morphology.fiberStrength;
+    target[morphology1Offset + 1] = (body.morphology.fiberAngleDeg * Math.PI) / 180;
+    target[morphology1Offset + 2] = body.morphology.anvilStrength;
+    target[morphology1Offset + 3] = body.morphology.erosionScale;
   }
   return target;
 }

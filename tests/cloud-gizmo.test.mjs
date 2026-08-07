@@ -75,24 +75,33 @@ test('rotation drag values wrap into the GUI rotation interval', () => {
 });
 
 test('GUI selection and canvas pointer arbitration stay wired together', async () => {
-  const [guiSource, mainSource] = await Promise.all([
+  const [guiSource, mainSource, bodiesSource] = await Promise.all([
     readFile(new URL('../src/gui.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/main.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/cloudBodies.ts', import.meta.url), 'utf8'),
   ]);
   assert.match(guiSource, /onCloudSelection/);
   assert.match(guiSource, /cloud-body-selected/);
   assert.match(mainSource, /gizmo\.pointerDown\(e\)/);
   assert.match(mainSource, /gizmo\.pointerMove\(e\)/);
   assert.match(mainSource, /gizmo\.update\(cam,/);
-  assert.match(mainSource, /const bodyStore = new CloudBodyStore\(params\)/);
+  assert.match(mainSource, /const bodyStore = CloudBodyStore\.createDefault\(\(\) => params\.sceneTime\)/);
   assert.match(mainSource, /createGui\(params, bodyStore,/);
   assert.match(mainSource, /renderer\.render\(params, bodyStore\.bodies,/);
   assert.doesNotMatch(guiSource, /new CloudBodyStore\(params\)/);
+  assert.doesNotMatch(bodiesSource, /rendererSlot|CloudBodySlot|private readonly params/);
+  assert.match(bodiesSource, /static createDefault\(currentSceneTime:/);
+  assert.doesNotMatch(bodiesSource, /DemoParams|fromLegacyParams|replaceFromLegacyParams/);
 });
 
-test('GUI reconciles presets and exposes explicit genus placement controls', async () => {
-  const guiSource = await readFile(new URL('../src/gui.ts', import.meta.url), 'utf8');
-  assert.match(guiSource, /bodyStore\.reloadFromParams\(\)/);
+test('GUI and main apply presets directly to the object collection with explicit genus placement', async () => {
+  const [guiSource, mainSource] = await Promise.all([
+    readFile(new URL('../src/gui.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/main.ts', import.meta.url), 'utf8'),
+  ]);
+  assert.doesNotMatch(guiSource, /replaceFromLegacyParams/);
+  assert.match(mainSource, /applyCloudBodyPreset\(bodyStore, currentPreset\)/);
+  assert.match(mainSource, /syncParameterDataset\(params, bodyStore\.bodies\)/);
   assert.match(guiSource, /folder\.add\(body, 'placementLocked'\)/);
   assert.match(guiSource, /body\.applyGenusDefaults\(\)/);
   assert.match(guiSource, /body\.supportsRuntimeControls/);
@@ -100,4 +109,6 @@ test('GUI reconciles presets and exposes explicit genus placement controls', asy
   assert.match(guiSource, /folderLabel\('bodyLifecycle'\)/);
   assert.match(guiSource, /advancedBodyFolders/);
   assert.match(guiSource, /lifecycleFolder\.add\(body, 'lifeEnabled'\)/);
+  assert.doesNotMatch(guiSource, /high\.add\(params, '(?:highBaseKm|highTopKm|highDensityMultiplier)'/);
+  assert.doesNotMatch(guiSource, /highCell\.add\(params, 'highWispStrength'/);
 });

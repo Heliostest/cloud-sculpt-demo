@@ -23,11 +23,16 @@ const packingUrl = await compileTypeScriptUrl('../src/cloudBodyPacking.ts', {
 });
 const { CLOUD_GENUS_INDEX, MAX_VOLUME_CLOUD_BODIES, createDefaultParams } = await import(paramsUrl);
 const { CloudBodyStore } = await import(bodiesUrl);
-const { CLOUD_BODY_FLOAT_COUNT, packVolumeCloudBodies, selectVolumeCloudBodies } = await import(packingUrl);
+const {
+  CLOUD_BODY_FLOAT_COUNT,
+  CLOUD_BODY_FLOATS_PER_RECORD_SET,
+  packVolumeCloudBodies,
+  selectVolumeCloudBodies,
+} = await import(packingUrl);
 
-test('GPU records are packed from active object order rather than legacy slot index', () => {
+test('GPU records are packed from active object order', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   const first = store.active()[0];
   const second = store.duplicate(first.id);
   second.genus = 'stratocumulus';
@@ -36,9 +41,13 @@ test('GPU records are packed from active object order rather than legacy slot in
   second.centerX = 24000;
   second.windDeg = 90;
   second.windSpeedMps = 12;
+  second.morphology.verticalDevelopment = 0.25;
+  second.morphology.cellScale = 1.4;
+  second.morphology.fiberStrength = 0.65;
+  second.morphology.fiberAngleDeg = 90;
 
   store.remove(first.id);
-  assert.equal(second.rendererSlot, 'layer-1');
+  assert.equal('rendererSlot' in second, false);
   assert.deepEqual(selectVolumeCloudBodies(store.bodies).map((body) => body.id), [second.id]);
 
   const packed = packVolumeCloudBodies(store.bodies);
@@ -55,11 +64,18 @@ test('GPU records are packed from active object order rather than legacy slot in
   const motionOffset = MAX_VOLUME_CLOUD_BODIES * 4 * 4;
   assert.ok(Math.abs(packed[motionOffset]) < 1e-5);
   assert.equal(packed[motionOffset + 1], 12);
+  const morphology0Offset = MAX_VOLUME_CLOUD_BODIES * 6 * 4;
+  assert.equal(packed[morphology0Offset], 0.25);
+  assert.ok(Math.abs(packed[morphology0Offset + 1] - 1.4) < 1e-5);
+  const morphology1Offset = MAX_VOLUME_CLOUD_BODIES * 7 * 4;
+  assert.ok(Math.abs(packed[morphology1Offset] - 0.65) < 1e-5);
+  assert.ok(Math.abs(packed[morphology1Offset + 1] - Math.PI / 2) < 1e-5);
+  assert.equal(CLOUD_BODY_FLOATS_PER_RECORD_SET, 8 * 4);
 });
 
 test('non-volume special paths are excluded from the shared volume record array', () => {
   const params = createDefaultParams();
-  const store = new CloudBodyStore(params);
+  const store = CloudBodyStore.createDefault(() => params.sceneTime);
   while (store.canAdd()) store.add();
 
   const selected = selectVolumeCloudBodies(store.bodies);
@@ -70,7 +86,7 @@ test('non-volume special paths are excluded from the shared volume record array'
 });
 
 test('packing rejects undersized GPU targets', () => {
-  const store = new CloudBodyStore(createDefaultParams());
+  const store = CloudBodyStore.createDefault();
   assert.throws(
     () => packVolumeCloudBodies(store.bodies, new Float32Array(CLOUD_BODY_FLOAT_COUNT - 1)),
     /requires at least/,

@@ -99,6 +99,25 @@ struct CellularProfile {
   topEnd: f32,
 };
 
+struct FiberRecipe {
+  familyStrength: f32,
+  baseWidthMeters: f32,
+  longFrequency: f32,
+  verticalFrequency: f32,
+  crossFrequency: f32,
+  curlStrength: f32,
+  branchStrength: f32,
+  valleyDensity: f32,
+  peakDensity: f32,
+};
+
+struct FiberProfile {
+  bottomStart: f32,
+  bottomEnd: f32,
+  topStart: f32,
+  topEnd: f32,
+};
+
 fn hashCloudBodyPhase(seed: u32) -> u32 {
   var value = seed;
   value = value ^ (value >> 16u);
@@ -1201,6 +1220,159 @@ fn evaluateCellularFamily(
   );
 }
 
+fn fiberVerticalProfile(height: f32, profile: FiberProfile) -> f32 {
+  if (height < profile.bottomStart || height > profile.topEnd) {
+    return 0.0;
+  }
+  let bottom = smoothstep(profile.bottomStart, profile.bottomEnd, height);
+  let top = 1.0 - smoothstep(profile.topStart, profile.topEnd, height);
+  return saturate(bottom * top);
+}
+
+fn bodyLocalFiberCoordinate(
+  context: CloudGenusDensityContext,
+  recipe: FiberRecipe,
+) -> vec3f {
+  // bodyLocalMeters already contains the inverse CloudBody rotation. The
+  // recipe angle therefore rotates only the internal ice-crystal strands.
+  let fiberWidthMeters = max(
+    80.0,
+    recipe.baseWidthMeters * max(context.morphology0.y, 0.05),
+  );
+  let rotated = rotateMorphologyXZ(
+    context.bodyLocalMeters / fiberWidthMeters,
+    context.morphology1.y,
+  );
+  return anisotropicCoordinate(
+    rotated,
+    vec3f(
+      max(recipe.longFrequency, 0.01),
+      max(recipe.verticalFrequency, 0.05),
+      max(recipe.crossFrequency, 0.05),
+    ),
+  );
+}
+
+fn evaluateFiberFamily(
+  context: CloudGenusDensityContext,
+  compatibility: DensitySample,
+  recipe: FiberRecipe,
+  profile: FiberProfile,
+) -> DensitySample {
+  let familyStrength = saturate(recipe.familyStrength * context.morphology1.x);
+  if (familyStrength <= 1e-5 || compatibility.density <= 0.0) {
+    return compatibility;
+  }
+
+  let profileBand = fiberVerticalProfile(
+    saturate(context.normalizedHeight),
+    profile,
+  );
+  let lod = morphologyLod(context);
+  let coordinate = bodyLocalFiberCoordinate(context, recipe);
+  let phase = context.bodyPhase * MORPHOLOGY_TWO_PI;
+
+  // Curl changes slowly along the long axis. A broad portion survives the
+  // cheap path so distant Ci stays curved instead of collapsing into bars.
+  let axialPhase = coordinate.x * 0.73 + phase.x;
+  let curlWeight = saturate(
+    recipe.curlStrength * mix(0.45, 1.0, lod.detailWeight),
+  );
+  let curl = vec3f(
+    0.0,
+    sin(axialPhase * 0.47 + phase.y) * 0.34,
+    sin(
+      axialPhase
+        + sin(axialPhase * 0.31 + phase.z) * 0.72
+        + phase.y
+    ),
+  ) * curlWeight;
+  let warpedCoordinate = coordinate + curl;
+  let broadFiber = ridgeFiberCarrier(
+    warpedCoordinate,
+    context.bodyPhase,
+    lod,
+  );
+  var fiberSignal = broadFiber;
+
+  // Fine branches are optional morphology, never part of probe/light or far
+  // samples. The low-frequency gate makes forks local rather than periodic
+  // parallel copies across the entire body.
+  if (!context.simpleMode && lod.detailWeight > 1e-4) {
+    let forkDirection = select(-1.0, 1.0, sin(phase.x + phase.z) >= 0.0);
+    let branchCoordinate = warpedCoordinate * vec3f(0.63, 1.57, 1.81)
+      + vec3f(
+        0.0,
+        sin(axialPhase * 0.37 + phase.z),
+        warpedCoordinate.x * 0.28 * forkDirection + 0.46,
+      );
+    let branch = ridgeFiberCarrier(
+      branchCoordinate,
+      context.bodyPhase.zxy,
+      MorphologyLod(lod.frequencyScale, lod.detailWeight * 0.72),
+    );
+    let branchGate = smoothstep(
+      0.48,
+      0.82,
+      0.5 + 0.5 * sin(axialPhase * 0.41 + phase.z),
+    );
+    let branchWeight = saturate(
+      recipe.branchStrength
+        * context.detailAmount
+        * lod.detailWeight
+        * branchGate,
+    );
+    fiberSignal = max(fiberSignal, branch * branchWeight);
+
+    let fineCoordinate = warpedCoordinate * vec3f(0.41, 2.23, 2.47)
+      + vec3f(phase.z, 0.0, phase.x) * 0.11;
+    let fineFiber = ridgeFiberCarrier(
+      fineCoordinate,
+      context.bodyPhase.yzx,
+      MorphologyLod(lod.frequencyScale, lod.detailWeight * 0.55),
+    );
+    let fineWeight = saturate(context.detailAmount * lod.detailWeight * 0.18);
+    fiberSignal = mix(fiberSignal, max(fiberSignal, fineFiber * 0.5), fineWeight);
+  }
+
+  // erosionScale breaks tails along the long axis without changing their
+  // direction. The broad two-frequency envelope avoids regularly clipped
+  // dashes while keeping the simple path analytic and texture-free.
+  let erosionAmount = saturate(max(context.morphology1.w, 0.0) / 2.0);
+  let tailPhase = axialPhase
+    + sin(warpedCoordinate.z * 0.33 + phase.x) * 1.15;
+  let tailSignal = saturate(
+    0.62
+      + 0.24 * sin(tailPhase * 0.29 + phase.y)
+      + 0.14 * sin(tailPhase * 0.67 - phase.z),
+  );
+  let tailMask = smoothstep(
+    mix(0.28, 0.6, erosionAmount),
+    0.88,
+    tailSignal,
+  );
+  let breakupFactor = mix(1.0, tailMask, erosionAmount);
+  let fiberMask = smoothstep(
+    0.38,
+    0.82,
+    saturate(fiberSignal * breakupFactor),
+  );
+  let fiberFactor = min(
+    mix(
+      max(recipe.valleyDensity, 0.0),
+      max(recipe.peakDensity, 0.0),
+      fiberMask,
+    ),
+    1.35,
+  );
+  let shapedDensity = compatibility.density * profileBand * fiberFactor;
+  return safeMorphBlend(
+    compatibility,
+    replaceSampleDensity(compatibility, shapedDensity),
+    familyStrength,
+  );
+}
+
 fn evaluateCumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
   let compatibility = evaluateCompatibilityDensity(context, GENUS_CUMULUS);
   return evaluateCumulusFamily(context, compatibility);
@@ -1247,7 +1419,10 @@ fn evaluateNimbostratusDensity(context: CloudGenusDensityContext) -> DensitySamp
 }
 
 fn evaluateCirrusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_CIRRUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_CIRRUS);
+  let recipe = FiberRecipe(1.0, 1100.0, 0.1, 1.25, 0.3, 0.85, 0.55, 0.0, 1.25);
+  let profile = FiberProfile(0.44, 0.49, 0.55, 0.62);
+  return evaluateFiberFamily(context, compatibility, recipe, profile);
 }
 
 fn evaluateCirrostratusDensity(context: CloudGenusDensityContext) -> DensitySample {

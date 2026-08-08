@@ -38,7 +38,7 @@ npm run test:weather
 
 HP 密度差异审计与渐进对齐计划：[`HP_DENSITY_ALIGNMENT_ROADMAP.md`](HP_DENSITY_ALIGNMENT_ROADMAP.md)
 
-页面只有一个交互入口，GUI 顶部的 `Preset` 可选择 `Default`、`HP Ocean Day`、`Side Cu`、`Oblique TCu`、`Oblique Cb`、`Top Density` 和 `Detail Off`。`/?preset=hp-ocean-day` 会加载同名 preset 并保持 GUI、相机和动画可交互；增加 `&validation=1` 才冻结时间、停止动画、隐藏 GUI 并提供截图就绪信号。preset 参数记录在 `docs/evidence/hp-alignment/baseline/presets.json`。
+页面只有一个交互入口，GUI 顶部的 `Preset` 可选择 `Default`、`HP Ocean Day`、`Side Cu`、`Oblique TCu`、`Oblique Cb`、`Top Density`、`Cirrus Side`、`Cirrus Oblique`、`Cirrus Top Density` 和 `Detail Off`。`/?preset=hp-ocean-day` 会加载同名 preset 并保持 GUI、相机和动画可交互；增加 `&validation=1` 才冻结时间、停止动画、隐藏 GUI 并提供截图就绪信号。preset 参数记录在 `docs/evidence/hp-alignment/baseline/presets.json`。用 URL 临时改云属时，可增加 `genusDefaultsN=1`，显式应用该云属的建议高度和范围，例如 `?genus0=cirrus&genusDefaults0=1`。
 
 渲染结构固定为 `LowCloud + HighCloud` 两个 evaluator，没有密度模式选择器，`model` URL 参数也不再参与解析。三个通用低云层分别保存标准十云属中的 `genus`；可用 `genus0..2` 独立指定。TCu 不作为额外云属，而由积云层的 `cuDevelopment0..2=0..1` 表示（Cu→TCu）；Cb 使用独立的 `cumulonimbus` genus。当前专用低云形态覆盖 Cu/TCu/Cb 与 Sc，其余 genus 暂时落入 Cu 兼容形态，等待独立密度配方。独立高空云通过 `&high=1&highGenus=altocumulus|altostratus` 选择 Ac 或 As；不再从 high-weather G 通道混合云属。旧 `highType=0|1` 和 `cloudType` URL 参数分别作为 Ac/As 与 Cu/TCu/Cb 兼容适配器。旧 `?scenario=<name>` 链接仅作为兼容别名，等价于 `?preset=<name>&validation=1`。HP 低云仍支持 `noiseMip`、`erosionMip`、`simple` 和 `detailFade` 对照，高云可用 `highThreshold`、`highViewAbsorption`、`highLightAbsorption` 和 `HighWeather` / `HighBand` / `HighDensity` 调试视图检查。
 

@@ -22,7 +22,31 @@ type Orbit = {
 };
 
 function applyCameraPreset(preset: CameraPreset, cam: Orbit): void {
-  if (preset === 'side') {
+  if (preset === 'cirrusSide') {
+    cam.targetX = 0;
+    cam.targetY = 9500;
+    cam.targetZ = 0;
+    cam.yaw = Math.PI * 0.5;
+    cam.pitch = 0.03;
+    cam.dist = 9000;
+    cam.fovYDeg = 55;
+  } else if (preset === 'cirrusOblique') {
+    cam.targetX = 0;
+    cam.targetY = 9500;
+    cam.targetZ = 0;
+    cam.yaw = 0.7;
+    cam.pitch = -0.28;
+    cam.dist = 10500;
+    cam.fovYDeg = 55;
+  } else if (preset === 'cirrusTop') {
+    cam.targetX = 0;
+    cam.targetY = 9500;
+    cam.targetZ = 0;
+    cam.yaw = 0.2;
+    cam.pitch = 1.45;
+    cam.dist = 13500;
+    cam.fovYDeg = 55;
+  } else if (preset === 'side') {
     // 看向云环上一点，沿层内切向平视，避免对着中心空洞
     cam.targetX = 10000;
     cam.targetY = 1400;
@@ -164,6 +188,10 @@ async function main(): Promise<void> {
   for (let i = 0; i < volumeBodies.length; i++) {
     const genus = query.get(`genus${i}`);
     if (isCloudGenus(genus)) volumeBodies[i].genus = genus;
+    const applyGenusDefaults = query.get(`genusDefaults${i}`);
+    if (applyGenusDefaults === '1' || applyGenusDefaults === 'true') {
+      volumeBodies[i].applyGenusDefaults();
+    }
     const development = Number(query.get(`cuDevelopment${i}`));
     if (query.has(`cuDevelopment${i}`) && Number.isFinite(development)) {
       volumeBodies[i].cumulusDevelopment = Math.max(0, Math.min(1, development));

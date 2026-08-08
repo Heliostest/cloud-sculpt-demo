@@ -2,7 +2,14 @@ export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'W
 
 export type ToneMapper = 'reinhard' | 'aces';
 
-export type CameraPreset = 'side' | 'oblique45' | 'top' | 'hpOcean';
+export type CameraPreset =
+  | 'side'
+  | 'oblique45'
+  | 'top'
+  | 'hpOcean'
+  | 'cirrusSide'
+  | 'cirrusOblique'
+  | 'cirrusTop';
 
 export const CLOUD_GENERA = [
   'cumulus',

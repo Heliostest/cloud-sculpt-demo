@@ -75,6 +75,9 @@ export type CloudPresetName =
   | 'oblique-tcu'
   | 'oblique-cb'
   | 'top-density'
+  | 'cirrus-side'
+  | 'cirrus-oblique'
+  | 'cirrus-top-density'
   | 'detail-off'
   | 'stratocumulus-sheet'
   | 'hp-ocean-day';
@@ -91,6 +94,9 @@ export interface CloudPreset {
   sunAzimuthDeg?: number;
   sunElevationDeg?: number;
   exposure?: number;
+  bodyDensityScale?: number;
+  bodyDetailAmount?: number;
+  bodyBounded?: boolean;
   scStrength?: number;
   hpLighting?: HpLightingFixture;
   hpDensity?: HpDensityFixture;
@@ -148,6 +154,45 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     genus: 'cumulus',
     cumulusDevelopment: 0.5,
     frozenTime: 6,
+  },
+  'cirrus-side': {
+    label: 'Cirrus Side',
+    version: 1,
+    camera: 'cirrusSide',
+    debugMode: 'Final',
+    detailOff: false,
+    genus: 'cirrus',
+    cumulusDevelopment: 0,
+    frozenTime: 6,
+    bodyDensityScale: 0.08,
+    bodyDetailAmount: 0.75,
+    bodyBounded: true,
+  },
+  'cirrus-oblique': {
+    label: 'Cirrus Oblique',
+    version: 1,
+    camera: 'cirrusOblique',
+    debugMode: 'Final',
+    detailOff: false,
+    genus: 'cirrus',
+    cumulusDevelopment: 0,
+    frozenTime: 6,
+    bodyDensityScale: 0.08,
+    bodyDetailAmount: 0.75,
+    bodyBounded: true,
+  },
+  'cirrus-top-density': {
+    label: 'Cirrus Top Density',
+    version: 1,
+    camera: 'cirrusTop',
+    debugMode: 'FinalDensity',
+    detailOff: false,
+    genus: 'cirrus',
+    cumulusDevelopment: 0,
+    frozenTime: 6,
+    bodyDensityScale: 0.08,
+    bodyDetailAmount: 0.75,
+    bodyBounded: true,
   },
   'detail-off': {
     label: 'Detail Off',
@@ -337,5 +382,8 @@ export function applyCloudPreset(params: DemoParams, preset: CloudPreset): void 
 }
 
 export function applyCloudBodyPreset(store: CloudBodyStore, preset: CloudPreset): void {
-  store.reset(preset.genus, preset.cumulusDevelopment);
+  const primary = store.reset(preset.genus, preset.cumulusDevelopment);
+  if (preset.bodyDensityScale !== undefined) primary.densityScale = preset.bodyDensityScale;
+  if (preset.bodyDetailAmount !== undefined) primary.detailAmount = preset.bodyDetailAmount;
+  if (preset.bodyBounded !== undefined) primary.bounded = preset.bodyBounded;
 }

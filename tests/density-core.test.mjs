@@ -310,52 +310,6 @@ function sheetFoundationReference({
   );
 }
 
-function fiberVerticalProfileReference(height, profile) {
-  if (height < profile.bottomStart || height > profile.topEnd) return 0;
-  const bottom = ellipseSmoothstep(profile.bottomStart, profile.bottomEnd, height);
-  const top = 1 - ellipseSmoothstep(profile.topStart, profile.topEnd, height);
-  return Math.min(1, Math.max(0, bottom * top));
-}
-
-function fiberDensityReference({
-  compatibilityDensity,
-  height,
-  fiberStrength,
-  fiberSignal,
-  macroSupport = 1,
-  erosionScale,
-  tailSignal,
-  recipe,
-  profile,
-}) {
-  const strength = Math.min(1, Math.max(0, recipe.familyStrength * fiberStrength));
-  if (strength <= 1e-5 || compatibilityDensity <= 0) return compatibilityDensity;
-  const profileBand = fiberVerticalProfileReference(height, profile);
-  const erosionAmount = Math.min(1, Math.max(0, Math.max(erosionScale, 0) / 2));
-  const tailMask = ellipseSmoothstep(
-    0.28 + (0.6 - 0.28) * erosionAmount,
-    0.88,
-    Math.min(1, Math.max(0, tailSignal)),
-  );
-  const breakupFactor = 1 + (tailMask - 1) * erosionAmount;
-  const ridgeMask = ellipseSmoothstep(
-    0.48,
-    0.88,
-    Math.min(1, Math.max(0, fiberSignal * breakupFactor)),
-  );
-  const fiberMask = ridgeMask * ellipseSmoothstep(
-    0.12,
-    0.82,
-    Math.min(1, Math.max(0, macroSupport)),
-  );
-  const fiberFactor = Math.min(
-    recipe.valleyDensity + (recipe.peakDensity - recipe.valleyDensity) * fiberMask,
-    1.35,
-  );
-  const shaped = sanitizeMorphologyDensity(compatibilityDensity * profileBand * fiberFactor);
-  return sanitizeMorphologyDensity(compatibilityDensity + (shaped - compatibilityDensity) * strength);
-}
-
 function bodyLifecycleScale(enabled, life, peak, time) {
   if (!enabled) return 1;
   const birth = life[0];
@@ -1014,7 +968,7 @@ test('Sc, Ac, and Cc share body-local cells with ordered scale, connectivity, pr
   assert.match(coordinate, /max\(recipe\.verticalFrequency, 0\.02\)/);
   assert.match(coordinate, /max\(recipe\.crossFrequency, 0\.05\)/);
 
-  const family = densityWgslFunctionSource('evaluateCellularFamily', '\nfn evaluateCumulusDensity');
+  const family = densityWgslFunctionSource('evaluateCellularFamily', '\nfn fiberVerticalProfile');
   assert.match(family, /let familyStrength = saturate\(recipe\.familyStrength \* context\.morphology0\.z\);/);
   assert.match(family, /if \(familyStrength <= 1e-5 \|\| compatibility\.density <= 0\.0\) \{\s*return compatibility;/);
   assert.match(family, /if \(!context\.simpleMode && lod\.detailWeight > 1e-4\)/);
@@ -1074,114 +1028,43 @@ test('Sc, Ac, and Cc share body-local cells with ordered scale, connectivity, pr
   assert.equal(0.2 * simpleLod.detailWeight, 0, 'simple mode disables the Cc ripple');
 });
 
-test('Ci uses sparse rotated-fBm support with curled body-local fibers and a stable LOD fallback', () => {
-  const coordinate = densityWgslFunctionSource('bodyLocalFiberCoordinate', '\nfn evaluateFiberFamily');
-  assert.match(coordinate, /recipe\.baseWidthMeters \* max\(context\.morphology0\.y, 0\.05\)/);
-  assert.match(coordinate, /rotateMorphologyXZ\(\s*context\.bodyLocalMeters \/ fiberWidthMeters,\s*context\.morphology1\.y/);
-  assert.match(coordinate, /max\(recipe\.longFrequency, 0\.01\)/);
-  assert.match(coordinate, /max\(recipe\.verticalFrequency, 0\.05\)/);
-  assert.match(coordinate, /max\(recipe\.crossFrequency, 0\.05\)/);
+test('Ci owns finite curved 3D fiber primitives instead of periodic or stretched-noise ridges', () => {
+  assert.match(densitySource, /fn cirrusLocalUnit\(/);
+  assert.match(densitySource, /fn cirrusFiberPrimitive\(/);
+  assert.match(densitySource, /fn evaluateCirrusBundleField\(/);
 
-  const macro = densityWgslFunctionSource('cirrusMacroFbm', '\nfn sheetMacroVariation');
-  assert.match(macro, /position \* vec2f\(0\.52, 1\.45\)/);
-  assert.match(macro, /point\.x \* 1\.6 - point\.y \* 1\.2/);
-  assert.match(macro, /point\.x \* 1\.2 \+ point\.y \* 1\.6/);
-  assert.match(macro, /if \(lod\.detailWeight > 1e-4\)/);
-  assert.equal((macro.match(/morphologyValueNoise2\(point\)/g) ?? []).length, 4);
+  const primitive = densityWgslFunctionSource('cirrusFiberPrimitive', '\nfn evaluateCirrusBundleField');
+  assert.match(primitive, /let along = \(position\.x - centerX\) \/ halfLength;/);
+  assert.match(primitive, /let curveZ =/);
+  assert.match(primitive, /let fallY =/);
+  assert.match(primitive, /let rootMask = smoothstep\(/);
+  assert.match(primitive, /let tipMask = rootMask \* \(1\.0 - smoothstep\(/);
+  assert.doesNotMatch(primitive, /textureSample|ridgeFiberCarrier|cirrusMacroFbm/);
+
+  const bundle = densityWgslFunctionSource('evaluateCirrusBundleField', '\nfn sampleCirrusEdgeNoise');
+  assert.match(bundle, /for \(var fiberIndex = 0u; fiberIndex < 7u; fiberIndex \+= 1u\)/);
+  assert.match(bundle, /max\(broadSupport, fiber\.x \* fiberWeight\)/);
+  assert.doesNotMatch(bundle, /textureSample|ridgeFiberCarrier|cirrusMacroFbm/);
+
+  const erosion = densityWgslFunctionSource('sampleCirrusEdgeNoise', '\nfn evaluateFiberFamily');
+  assert.match(erosion, /textureSampleLevel\(hpDetailTex, detailSamp,/);
+  assert.match(erosion, /volumeFootprintLod\(/);
+  assert.doesNotMatch(erosion, /shapeTex|ridgeFiberCarrier|cirrusMacroFbm/);
 
   const family = densityWgslFunctionSource('evaluateFiberFamily', '\nfn evaluateCumulusDensity');
-  assert.match(family, /let familyStrength = saturate\(recipe\.familyStrength \* context\.morphology1\.x\);/);
-  assert.match(family, /if \(familyStrength <= 1e-5 \|\| compatibility\.density <= 0\.0\) \{\s*return compatibility;/);
-  assert.match(family, /let curlWeight = saturate\(/);
-  assert.match(family, /let macroNoise = cirrusMacroFbm\(/);
-  assert.match(family, /let macroSupport = smoothstep\(0\.34, 0\.64, macroNoise\);/);
-  assert.match(family, /let flowNoise = morphologyValueNoise2\(/);
-  assert.match(family, /let flowOffset = \(flowNoise - 0\.5\) \* 1\.8 \* curlWeight;/);
-  assert.match(family, /coordinate \+ curl \+ vec3f\(0\.0, 0\.0, flowOffset\)/);
-  assert.match(family, /let broadFiber = ridgeFiberCarrier\(/);
-  assert.match(family, /if \(!context\.simpleMode && lod\.detailWeight > 1e-4\)/);
-  assert.match(family, /recipe\.branchStrength[\s\S]*context\.detailAmount[\s\S]*lod\.detailWeight/);
-  assert.match(family, /let erosionAmount = saturate\(max\(context\.morphology1\.w, 0\.0\) \/ 2\.0\);/);
-  assert.match(family, /let forkDirection = select\(-1\.0, 1\.0, sin\(phase\.x \+ phase\.z\) >= 0\.0\);/);
-  assert.match(family, /sin\(warpedCoordinate\.z \* 0\.33 \+ phase\.x\) \* 1\.15/);
-  assert.match(family, /let breakupFactor = mix\(1\.0, tailMask, erosionAmount\);/);
-  assert.match(family, /let ridgeMask = smoothstep\(\s*0\.48,\s*0\.88,/);
-  assert.match(family, /let fiberMask = ridgeMask \* smoothstep\(0\.12, 0\.82, macroSupport\);/);
-  assert.match(family, /let fiberFactor = min\([\s\S]*1\.35/);
-  assert.match(family, /return safeMorphBlend\(/);
-  assert.doesNotMatch(family, /textureSample/);
+  assert.match(family, /let densityCoverage = hpLoCoverage\(context\.weather\.r\);/);
+  assert.match(family, /let verticalShape = fiberVerticalProfile\(/);
+  assert.match(family, /let bundle = evaluateCirrusBundleField\(/);
+  assert.match(family, /let edgeNoise = sampleCirrusEdgeNoise\(/);
+  assert.match(family, /return DensitySample\(/);
+  assert.doesNotMatch(family, /compatibility\.density|ridgeFiberCarrier|cirrusMacroFbm|shapeTex/);
 
   const evaluator = densityWgslFunctionSource('evaluateCirrusDensity', '\nfn evaluateCirrostratusDensity');
-  assert.match(evaluator, /evaluateCompatibilityDensity\(context, GENUS_CIRRUS\)/);
-  assert.match(evaluator, /FiberRecipe\(1\.0, 1100\.0, 0\.1, 1\.25, 0\.3, 0\.85, 0\.55, 0\.0, 1\.25\)/);
-  assert.match(evaluator, /FiberProfile\(0\.44, 0\.49, 0\.55, 0\.62\)/);
-  assert.match(evaluator, /return evaluateFiberFamily\(context, compatibility, recipe, profile\);/);
-
-  const recipe = {
-    familyStrength: 1,
-    valleyDensity: 0,
-    peakDensity: 1.25,
-  };
-  const profile = { bottomStart: 0.44, bottomEnd: 0.49, topStart: 0.55, topEnd: 0.62 };
-  const compatibilityDensity = 0.7;
-  assert.equal(fiberDensityReference({
-    compatibilityDensity,
-    height: 0.52,
-    fiberStrength: 0,
-    fiberSignal: 0.8,
-    erosionScale: 1.3,
-    tailSignal: 0.7,
-    recipe,
-    profile,
-  }), compatibilityDensity);
-  assert.equal(fiberDensityReference({
-    compatibilityDensity,
-    height: 0.2,
-    fiberStrength: 1,
-    fiberSignal: 1,
-    erosionScale: 1.3,
-    tailSignal: 1,
-    recipe,
-    profile,
-  }), 0);
-  assert.equal(fiberDensityReference({
-    compatibilityDensity,
-    height: 0.52,
-    fiberStrength: 1,
-    fiberSignal: 1,
-    macroSupport: 0,
-    erosionScale: 0,
-    tailSignal: 1,
-    recipe,
-    profile,
-  }), 0, 'macro support removes globally repeated fibers outside cirrus bands');
-
-  for (let height = -0.1; height <= 1.1; height += 0.025) {
-    for (let fiberSignal = 0; fiberSignal <= 1; fiberSignal += 0.1) {
-      const density = fiberDensityReference({
-        compatibilityDensity,
-        height,
-        fiberStrength: 1,
-        fiberSignal,
-        erosionScale: 1.3,
-        tailSignal: 0.65,
-        recipe,
-        profile,
-      });
-      assert.ok(Number.isFinite(density));
-      assert.ok(density >= 0 && density <= compatibilityDensity * 1.35 + 1e-6);
-    }
-  }
-
-  const simpleLod = morphologyLodReference({
-    simpleMode: true,
-    cameraDistance: 0,
-    maximumDistance: 100_000,
-    baseM: 7000,
-    topM: 12_000,
-    stepLen: 16,
-  });
-  assert.equal(simpleLod.detailWeight, 0, 'simple mode keeps only the broad Ci fiber');
+  assert.match(evaluator, /let familyStrength = saturate\(recipe\.familyStrength \* context\.morphology1\.x\);/);
+  assert.match(evaluator, /if \(familyStrength <= 1e-5\) \{\s*return evaluateCompatibilityDensity\(context, GENUS_CIRRUS\);/);
+  assert.match(evaluator, /let shaped = evaluateFiberFamily\(context, recipe, profile\);/);
+  assert.match(evaluator, /if \(familyStrength >= 1\.0 - 1e-5\) \{\s*return shaped;/);
+  assert.match(evaluator, /blendIndependentMorphology\(/);
 });
 
 test('per-body motion transports the density domain and lifecycle scales density smoothly', () => {

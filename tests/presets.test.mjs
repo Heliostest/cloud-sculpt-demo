@@ -96,13 +96,22 @@ test('the independent high-cloud path selects Ac or As by genus, not a type slid
   assert.equal(paramsModule.isHighCloudGenus('cirrus'), false);
 });
 
-test('the interactive entry exposes default plus seven cloud presets', () => {
+test('the interactive entry exposes general and multi-angle cirrus validation presets', () => {
   const presets = Object.values(presetsModule.CLOUD_PRESETS);
-  assert.equal(presets.length, 8);
+  assert.equal(presets.length, 11);
   for (const preset of presets) {
     assert.equal('densityModel' in preset, false);
     assert.equal(preset.version, 1);
   }
+
+  const cirrus = bodiesModule.CloudBodyStore.createDefault();
+  presetsModule.applyCloudBodyPreset(cirrus, presetsModule.CLOUD_PRESETS['cirrus-oblique']);
+  assert.equal(cirrus.bodies[0].genus, 'cirrus');
+  assert.equal(cirrus.bodies[0].baseKm, 7);
+  assert.equal(cirrus.bodies[0].topKm, 12);
+  assert.equal(cirrus.bodies[0].densityScale, 0.08);
+  assert.equal(cirrus.bodies[0].detailAmount, 0.75);
+  assert.equal(cirrus.bodies[0].bounded, true);
 });
 
 test('stratocumulus preset is a shallow connected deck with softened erosion', () => {

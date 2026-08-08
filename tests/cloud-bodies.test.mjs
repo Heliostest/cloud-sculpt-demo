@@ -222,6 +222,16 @@ test('genus defaults respect manual placement until explicitly applied', () => {
   assert.equal(added.placementLocked, false);
 });
 
+test('resetting to a genus applies its canonical placement before locking it', () => {
+  const store = CloudBodyStore.createDefault();
+  const cirrus = store.reset('cirrus', 0);
+  assert.equal(cirrus.baseKm, 7);
+  assert.equal(cirrus.topKm, 12);
+  assert.equal(cirrus.radiusX, 4000);
+  assert.equal(cirrus.radiusZ, 4000);
+  assert.equal(cirrus.placementLocked, true);
+});
+
 test('volume bodies own independent motion and lifecycle authoring data', () => {
   const params = createDefaultParams();
   const store = CloudBodyStore.createDefault(() => params.sceneTime);

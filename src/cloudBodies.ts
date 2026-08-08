@@ -624,9 +624,11 @@ export class CloudBodyStore {
   reset(primaryGenus: CloudGenus = 'cumulus', cumulusDevelopment = 0.5): CloudBody {
     this.bodyList = [];
     const primary = this.createDefaultBody('volume');
-    primary.placementLocked = true;
+    primary.placementLocked = false;
     primary.genus = primaryGenus;
+    primary.applyGenusDefaults();
     primary.cumulusDevelopment = cumulusDevelopment;
+    primary.placementLocked = true;
     this.bodyList.push(primary);
     return primary;
   }

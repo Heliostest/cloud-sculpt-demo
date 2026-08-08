@@ -213,6 +213,25 @@ fn safeMorphBlend(
   return replaceSampleDensity(base, density);
 }
 
+fn blendIndependentMorphology(
+  base: DensitySample,
+  shaped: DensitySample,
+  strength: f32,
+) -> DensitySample {
+  if (strength != strength || strength <= 0.0) {
+    return base;
+  }
+  let weight = saturate(strength);
+  return DensitySample(
+    mix(sanitizeMorphologyDensity(base.support), sanitizeMorphologyDensity(shaped.support), weight),
+    mix(sanitizeMorphologyDensity(base.afterShape), sanitizeMorphologyDensity(shaped.afterShape), weight),
+    mix(sanitizeMorphologyDensity(base.density), sanitizeMorphologyDensity(shaped.density), weight),
+    mix(base.typeMix, shaped.typeMix, weight),
+    mix(base.height01, shaped.height01, weight),
+    mix(saturate(base.densityCoverage), saturate(shaped.densityCoverage), weight),
+  );
+}
+
 fn verticalBand(h: f32, bottomSoft: f32, topSoft: f32) -> f32 {
   if (h != h || h < 0.0 || h > 1.0) {
     return 0.0;
@@ -320,68 +339,6 @@ fn ridgeFiberCarrier(
   }
   let ridge = saturate(1.0 - abs(fiberSignal));
   return smoothstep(0.32, 0.88, ridge);
-}
-
-fn morphologyHash21(position: vec2f) -> f32 {
-  return fract(sin(dot(position, vec2f(127.1, 311.7))) * 43758.5453);
-}
-
-fn morphologyValueNoise2(position: vec2f) -> f32 {
-  let cell = floor(position);
-  let local = fract(position);
-  let curve = local * local * (vec2f(3.0) - 2.0 * local);
-  let bottom = mix(
-    morphologyHash21(cell),
-    morphologyHash21(cell + vec2f(1.0, 0.0)),
-    curve.x,
-  );
-  let top = mix(
-    morphologyHash21(cell + vec2f(0.0, 1.0)),
-    morphologyHash21(cell + vec2f(1.0, 1.0)),
-    curve.x,
-  );
-  return mix(bottom, top, curve.y);
-}
-
-fn cirrusMacroFbm(
-  position: vec2f,
-  phase: vec2f,
-  lod: MorphologyLod,
-) -> f32 {
-  // Match the distant high-cloud construction used by WaterThreeJS: stretch
-  // one axis before a rotated fBm so octave boundaries cannot line up into a
-  // comb. Two broad octaves survive probe/light and far samples; the last two
-  // only refine nearby silhouettes.
-  let macroFrequency = mix(0.72, 1.0, lod.detailWeight);
-  var point = position * vec2f(0.52, 1.45) * macroFrequency
-    + phase * vec2f(3.1, 4.7);
-  var value = morphologyValueNoise2(point) * 0.56;
-  var weight = 0.56;
-
-  point = vec2f(
-    point.x * 1.6 - point.y * 1.2,
-    point.x * 1.2 + point.y * 1.6,
-  );
-  value += morphologyValueNoise2(point) * 0.29;
-  weight += 0.29;
-
-  if (lod.detailWeight > 1e-4) {
-    point = vec2f(
-      point.x * 1.6 - point.y * 1.2,
-      point.x * 1.2 + point.y * 1.6,
-    );
-    value += morphologyValueNoise2(point) * 0.1 * lod.detailWeight;
-    weight += 0.1 * lod.detailWeight;
-
-    point = vec2f(
-      point.x * 1.6 - point.y * 1.2,
-      point.x * 1.2 + point.y * 1.6,
-    );
-    value += morphologyValueNoise2(point) * 0.05 * lod.detailWeight;
-    weight += 0.05 * lod.detailWeight;
-  }
-
-  return saturate(value / max(weight, 1e-4));
 }
 
 fn sheetMacroVariation(
@@ -1291,170 +1248,180 @@ fn fiberVerticalProfile(height: f32, profile: FiberProfile) -> f32 {
   return saturate(bottom * top);
 }
 
-fn bodyLocalFiberCoordinate(
+fn morphologyHash13(position: vec3f) -> f32 {
+  return fract(sin(dot(position, vec3f(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+fn cirrusLocalUnit(
   context: CloudGenusDensityContext,
   recipe: FiberRecipe,
 ) -> vec3f {
-  // bodyLocalMeters already contains the inverse CloudBody rotation. The
-  // recipe angle therefore rotates only the internal ice-crystal strands.
-  let fiberWidthMeters = max(
-    80.0,
-    recipe.baseWidthMeters * max(context.morphology0.y, 0.05),
+  // CloudBody rotation is already removed. This second rotation is the authored
+  // mean wind direction shared by every finite fiber in the bundle.
+  return rotateMorphologyXZ(context.bodyLocalUnit, context.morphology1.y);
+}
+
+fn cirrusFiberPrimitive(
+  position: vec3f,
+  seed: vec3f,
+  strandOrder: f32,
+  widthScale: f32,
+  verticalScale: f32,
+  curlStrength: f32,
+) -> vec2f {
+  let rootX = mix(-0.92, -0.76, morphologyHash13(seed + vec3f(1.7, 9.2, 2.4)));
+  let centerY = mix(0.47, 0.55, morphologyHash13(seed + vec3f(4.1, 7.6, 9.3)));
+  let halfLength = mix(0.48, 0.92, morphologyHash13(seed + vec3f(6.4, 3.3, 1.2)));
+  let centerX = rootX + halfLength;
+  let along = (position.x - centerX) / halfLength;
+  let progress = saturate(along * 0.5 + 0.5);
+
+  // The bundle shares a wind direction, not a single root. Staggered starts
+  // avoid a perspective fan while the finite centreline still cannot repeat.
+  let rootZ = strandOrder * 0.48
+    + mix(-0.13, 0.13, morphologyHash13(seed + vec3f(8.3, 2.8, 5.1)));
+  let tipZ = rootZ
+    + strandOrder * 0.16
+    + mix(-0.16, 0.16, morphologyHash13(seed + vec3f(3.7, 5.9, 8.2)));
+  let bend = (morphologyHash13(seed + vec3f(2.1, 6.8, 7.4)) - 0.5)
+    * 0.92 * curlStrength;
+  let hook = (morphologyHash13(seed + vec3f(9.7, 1.9, 3.6)) - 0.5)
+    * 0.72 * curlStrength;
+  let curveZ = mix(rootZ, tipZ, progress)
+    + bend * progress * (1.0 - progress)
+    + hook * progress * progress * (progress - 0.62);
+
+  // Ice crystals gradually fall out toward one end of the fibre. The curve is
+  // still volumetric: this moves the centreline instead of extruding a 2D mask.
+  let fallProgress = 1.0 - smoothstep(0.08, 0.92, progress);
+  let fallDepth = mix(
+    0.018,
+    0.16,
+    morphologyHash13(seed + vec3f(5.5, 4.4, 8.8)),
   );
-  let rotated = rotateMorphologyXZ(
-    context.bodyLocalMeters / fiberWidthMeters,
-    context.morphology1.y,
+  let fallY = centerY
+    - fallDepth * fallProgress * fallProgress * curlStrength;
+
+  let width = mix(
+    0.035,
+    0.07,
+    morphologyHash13(seed + vec3f(3.2, 8.1, 6.7)),
+  ) * widthScale;
+  let verticalWidth = width
+    * mix(0.18, 0.32, morphologyHash13(seed + vec3f(7.9, 5.6, 2.5)))
+    * verticalScale;
+  let radial = length(vec2f(
+    (position.z - curveZ) / max(width, 0.005),
+    (position.y - fallY) / max(verticalWidth, 0.005),
+  ));
+  let rootMask = smoothstep(-1.0, -0.82, along);
+  let tipMask = rootMask * (1.0 - smoothstep(0.68, 1.0, along));
+  let broadSupport = (1.0 - smoothstep(0.72, 1.45, radial)) * tipMask;
+  let coreDensity = (1.0 - smoothstep(0.25, 1.0, radial)) * tipMask;
+  return vec2f(broadSupport, coreDensity);
+}
+
+fn evaluateCirrusBundleField(
+  context: CloudGenusDensityContext,
+  localUnit: vec3f,
+  recipe: FiberRecipe,
+) -> vec2f {
+  let authoredWidth = recipe.baseWidthMeters / 1100.0;
+  let widthScale = clamp(
+    authoredWidth * mix(0.55, 0.8, saturate(context.morphology0.y)),
+    0.5,
+    1.0,
   );
-  return anisotropicCoordinate(
-    rotated,
-    vec3f(
-      max(recipe.longFrequency, 0.01),
-      max(recipe.verticalFrequency, 0.05),
-      max(recipe.crossFrequency, 0.05),
-    ),
+  let verticalScale = clamp(sqrt(1.25 / max(recipe.verticalFrequency, 0.05)), 0.65, 1.5);
+  let lengthScale = clamp(sqrt(0.1 / max(recipe.longFrequency, 0.01)), 0.7, 1.35);
+  let curlStrength = saturate(recipe.curlStrength);
+  var broadSupport = 0.0;
+  var coreDensity = 0.0;
+
+  for (var fiberIndex = 0u; fiberIndex < 7u; fiberIndex += 1u) {
+    let index = f32(fiberIndex);
+    let strandOrder = index / 6.0 * 2.0 - 1.0;
+    let seed = context.bodyPhase
+      + vec3f(index * 1.731, index * 2.417, index * 3.113);
+    let angle = (morphologyHash13(seed + vec3f(4.6, 2.2, 7.5)) - 0.5)
+      * 0.14 * curlStrength;
+    var fiberPosition = rotateMorphologyXZ(localUnit, angle);
+    fiberPosition.x /= lengthScale;
+    let fiber = cirrusFiberPrimitive(
+      fiberPosition,
+      seed,
+      strandOrder,
+      widthScale,
+      verticalScale,
+      curlStrength,
+    );
+    let fiberWeight = select(
+      saturate(recipe.branchStrength) * 0.78,
+      1.0,
+      fiberIndex < 5u,
+    );
+    broadSupport = max(broadSupport, fiber.x * fiberWeight);
+    coreDensity = max(coreDensity, fiber.y * fiberWeight);
+  }
+  return vec2f(broadSupport, coreDensity);
+}
+
+fn sampleCirrusEdgeNoise(
+  context: CloudGenusDensityContext,
+  localMeters: vec3f,
+  lod: MorphologyLod,
+) -> f32 {
+  // The WaterThreeJS sky reference uses a roughly 0.55:3.2 anisotropy. Here
+  // that idea is lifted into 3D: slow variation along wind, rapid variation
+  // through and across the finite envelope.
+  let edgeScale = vec3f(0.00018, 0.0017, 0.00105) * lod.frequencyScale;
+  let edgeLod = volumeFootprintLod(context.stepLen, edgeScale, 64.0, 0.0);
+  let edge = textureSampleLevel(hpDetailTex, detailSamp,
+    shearNoiseXZ(localMeters, -0.17, 0.23) * edgeScale
+      + context.bodyPhase.zxy * vec3f(3.17, 2.29, 4.03),
+    edgeLod,
   );
+  return mix(edge.r, edge.g, 0.55 * lod.detailWeight);
 }
 
 fn evaluateFiberFamily(
   context: CloudGenusDensityContext,
-  compatibility: DensitySample,
   recipe: FiberRecipe,
   profile: FiberProfile,
 ) -> DensitySample {
-  let familyStrength = saturate(recipe.familyStrength * context.morphology1.x);
-  if (familyStrength <= 1e-5 || compatibility.density <= 0.0) {
-    return compatibility;
+  let densityCoverage = hpLoCoverage(context.weather.r);
+  let outsideLayer = altitude(context.worldPos) < context.baseM
+    || altitude(context.worldPos) > context.topM;
+  if (outsideLayer || context.densityScale <= 1e-5 || densityCoverage < 0.1) {
+    return DensitySample(0.0, 0.0, 0.0, 0.0, context.normalizedHeight, 0.0);
   }
 
-  let profileBand = fiberVerticalProfile(
-    saturate(context.normalizedHeight),
-    profile,
-  );
   let lod = morphologyLod(context);
-  let coordinate = bodyLocalFiberCoordinate(context, recipe);
-  let phase = context.bodyPhase * MORPHOLOGY_TWO_PI;
-
-  // A broad, sparse support field decides where fibers are allowed to exist.
-  // This prevents the analytic ridge carrier from tiling the entire CloudBody
-  // with equally eligible parallel strands.
-  let macroCoordinate = coordinate.xz + vec2f(
-    sin(coordinate.x * 0.17 + phase.z) * 0.31,
-    sin(coordinate.x * 0.11 + phase.y) * 0.18,
+  let localUnit = cirrusLocalUnit(context, recipe);
+  let bundle = evaluateCirrusBundleField(context, localUnit, recipe);
+  let edgeNoise = sampleCirrusEdgeNoise(context, context.bodyLocalMeters, lod);
+  let verticalShape = fiberVerticalProfile(context.normalizedHeight, profile);
+  let erosionWeight = saturate(
+    max(context.morphology1.w, 0.0) * context.detailAmount * lod.detailWeight,
   );
-  let macroNoise = cirrusMacroFbm(
-    macroCoordinate,
-    context.bodyPhase.xz,
-    lod,
+  let featheredNoise = mix(0.38, 1.0, smoothstep(0.22, 0.82, edgeNoise));
+  let edgeFactor = mix(0.78, featheredNoise, max(0.45, erosionWeight));
+  let support = sanitizeMorphologyDensity(
+    densityCoverage * verticalShape * bundle.x * context.densityScale,
   );
-  let macroSupport = smoothstep(0.34, 0.64, macroNoise);
-  let flowNoise = morphologyValueNoise2(
-    macroCoordinate * vec2f(0.21, 0.27)
-      + context.bodyPhase.yx * vec2f(2.3, 3.7),
+  let afterShape = sanitizeMorphologyDensity(verticalShape * bundle.x);
+  let density = sanitizeMorphologyDensity(
+    support
+      * mix(bundle.y, edgeFactor, 0.48)
+      * max(recipe.peakDensity, 0.0),
   );
-
-  // Curl changes slowly along the long axis. A broad portion survives the
-  // cheap path so distant Ci stays curved instead of collapsing into bars.
-  let axialPhase = coordinate.x * 0.73 + phase.x;
-  let curlWeight = saturate(
-    recipe.curlStrength * mix(0.45, 1.0, lod.detailWeight),
-  );
-  let curl = vec3f(
+  return DensitySample(
+    support,
+    afterShape,
+    density,
     0.0,
-    sin(axialPhase * 0.47 + phase.y) * 0.34,
-    sin(
-      axialPhase
-        + sin(axialPhase * 0.31 + phase.z) * 0.72
-        + phase.y
-    ),
-  ) * curlWeight;
-  // One very-low-frequency flow sample shifts the cross-axis locally. It
-  // preserves the requested average angle while allowing neighbouring cirrus
-  // bands to fan apart and converge instead of remaining globally parallel.
-  let flowOffset = (flowNoise - 0.5) * 1.8 * curlWeight;
-  let warpedCoordinate = coordinate + curl + vec3f(0.0, 0.0, flowOffset);
-  let broadFiber = ridgeFiberCarrier(
-    warpedCoordinate,
-    context.bodyPhase,
-    lod,
-  );
-  var fiberSignal = broadFiber;
-
-  // Fine branches are optional morphology, never part of probe/light or far
-  // samples. The low-frequency gate makes forks local rather than periodic
-  // parallel copies across the entire body.
-  if (!context.simpleMode && lod.detailWeight > 1e-4) {
-    let forkDirection = select(-1.0, 1.0, sin(phase.x + phase.z) >= 0.0);
-    let branchCoordinate = warpedCoordinate * vec3f(0.63, 1.57, 1.81)
-      + vec3f(
-        0.0,
-        sin(axialPhase * 0.37 + phase.z),
-        warpedCoordinate.x * 0.28 * forkDirection + 0.46,
-      );
-    let branch = ridgeFiberCarrier(
-      branchCoordinate,
-      context.bodyPhase.zxy,
-      MorphologyLod(lod.frequencyScale, lod.detailWeight * 0.72),
-    );
-    let branchGate = smoothstep(
-      0.48,
-      0.82,
-      0.5 + 0.5 * sin(axialPhase * 0.41 + phase.z),
-    );
-    let branchWeight = saturate(
-      recipe.branchStrength
-        * context.detailAmount
-        * lod.detailWeight
-        * branchGate,
-    );
-    fiberSignal = max(fiberSignal, branch * branchWeight);
-
-    let fineCoordinate = warpedCoordinate * vec3f(0.41, 2.23, 2.47)
-      + vec3f(phase.z, 0.0, phase.x) * 0.11;
-    let fineFiber = ridgeFiberCarrier(
-      fineCoordinate,
-      context.bodyPhase.yzx,
-      MorphologyLod(lod.frequencyScale, lod.detailWeight * 0.55),
-    );
-    let fineWeight = saturate(context.detailAmount * lod.detailWeight * 0.18);
-    fiberSignal = mix(fiberSignal, max(fiberSignal, fineFiber * 0.5), fineWeight);
-  }
-
-  // erosionScale breaks tails along the long axis without changing their
-  // direction. The broad two-frequency envelope avoids regularly clipped
-  // dashes while keeping the simple path analytic and texture-free.
-  let erosionAmount = saturate(max(context.morphology1.w, 0.0) / 2.0);
-  let tailPhase = axialPhase
-    + sin(warpedCoordinate.z * 0.33 + phase.x) * 1.15;
-  let tailSignal = saturate(
-    0.62
-      + 0.24 * sin(tailPhase * 0.29 + phase.y)
-      + 0.14 * sin(tailPhase * 0.67 - phase.z),
-  );
-  let tailMask = smoothstep(
-    mix(0.28, 0.6, erosionAmount),
-    0.88,
-    tailSignal,
-  );
-  let breakupFactor = mix(1.0, tailMask, erosionAmount);
-  let ridgeMask = smoothstep(
-    0.48,
-    0.88,
-    saturate(fiberSignal * breakupFactor),
-  );
-  let fiberMask = ridgeMask * smoothstep(0.12, 0.82, macroSupport);
-  let fiberFactor = min(
-    mix(
-      max(recipe.valleyDensity, 0.0),
-      max(recipe.peakDensity, 0.0),
-      fiberMask,
-    ),
-    1.35,
-  );
-  let shapedDensity = compatibility.density * profileBand * fiberFactor;
-  return safeMorphBlend(
-    compatibility,
-    replaceSampleDensity(compatibility, shapedDensity),
-    familyStrength,
+    context.normalizedHeight,
+    densityCoverage,
   );
 }
 
@@ -1504,10 +1471,18 @@ fn evaluateNimbostratusDensity(context: CloudGenusDensityContext) -> DensitySamp
 }
 
 fn evaluateCirrusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  let compatibility = evaluateCompatibilityDensity(context, GENUS_CIRRUS);
   let recipe = FiberRecipe(1.0, 1100.0, 0.1, 1.25, 0.3, 0.85, 0.55, 0.0, 1.25);
   let profile = FiberProfile(0.44, 0.49, 0.55, 0.62);
-  return evaluateFiberFamily(context, compatibility, recipe, profile);
+  let familyStrength = saturate(recipe.familyStrength * context.morphology1.x);
+  if (familyStrength <= 1e-5) {
+    return evaluateCompatibilityDensity(context, GENUS_CIRRUS);
+  }
+  let shaped = evaluateFiberFamily(context, recipe, profile);
+  if (familyStrength >= 1.0 - 1e-5) {
+    return shaped;
+  }
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_CIRRUS);
+  return blendIndependentMorphology(compatibility, shaped, familyStrength);
 }
 
 fn evaluateCirrostratusDensity(context: CloudGenusDensityContext) -> DensitySample {

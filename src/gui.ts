@@ -1,7 +1,13 @@
 import GUI, { Controller } from 'lil-gui';
-import { CLOUD_GENERA, HIGH_CLOUD_GENERA, type CameraPreset, type DemoParams } from './params';
+import { CLOUD_GENERA, HIGH_CLOUD_GENERA, type CameraPreset, type CloudGenus, type DemoParams } from './params';
 import { CLOUD_PRESET_OPTIONS, type CloudPresetName } from './cloudPresets';
-import type { CloudBody, CloudBodyStore } from './cloudBodies';
+import {
+  CLOUD_MORPHOLOGY_FIELDS,
+  type CloudBody,
+  type CloudBodyStore,
+  type CloudMorphologyRecipe,
+  type GenusMorphologyChange,
+} from './cloudBodies';
 import {
   cloudGenusLabel,
   cloudGenusOptions,
@@ -10,7 +16,9 @@ import {
   debugModeOptions,
   folderLabel,
   folderTip,
+  genusMorphologyChangeOptions,
   getLang,
+  morphologyStatusLabel,
   parameterLabel,
   parameterTip,
   setLang,
@@ -24,6 +32,31 @@ interface LocalizedFolder {
 }
 
 type GuiMode = 'basic' | 'advanced';
+type MorphologyField = keyof CloudMorphologyRecipe;
+
+const MORPHOLOGY_RANGES: Readonly<Record<MorphologyField, readonly [number, number, number]>> = {
+  verticalDevelopment: [0, 1.5, 0.01],
+  cellScale: [0.05, 4, 0.01],
+  cellStrength: [0, 1.5, 0.01],
+  sheetUniformity: [0, 1, 0.01],
+  fiberStrength: [0, 1.5, 0.01],
+  fiberAngleDeg: [-180, 180, 1],
+  anvilStrength: [0, 1.5, 0.01],
+  erosionScale: [0, 2.5, 0.01],
+};
+
+const BASIC_MORPHOLOGY_FIELDS: Readonly<Record<CloudGenus, readonly MorphologyField[]>> = {
+  cumulus: ['verticalDevelopment', 'cellScale', 'cellStrength'],
+  cumulonimbus: ['verticalDevelopment', 'cellScale', 'cellStrength', 'anvilStrength'],
+  stratus: ['verticalDevelopment', 'sheetUniformity', 'erosionScale'],
+  altostratus: ['verticalDevelopment', 'sheetUniformity', 'erosionScale'],
+  nimbostratus: ['verticalDevelopment', 'sheetUniformity', 'erosionScale'],
+  cirrostratus: ['verticalDevelopment', 'sheetUniformity', 'fiberStrength', 'erosionScale'],
+  stratocumulus: ['cellScale', 'cellStrength', 'sheetUniformity', 'erosionScale'],
+  altocumulus: ['cellScale', 'cellStrength', 'sheetUniformity', 'erosionScale'],
+  cirrocumulus: ['cellScale', 'cellStrength', 'sheetUniformity', 'erosionScale'],
+  cirrus: ['fiberStrength', 'fiberAngleDeg', 'cellScale', 'erosionScale'],
+};
 
 function helpMark(tip: string): HTMLSpanElement {
   const mark = document.createElement('span');
@@ -49,6 +82,8 @@ export function createGui(
   let bodyIdToOpen: string | null = null;
   const localizedFolders: LocalizedFolder[] = [];
   const genusControllers: Controller[] = [];
+  const morphologyModeControllers: Controller[] = [];
+  const genusMorphologyChanges = new Map<string, GenusMorphologyChange>();
   const debugModes = ['Final', 'Support', 'AfterShape', 'FinalDensity', 'Weather', 'DensityCoverage', 'HighWeather', 'HighBand', 'HighDensity'] as const;
   const presetNames = Object.values(CLOUD_PRESET_OPTIONS);
   let guiMode: GuiMode = typeof localStorage !== 'undefined' && localStorage.getItem('cloud-sculpt-gui-mode') === 'advanced'
@@ -269,11 +304,13 @@ export function createGui(
 
   const advancedFolders = [alignment, high, weather, sculpt, sun, post, hpLighting, quality];
   let advancedBodyFolders: GUI[] = [];
+  let basicBodyMorphologyFolders: GUI[] = [];
   let bodyLocalizedFolders: LocalizedFolder[] = [];
   const applyMode = (): void => {
     const isBasic = guiMode === 'basic';
     for (const folder of advancedFolders) folder.show(!isBasic);
     for (const folder of advancedBodyFolders) folder.show(!isBasic);
+    for (const folder of basicBodyMorphologyFolders) folder.show(isBasic);
     modeSelect.value = guiMode;
   };
 
@@ -311,6 +348,9 @@ export function createGui(
           : CLOUD_GENERA;
       controller.options(cloudGenusOptions(genera));
     });
+    for (const controller of morphologyModeControllers) {
+      controller.options(genusMorphologyChangeOptions());
+    }
     debugController.options(debugModeOptions(debugModes));
 
     for (const controller of gui.controllersRecursive()) {
@@ -321,6 +361,7 @@ export function createGui(
         if (child.classList.contains('gui-help')) child.remove();
       }
       controller.$name.appendChild(helpMark(tip));
+      controller.updateDisplay();
     }
     for (const item of [...localizedFolders, ...bodyLocalizedFolders]) {
       const tip = folderTip(item.key);
@@ -355,8 +396,10 @@ export function createGui(
     for (const folder of bodyFolders) folder.destroy();
     bodyFolders = [];
     advancedBodyFolders = [];
+    basicBodyMorphologyFolders = [];
     bodyLocalizedFolders = [];
     genusControllers.length = 0;
+    morphologyModeControllers.length = 0;
 
     const activeBodies = bodyStore.active();
     const selectedBody = activeBodies.find((body) => body.id === selectedBodyId)
@@ -376,13 +419,32 @@ export function createGui(
         : body.isLocal
           ? (['cumulonimbus'] as const)
           : CLOUD_GENERA;
-      const genusController = folder.add(body, 'genus', cloudGenusOptions(genera))
-        .onChange(() => {
+      const bodyAuthoring = {
+        genus: body.genus,
+        genusMorphologyChange: genusMorphologyChanges.get(body.id) ?? ('load-defaults' as GenusMorphologyChange),
+        get morphologyStatus(): string {
+          return morphologyStatusLabel(body.morphologyIsDefault);
+        },
+      };
+      const genusController = folder.add(bodyAuthoring, 'genus', cloudGenusOptions(genera))
+        .onChange((value: CloudGenus) => {
+          body.setGenus(value, bodyAuthoring.genusMorphologyChange);
+          bodyAuthoring.genus = body.genus;
           folder.title(bodyTitle(body, index));
           bodyIdToOpen = body.id;
           refreshCloudBodies();
         });
       genusControllers.push(genusController);
+      if (genera.length > 1) {
+        const morphologyModeController = folder.add(
+          bodyAuthoring,
+          'genusMorphologyChange',
+          genusMorphologyChangeOptions(),
+        ).onChange((value: GenusMorphologyChange) => {
+          genusMorphologyChanges.set(body.id, value);
+        });
+        morphologyModeControllers.push(morphologyModeController);
+      }
       folder.add(body, 'placementLocked');
       if (!body.isHighSheet) folder.add(body, 'cumulusDevelopment', 0, 1, 0.01);
       folder.add(body, 'baseKm', 0.2, 14, 0.05);
@@ -409,6 +471,36 @@ export function createGui(
           folder.add(body, 'feather', 0.01, 0.95, 0.01);
         }
       }
+
+      const morphologyActions = {
+        resetMorphology: () => {
+          body.resetMorphology();
+          selectBody(body);
+          bodyIdToOpen = body.id;
+          refreshCloudBodies();
+        },
+      };
+      const addMorphologyControls = (target: GUI, fields: readonly MorphologyField[]): void => {
+        for (const field of fields) {
+          const [min, max, step] = MORPHOLOGY_RANGES[field];
+          target.add(body.morphology, field, min, max, step);
+        }
+      };
+
+      const basicMorphologyFolder = folder.addFolder(folderLabel('bodyMorphology'));
+      bodyLocalizedFolders.push({ gui: basicMorphologyFolder, key: 'bodyMorphology' });
+      basicBodyMorphologyFolders.push(basicMorphologyFolder);
+      basicMorphologyFolder.add(bodyAuthoring, 'morphologyStatus').disable().listen();
+      addMorphologyControls(basicMorphologyFolder, BASIC_MORPHOLOGY_FIELDS[body.genus]);
+      basicMorphologyFolder.add(morphologyActions, 'resetMorphology');
+
+      const advancedMorphologyFolder = folder.addFolder(folderLabel('bodyMorphologyAdvanced'));
+      bodyLocalizedFolders.push({ gui: advancedMorphologyFolder, key: 'bodyMorphologyAdvanced' });
+      advancedBodyFolders.push(advancedMorphologyFolder);
+      advancedMorphologyFolder.add(bodyAuthoring, 'morphologyStatus').disable().listen();
+      addMorphologyControls(advancedMorphologyFolder, CLOUD_MORPHOLOGY_FIELDS);
+      advancedMorphologyFolder.add(morphologyActions, 'resetMorphology');
+
       if (body.supportsRuntimeControls) {
         const motionFolder = folder.addFolder(folderLabel('bodyMotion'));
         bodyLocalizedFolders.push({ gui: motionFolder, key: 'bodyMotion' });
@@ -469,6 +561,11 @@ export function createGui(
     applyLanguage();
     applyMode();
   };
+
+  bodyStore.onSnapshotRestored(() => {
+    selectedBodyId = null;
+    refreshCloudBodies();
+  });
 
   modeSelect.addEventListener('change', () => {
     guiMode = modeSelect.value as GuiMode;

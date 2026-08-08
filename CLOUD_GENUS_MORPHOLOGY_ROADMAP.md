@@ -555,6 +555,8 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 
 ## 14. 阶段 8：Preset 与 GUI 收口
 
+> 状态：**已完成**（2026-08-08）。本阶段只收口作者界面、preset 与 snapshot 刷新语义；没有把阶段 6 的卷云视觉实验标记为通过。
+
 形态算法稳定前，不把 8 个 raw 参数全部暴露给普通 GUI。
 
 ### 14.1 普通模式
@@ -572,19 +574,19 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 
 ### 14.2 高级模式
 
-- [ ] 可查看全部 8 个 recipe 值；
-- [ ] 字段提供中英文说明；
-- [ ] 显示“默认配方/已自定义”状态；
-- [ ] 提供“重置当前云属形态”操作；
-- [ ] 切换 genus 时明确是加载默认配方还是保留自定义值；
-- [ ] snapshot 导入后刷新控制器但不重置配方。
+- [x] 可查看全部 8 个 recipe 值；
+- [x] 字段提供中英文说明；
+- [x] 显示“默认配方/已自定义”状态；
+- [x] 提供“重置当前云属形态”操作；
+- [x] 切换 genus 时明确是加载默认配方还是保留自定义值；
+- [x] snapshot 导入后刷新控制器但不重置配方。
 
 ### 14.3 Preset
 
-- [ ] 每个 canonical genus 至少有一个验证 preset；
-- [ ] 场景 preset 可覆盖 genus 默认配方，但必须显式记录差异；
-- [ ] preset 不直接写 GPU offset；
-- [ ] preset 应操作 CloudBody，而不是重新引入全局 type/slot adapter。
+- [x] 每个 canonical genus 至少有一个验证 preset；
+- [x] 场景 preset 可通过带 `note` 的 `morphologyOverride` 覆盖 genus 默认配方并显式记录差异；
+- [x] preset 不直接写 GPU offset；
+- [x] preset 应操作 CloudBody，而不是重新引入全局 type/slot adapter。
 
 ### 验收
 
@@ -721,7 +723,7 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 - [ ] 阶段 5：蜂窝块状家族；
 - [ ] 阶段 6：纤维状家族（未完成，按用户决定暂时跳过）；
 - [x] 阶段 7：特殊路径语义收口；
-- [ ] 阶段 8：Preset 与 GUI 收口；
+- [x] 阶段 8：Preset 与 GUI 收口；
 - [ ] 阶段 9：十云属最终校准。
 
 ## 20. 下一步

@@ -26,6 +26,8 @@ const UI = {
 } as const;
 
 const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
+  bodyMorphology: { label: copy('Genus Shape', '云属形态'), tip: copy('The most useful artistic controls for the currently selected cloud genus.', '当前云属最常用且确实生效的艺术控制。') },
+  bodyMorphologyAdvanced: { label: copy('Genus Recipe (8 values)', '云属配方（8 项）'), tip: copy('The complete morphology recipe stored by this cloud body and uploaded to the GPU.', '该云体保存并上传到 GPU 的完整形态配方。') },
   bodyMotion: { label: copy('Motion', '运动'), tip: copy('Independent horizontal transport and internal density variation for this volume body.', '该体积云独立的水平移动与内部密度变化。') },
   bodyLifecycle: { label: copy('Lifecycle', '生命周期'), tip: copy('Optional formation, mature, and dissipation timing for this volume body.', '该体积云可选的生成、成熟与消散时间。') },
   cloudBodies: { label: copy('Cloud Bodies', '云体'), tip: copy('Add, duplicate, remove, and edit independent cloud objects.', '添加、复制、删除并编辑独立云体。') },
@@ -52,6 +54,17 @@ const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
 };
 
 const PARAMETERS: Record<string, ParameterCopy> = {
+  morphologyStatus: parameter('Recipe Status', '配方状态', 'Shows whether all eight values still match this genus default recipe.', '显示全部八项数值是否仍与当前云属默认配方一致。'),
+  genusMorphologyChange: parameter('On Genus Change', '切换云属时', 'Choose whether changing genus loads its defaults or carries the current custom values across.', '选择切换云属时加载新云属默认值，还是沿用当前自定义数值。'),
+  resetMorphology: parameter('Reset Genus Shape', '重置当前云属形态', 'Restores all eight morphology values to the defaults of the current genus.', '将八项形态数值恢复为当前云属的默认配方。'),
+  verticalDevelopment: parameter('Vertical Development', '垂直发展', 'Controls the authored vertical thickness or convective development of this genus.', '控制该云属的垂直厚度或对流发展程度。'),
+  cellScale: parameter('Cell / Feature Scale', '单体 / 特征尺度', 'Scales cellular elements or the width of fiber features; larger values make broader structures.', '缩放胞状单体或纤维宽度；数值越大，结构越宽。'),
+  cellStrength: parameter('Cell Strength', '单体强度', 'Controls how strongly cellular or cauliflower structure replaces the compatible base density.', '控制胞状或花椰菜结构替代兼容基础密度的强度。'),
+  sheetUniformity: parameter('Sheet Uniformity', '片层均匀度', 'Connects neighboring cells and moves sheet genera toward a continuous cloud curtain.', '连接相邻单体，并让片层云属趋向连续云幕。'),
+  fiberStrength: parameter('Fiber Strength', '纤维强度', 'Controls directional fibrous structure for genera that use it.', '控制会使用纤维结构的云属中的方向性丝缕强度。'),
+  fiberAngleDeg: parameter('Fiber Direction (°)', '纤维方向（°）', 'Rotates internal fibers independently of the cloud body bounds.', '独立于云体边界旋转内部纤维方向。'),
+  anvilStrength: parameter('Anvil Strength', '砧云强度', 'Expands the upper footprint of cumulonimbus; other genera intentionally ignore it.', '扩展积雨云上部砧状结构；其他云属会明确忽略该值。'),
+  erosionScale: parameter('Erosion Scale', '侵蚀尺度', 'Adjusts genus-specific breakup and edge erosion without replacing the global detail amount.', '调整云属特有的破碎和边缘侵蚀，不替代全局细节量。'),
   path: parameter('Render Path', '渲染路径', 'Renderer implementation used by this cloud body; genus recipe meanings stay consistent across paths.', '该云体使用的渲染实现；不同路径仍共享一致的云属配方语义。'),
   windDeg: parameter('Body Wind Direction (°)', '单体风向（°）', 'Direction in which this cloud body is transported.', '这个云体整体移动的方向。'),
   windSpeedMps: parameter('Body Wind Speed (m/s)', '单体风速（m/s）', 'Horizontal transport speed of this cloud body.', '这个云体整体水平移动的速度。'),
@@ -232,12 +245,31 @@ const RENDER_PATHS: Record<string, Copy> = {
   'high-sheet': copy('High Sheet Ac / As', '高空薄层高积云 / 高层云'),
 };
 
+const MORPHOLOGY_STATUS: Record<string, Copy> = {
+  default: copy('Default recipe', '默认配方'),
+  custom: copy('Customized', '已自定义'),
+};
+
+const GENUS_MORPHOLOGY_CHANGES: Record<string, Copy> = {
+  'load-defaults': copy('Load new genus defaults', '加载新云属默认配方'),
+  'preserve-custom': copy('Preserve current values', '保留当前自定义数值'),
+};
+
 const PRESETS: Record<string, Copy> = {
   default: copy('Default', '默认'),
   'side-cu': copy('Side Cumulus', '侧视积云'),
   'oblique-tcu': copy('Oblique Towering Cumulus', '斜视浓积云'),
   'oblique-cb': copy('Oblique Cumulonimbus', '斜视积雨云'),
   'top-density': copy('Top Density', '俯视密度'),
+  'cirrus-side': copy('Cirrus Side', '侧视卷云'),
+  'cirrus-oblique': copy('Cirrus Oblique', '斜视卷云'),
+  'cirrus-top-density': copy('Cirrus Top Density', '卷云俯视密度'),
+  'genus-stratus': copy('Validate Stratus', '验证层云'),
+  'genus-altocumulus': copy('Validate Altocumulus', '验证高积云'),
+  'genus-altostratus': copy('Validate Altostratus', '验证高层云'),
+  'genus-nimbostratus': copy('Validate Nimbostratus', '验证雨层云'),
+  'genus-cirrostratus': copy('Validate Cirrostratus', '验证卷层云'),
+  'genus-cirrocumulus': copy('Validate Cirrocumulus', '验证卷积云'),
   'detail-off': copy('Detail Off', '关闭细节'),
   'stratocumulus-sheet': copy('Stratocumulus Sheet', '层积云片层'),
   'hp-ocean-day': copy('HP Ocean Day', 'HP 海洋白天'),
@@ -317,6 +349,16 @@ export function cloudGenusLabel(value: string): string {
 
 export function cloudRenderPathLabel(value: string): string {
   return text(RENDER_PATHS[value], value);
+}
+
+export function morphologyStatusLabel(isDefault: boolean): string {
+  return text(MORPHOLOGY_STATUS[isDefault ? 'default' : 'custom'], isDefault ? 'Default recipe' : 'Customized');
+}
+
+export function genusMorphologyChangeOptions(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(GENUS_MORPHOLOGY_CHANGES).map(([value, label]) => [text(label, value), value]),
+  );
 }
 
 export function cloudPresetOptions(values: readonly string[]): Record<string, string> {

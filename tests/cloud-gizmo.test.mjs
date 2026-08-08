@@ -95,9 +95,11 @@ test('GUI selection and canvas pointer arbitration stay wired together', async (
 });
 
 test('GUI and main apply presets directly to the object collection with explicit genus placement', async () => {
-  const [guiSource, mainSource] = await Promise.all([
+  const [guiSource, mainSource, bodiesSource, i18nSource] = await Promise.all([
     readFile(new URL('../src/gui.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/main.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/cloudBodies.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/i18n.ts', import.meta.url), 'utf8'),
   ]);
   assert.doesNotMatch(guiSource, /replaceFromLegacyParams/);
   assert.match(mainSource, /applyCloudBodyPreset\(bodyStore, currentPreset\)/);
@@ -117,6 +119,20 @@ test('GUI and main apply presets directly to the object collection with explicit
   assert.match(mainSource, /query\.get\(`bodyDensity\$\{i\}`\)/);
   assert.match(mainSource, /query\.get\('local'\)/);
   assert.match(mainSource, /bodyStore\.add\('local-volume', true\)/);
+  assert.match(guiSource, /BASIC_MORPHOLOGY_FIELDS/);
+  assert.match(guiSource, /addMorphologyControls\(advancedMorphologyFolder, CLOUD_MORPHOLOGY_FIELDS\)/);
+  assert.match(guiSource, /body\.setGenus\(value, bodyAuthoring\.genusMorphologyChange\)/);
+  assert.match(guiSource, /body\.resetMorphology\(\)/);
+  assert.match(guiSource, /morphologyStatusLabel\(body\.morphologyIsDefault\)/);
+  assert.match(guiSource, /bodyStore\.onSnapshotRestored/);
+  assert.match(bodiesSource, /export const CLOUD_MORPHOLOGY_FIELDS/);
+  assert.match(bodiesSource, /morphologyChange === 'preserve-custom'/);
+  for (const field of [
+    'verticalDevelopment', 'cellScale', 'cellStrength', 'sheetUniformity',
+    'fiberStrength', 'fiberAngleDeg', 'anvilStrength', 'erosionScale',
+  ]) {
+    assert.match(i18nSource, new RegExp(`${field}: parameter\\(`));
+  }
   assert.doesNotMatch(guiSource, /high\.add\(params, '(?:highBaseKm|highTopKm|highDensityMultiplier)'/);
   assert.doesNotMatch(guiSource, /highCell\.add\(params, 'highWispStrength'/);
 });

@@ -210,6 +210,48 @@ test('cloud bodies own independent genus morphology recipes that survive snapsho
   assert.equal(snapshot.bodies[0].morphology.fiberAngleDeg, 42);
 });
 
+test('morphology authoring reports defaults, resets recipes, and makes genus switching explicit', () => {
+  const store = CloudBodyStore.createDefault();
+  const primary = store.active()[0];
+  assert.equal(primary.morphologyIsDefault, true);
+
+  primary.morphology.cellScale = 1.37;
+  primary.morphology.cellStrength = 0.42;
+  assert.equal(primary.morphologyIsDefault, false);
+
+  primary.setGenus('altocumulus', 'preserve-custom');
+  assert.equal(primary.genus, 'altocumulus');
+  assert.equal(primary.morphology.cellScale, 1.37);
+  assert.equal(primary.morphology.cellStrength, 0.42);
+  assert.equal(primary.morphologyIsDefault, false);
+
+  primary.setGenus('stratus', 'load-defaults');
+  assert.deepEqual(primary.morphology, createCloudMorphologyRecipe('stratus'));
+  primary.morphology.erosionScale = 1.8;
+  primary.resetMorphology();
+  assert.deepEqual(primary.morphology, createCloudMorphologyRecipe('stratus'));
+  assert.equal(primary.morphologyIsDefault, true);
+});
+
+test('snapshot restore notifies authoring views without resetting custom morphology', () => {
+  const source = CloudBodyStore.createDefault();
+  source.active()[0].genus = 'altostratus';
+  source.active()[0].morphology.sheetUniformity = 0.73;
+  const snapshot = source.exportSnapshot();
+
+  const target = CloudBodyStore.createDefault();
+  let restoreNotifications = 0;
+  const unsubscribe = target.onSnapshotRestored(() => restoreNotifications++);
+  target.restoreSnapshot(snapshot);
+
+  assert.equal(restoreNotifications, 1);
+  assert.equal(target.active()[0].morphology.sheetUniformity, 0.73);
+  assert.equal(target.active()[0].morphologyIsDefault, false);
+  unsubscribe();
+  target.restoreSnapshot(snapshot);
+  assert.equal(restoreNotifications, 1);
+});
+
 test('version two snapshots receive morphology defaults from their genus', () => {
   const source = CloudBodyStore.createDefault().exportSnapshot();
   const legacy = structuredClone(source);

@@ -18,6 +18,19 @@ export interface CloudMorphologyRecipe {
   erosionScale: number;
 }
 
+export type GenusMorphologyChange = 'load-defaults' | 'preserve-custom';
+
+export const CLOUD_MORPHOLOGY_FIELDS = [
+  'verticalDevelopment',
+  'cellScale',
+  'cellStrength',
+  'sheetUniformity',
+  'fiberStrength',
+  'fiberAngleDeg',
+  'anvilStrength',
+  'erosionScale',
+] as const satisfies readonly (keyof CloudMorphologyRecipe)[];
+
 const GENUS_MORPHOLOGY_DEFAULTS: Readonly<Record<CloudGenus, Readonly<CloudMorphologyRecipe>>> = {
   cumulus: { verticalDevelopment: 0.55, cellScale: 1, cellStrength: 0.8, sheetUniformity: 0.1, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 1 },
   stratus: { verticalDevelopment: 0.1, cellScale: 2, cellStrength: 0.05, sheetUniformity: 0.95, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.35 },
@@ -33,6 +46,14 @@ const GENUS_MORPHOLOGY_DEFAULTS: Readonly<Record<CloudGenus, Readonly<CloudMorph
 
 export function createCloudMorphologyRecipe(genus: CloudGenus): CloudMorphologyRecipe {
   return { ...GENUS_MORPHOLOGY_DEFAULTS[genus] };
+}
+
+export function isDefaultCloudMorphology(
+  genus: CloudGenus,
+  morphology: Readonly<CloudMorphologyRecipe>,
+): boolean {
+  const defaults = GENUS_MORPHOLOGY_DEFAULTS[genus];
+  return CLOUD_MORPHOLOGY_FIELDS.every((field) => Math.abs(morphology[field] - defaults[field]) <= 1e-6);
 }
 
 export interface CloudBodySnapshot {
@@ -119,24 +140,13 @@ const SNAPSHOT_NUMBER_FIELDS = [
   'lifePeak',
   'lifeStart',
 ] as const satisfies readonly (keyof CloudBodySnapshot)[];
-const MORPHOLOGY_NUMBER_FIELDS = [
-  'verticalDevelopment',
-  'cellScale',
-  'cellStrength',
-  'sheetUniformity',
-  'fiberStrength',
-  'fiberAngleDeg',
-  'anvilStrength',
-  'erosionScale',
-] as const satisfies readonly (keyof CloudMorphologyRecipe)[];
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
 function parseCloudMorphologyRecipe(value: unknown, bodyId: string): CloudMorphologyRecipe {
   if (!isRecord(value)) throw new Error(`Cloud body ${bodyId} has an invalid morphology recipe.`);
-  for (const field of MORPHOLOGY_NUMBER_FIELDS) {
+  for (const field of CLOUD_MORPHOLOGY_FIELDS) {
     if (typeof value[field] !== 'number' || !Number.isFinite(value[field])) {
       throw new Error(`Cloud body ${bodyId} has an invalid morphology.${field} value.`);
     }
@@ -333,12 +343,29 @@ export class CloudBody {
   }
 
   set genus(value: CloudGenus) {
+    this.setGenus(value, 'load-defaults');
+  }
+
+  setGenus(value: CloudGenus, morphologyChange: GenusMorphologyChange = 'load-defaults'): void {
     if (this.isHighSheet && !isHighCloudGenus(value)) return;
     if (this.isLocal && value !== 'cumulonimbus') return;
     const changed = this.genusValue !== value;
+    const preservedMorphology = morphologyChange === 'preserve-custom'
+      ? { ...this.morphology }
+      : undefined;
     this.genusValue = value;
-    if (changed) this.morphology = createCloudMorphologyRecipe(value);
+    if (changed) {
+      this.morphology = preservedMorphology ?? createCloudMorphologyRecipe(value);
+    }
     if (changed && !this.placementLocked) this.applyGenusDefaults();
+  }
+
+  get morphologyIsDefault(): boolean {
+    return isDefaultCloudMorphology(this.genus, this.morphology);
+  }
+
+  resetMorphology(): void {
+    this.morphology = createCloudMorphologyRecipe(this.genus);
   }
 
   get placementLocked(): boolean {
@@ -604,6 +631,7 @@ export class CloudBody {
 export class CloudBodyStore {
   private bodyList: CloudBody[] = [];
   private nextBodyNumber = 1;
+  private readonly snapshotRestoreListeners = new Set<() => void>();
 
   constructor(private readonly currentSceneTime: () => number = () => 0) {}
 
@@ -700,6 +728,12 @@ export class CloudBodyStore {
       const body = new CloudBody(bodySnapshot, this.currentSceneTime);
       this.bodyList.push(body);
     }
+    for (const listener of this.snapshotRestoreListeners) listener();
+  }
+
+  onSnapshotRestored(listener: () => void): () => void {
+    this.snapshotRestoreListeners.add(listener);
+    return () => this.snapshotRestoreListeners.delete(listener);
   }
 
   get activeCount(): number {

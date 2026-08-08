@@ -98,7 +98,7 @@ test('the independent high-cloud path selects Ac or As by genus, not a type slid
 
 test('the interactive entry exposes general and multi-angle cirrus validation presets', () => {
   const presets = Object.values(presetsModule.CLOUD_PRESETS);
-  assert.equal(presets.length, 11);
+  assert.equal(presets.length, 17);
   for (const preset of presets) {
     assert.equal('densityModel' in preset, false);
     assert.equal(preset.version, 1);
@@ -112,6 +112,52 @@ test('the interactive entry exposes general and multi-angle cirrus validation pr
   assert.equal(cirrus.bodies[0].densityScale, 0.08);
   assert.equal(cirrus.bodies[0].detailAmount, 0.75);
   assert.equal(cirrus.bodies[0].bounded, true);
+});
+
+test('each canonical genus owns a named validation preset with canonical recipe semantics', () => {
+  const validationPresets = Object.values(presetsModule.CLOUD_PRESETS)
+    .filter((preset) => preset.validationGenus !== undefined);
+  assert.deepEqual(
+    [...new Set(validationPresets.map((preset) => preset.validationGenus))].sort(),
+    [...paramsModule.CLOUD_GENERA].sort(),
+  );
+
+  for (const preset of validationPresets) {
+    assert.equal(preset.genus, preset.validationGenus);
+    if (preset.morphologyOverride !== undefined) {
+      assert.ok(preset.morphologyOverride.note.trim().length > 0);
+    }
+    const store = bodiesModule.CloudBodyStore.createDefault();
+    presetsModule.applyCloudBodyPreset(store, preset);
+    const expected = {
+      ...bodiesModule.createCloudMorphologyRecipe(preset.genus),
+      ...preset.morphologyOverride?.values,
+    };
+    assert.deepEqual(store.bodies[0].morphology, expected);
+  }
+});
+
+test('preset morphology overrides are applied through CloudBody and carry an explicit note', () => {
+  const preset = {
+    ...presetsModule.CLOUD_PRESETS['side-cu'],
+    morphologyOverride: {
+      values: { cellScale: 1.45, cellStrength: 0.62 },
+      note: 'Stage 8 authoring contract test.',
+    },
+  };
+  const store = bodiesModule.CloudBodyStore.createDefault();
+  presetsModule.applyCloudBodyPreset(store, preset);
+  assert.equal(store.bodies[0].morphology.cellScale, 1.45);
+  assert.equal(store.bodies[0].morphology.cellStrength, 0.62);
+  assert.equal(store.bodies[0].morphologyIsDefault, false);
+
+  assert.throws(
+    () => presetsModule.applyCloudBodyPreset(bodiesModule.CloudBodyStore.createDefault(), {
+      ...preset,
+      morphologyOverride: { values: { cellScale: 1.2 }, note: '   ' },
+    }),
+    /must explain its morphology override/,
+  );
 });
 
 test('stratocumulus preset is a shallow connected deck with softened erosion', () => {

@@ -26,6 +26,7 @@ struct Uniforms {
   hero2: vec4f,
   quality: vec4f,
   optical: vec4f,
+  // debug mode / detail-off bit / light steps / packed volume-body count
   debugFlags: vec4u,
   hpLow0: vec4f,
   hpLow1: vec4f,

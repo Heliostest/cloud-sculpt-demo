@@ -550,3 +550,12 @@ export function applyCloudBodyPreset(store: CloudBodyStore, preset: CloudPreset)
     store.add('volume', true);
   }
 }
+
+export function applyVolumeBodyCount(store: CloudBodyStore, requestedCount: number): number {
+  const volumeBodies = store.bodies.filter((body) => body.path === 'volume');
+  const bodyCount = Math.max(1, Math.min(8, Math.round(requestedCount)));
+  volumeBodies.forEach((body, index) => {
+    body.enabled = index < bodyCount;
+  });
+  return Math.min(bodyCount, volumeBodies.length);
+}

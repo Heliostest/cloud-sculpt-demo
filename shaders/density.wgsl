@@ -1657,6 +1657,11 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
     return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
   }
   let w = sampleWeather(worldPos);
+  // Every family eventually rejects samples outside its authored height band.
+  // Cache the shared altitude for static bodies before body-local transforms,
+  // weather sampling and genus dispatch. Moving bodies repeat the exact test
+  // after transport because their spherical altitude can change slightly.
+  let sampleAltitude = altitude(worldPos);
   var bestSupport = 0.0;
   var bestAfter = 0.0;
   var bestDens = 0.0;
@@ -1664,13 +1669,23 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
   var bestH = 0.0;
   var bestDensityCoverage = 0.0;
 
+  let volumeBodyCount = min(U.debugFlags.w, 8u);
   for (var layerIndex = 0u; layerIndex < 8u; layerIndex += 1u) {
+    if (layerIndex >= volumeBodyCount) {
+      break;
+    }
     let layer = B.layers[layerIndex];
-    if (layer.w <= 0.5) {
+    if (layer.w <= 0.5
+        || layer.z <= 1e-4
+        || layer.y <= layer.x) {
+      continue;
+    }
+    let motion = B.layerMotion[layerIndex];
+    let bodyMoves = motion.x != 0.0 || motion.y != 0.0 || motion.z != 0.0;
+    if (!bodyMoves && (sampleAltitude < layer.x || sampleAltitude > layer.y)) {
       continue;
     }
     let shapeDetail = B.layerShapeDetails[layerIndex];
-    let motion = B.layerMotion[layerIndex];
     let bodyTime = max(0.0, U.time - B.layerBoundTransforms[layerIndex].w);
     let lifeScale = bodyLifecycleScale(motion.w, B.layerLife[layerIndex], shapeDetail.w, bodyTime);
     if (lifeScale <= 0.0001) {
@@ -1685,11 +1700,22 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
       0.0,
       (cos(morphPhase) - 1.0) * morphAmount,
     );
-    let bodyWeatherUv = weatherUv(densityPos);
-    if (!isInsideWeatherMap(bodyWeatherUv)) {
-      continue;
+    if (bodyMoves) {
+      let transportedAltitude = altitude(densityPos);
+      if (transportedAltitude < layer.x || transportedAltitude > layer.y) {
+        continue;
+      }
     }
-    let bodyWeather = sampleWeather(densityPos);
+    // Static bodies share the already sampled world-space weather value.
+    // Moving/morphing bodies retain their transported weather coordinates.
+    var bodyWeather = w;
+    if (bodyMoves) {
+      let bodyWeatherUv = weatherUv(densityPos);
+      if (!isInsideWeatherMap(bodyWeatherUv)) {
+        continue;
+      }
+      bodyWeather = sampleWeather(densityPos);
+    }
     let horizontalMask = layerHorizontalMask(
       transportedPos,
       B.layerBounds[layerIndex],

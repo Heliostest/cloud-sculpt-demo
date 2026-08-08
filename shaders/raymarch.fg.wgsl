@@ -38,7 +38,10 @@ fn lowCloudLightOptics(pos: vec3f, dens0: f32) -> vec2f {
     if (i >= steps) { break; }
     t += stepLen;
     let p = pos + sun * t;
-    let s = evaluateLowCloud(p, stepLen, false);
+    // Shadow rays only need the broad optical-depth field. Using the existing
+    // simple morphology path skips detail erosion and secondary family octaves
+    // while keeping coverage, height profiles and genus silhouettes intact.
+    let s = evaluateLowCloud(p, stepLen, true);
     tau += s.density * U.optical.y * stepLen;
     stepLen *= 1.6;
   }
@@ -150,7 +153,9 @@ fn marchHighCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
 fn marchLowCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
   let topAlt = U.optical.w;
   var baseAlt = topAlt;
+  let volumeBodyCount = min(U.debugFlags.w, 8u);
   for (var layerIndex = 0u; layerIndex < 8u; layerIndex += 1u) {
+    if (layerIndex >= volumeBodyCount) { break; }
     let layer = B.layers[layerIndex];
     if (layer.w > 0.5) { baseAlt = min(baseAlt, layer.x); }
   }

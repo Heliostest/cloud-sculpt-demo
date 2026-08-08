@@ -192,6 +192,18 @@ test('the eight-body stress preset fills only canonical volume paths', () => {
   assert.equal(store.bodies.some((body) => body.path === 'high-sheet'), false);
 });
 
+test('the performance harness enables a deterministic prefix of volume bodies', () => {
+  const store = bodiesModule.CloudBodyStore.createDefault();
+  presetsModule.applyCloudBodyPreset(store, presetsModule.CLOUD_PRESETS['eight-body-stress']);
+  assert.equal(presetsModule.applyVolumeBodyCount(store, 4), 4);
+  assert.equal(store.bodies.filter((body) => body.path === 'volume' && body.enabled).length, 4);
+  assert.equal(store.bodies.length, 8);
+  assert.equal(presetsModule.applyVolumeBodyCount(store, 99), 8);
+  assert.equal(store.bodies.filter((body) => body.path === 'volume' && body.enabled).length, 8);
+  assert.equal(presetsModule.applyVolumeBodyCount(store, -2), 1);
+  assert.equal(store.bodies.filter((body) => body.path === 'volume' && body.enabled).length, 1);
+});
+
 test('stratocumulus preset is a shallow connected deck with softened erosion', () => {
   const params = paramsModule.createDefaultParams();
   const store = bodiesModule.CloudBodyStore.createDefault();

@@ -6,6 +6,7 @@ import { createRenderer, type CameraState } from './renderer';
 import {
   applyCloudBodyPreset,
   applyCloudPreset,
+  applyVolumeBodyCount,
   CLOUD_PRESETS,
   resolvePresetRequest,
   type CloudPreset,
@@ -164,6 +165,7 @@ function syncParameterDataset(params: DemoParams, cloudBodies: readonly CloudBod
   data.colorSaturation = String(params.colorSaturation);
   data.colorContrast = String(params.colorContrast);
   data.scStrength = String(params.scStrength);
+  data.volumeBodyCount = String(volumeBodies.length);
   data.layerGenera = volumeBodies.map((body) => body.genus).join(',');
   data.cumulusDevelopment = volumeBodies.map((body) => body.cumulusDevelopment).join(',');
   data.loCovCoverIntensity = String(params.loCovCoverIntensity);
@@ -232,6 +234,10 @@ async function main(): Promise<void> {
     }
   }
   const volumeBodies = bodyStore.bodies.filter((body) => body.path === 'volume');
+  const requestedBodyCount = Number(query.get('bodyCount'));
+  if (query.has('bodyCount') && Number.isFinite(requestedBodyCount)) {
+    applyVolumeBodyCount(bodyStore, requestedBodyCount);
+  }
   for (let i = 0; i < volumeBodies.length; i++) {
     const enabled = query.get(`enabled${i}`);
     if (enabled !== null) {

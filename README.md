@@ -42,6 +42,8 @@ HP 密度差异审计与渐进对齐计划：[`HP_DENSITY_ALIGNMENT_ROADMAP.md`]
 
 阶段 9 的固定证据位于 [`docs/evidence/genus-morphology/stage9-calibration/`](docs/evidence/genus-morphology/stage9-calibration/README.md)。验证 URL 支持 `view=side|oblique|top` 覆盖固定构图，也可用 `debug=Final|FinalDensity|Support|AfterShape` 检查形态分层。当前阶段 9 除 Ci 外已完成；Ci 仍按阶段 6 的用户决定保持未完成、暂时跳过。
 
+阶段 10 的多云体性能硬化记录位于 [`docs/evidence/genus-morphology/stage10-performance/`](docs/evidence/genus-morphology/stage10-performance/README.md)。`/?preset=eight-body-stress&validation=1&bodyCount=1|2|4|8` 可固定实际启用数量；运行时通过 `data-volume-body-count`、`data-gpu-sample-count` 与 `data-gpu-ms` 暴露验证状态和 timestamp-query 结果。
+
 每个 CloudBody 的“云属形态”在简洁模式仅显示当前 genus 相关的 2–4 项艺术控制；高级模式显示 snapshot 中完整的 8 项 recipe。界面会标记“默认配方/已自定义”，支持重置当前云属形态，并允许在切换 genus 前明确选择“加载新云属默认配方”或“保留当前自定义数值”。
 
 渲染结构固定为 `LowCloud + HighCloud` 两个 evaluator，没有密度模式选择器，`model` URL 参数也不再参与解析。最多八个 `volume` body 通过 genus dispatcher 作为十云属的 canonical 实现；`local-volume` 固定为复用同一 Cb morphology recipe 的局部 hero 路径，`high-sheet` 固定为复用 Ac/As cell、sheet 与 erosion 语义的远景/性能路径。GUI 会直接标注当前渲染路径，特殊路径不代表额外云属。TCu 继续由 `genus=cumulus` 与 `cumulusDevelopment=0..1` 表示。验证 URL 可用 `enabledN=0|1`、`boundedN=0|1` 和 `bodyDensityN=<value>` 隔离 canonical body；以 `local=1&enabled0=0` 隔离 local Cb，或以 `high=1&highGenus=altocumulus|altostratus&enabled0=0` 隔离 high-sheet。旧 `highType=0|1` 和 `cloudType` 仅保留为兼容适配器。HP 低云仍支持 `noiseMip`、`erosionMip`、`simple` 和 `detailFade` 对照，高云可用 `highThreshold`、`highViewAbsorption`、`highLightAbsorption` 和 `HighWeather` / `HighBand` / `HighDensity` 调试视图检查。

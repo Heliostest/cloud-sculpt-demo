@@ -424,6 +424,42 @@ test('each low-cloud layer sends its own genus and cumulus development to the de
   assert.doesNotMatch(packingSource, /params\.layers/);
 });
 
+test('multi-body density skips inactive altitude bands and uses simple light probes', () => {
+  const lowCloudStart = densitySource.indexOf('fn evaluateLowCloud(');
+  assert.ok(lowCloudStart >= 0, 'missing evaluateLowCloud');
+  const lowCloud = densitySource.slice(lowCloudStart);
+  const altitudeCache = lowCloud.indexOf('let sampleAltitude = altitude(worldPos);');
+  const layerLoop = lowCloud.indexOf('for (var layerIndex = 0u; layerIndex < 8u; layerIndex += 1u)');
+  const altitudeGuard = lowCloud.indexOf('sampleAltitude < layer.x');
+  const bodyWeatherSample = lowCloud.indexOf('sampleWeather(densityPos)');
+  assert.ok(altitudeCache >= 0 && altitudeCache < layerLoop, 'altitude must be cached once before the body loop');
+  assert.ok(altitudeGuard > layerLoop && altitudeGuard < bodyWeatherSample, 'vertical rejection must precede body texture work');
+  assert.match(lowCloud, /let bodyMoves = motion\.x != 0\.0 \|\| motion\.y != 0\.0 \|\| motion\.z != 0\.0;/);
+  assert.match(lowCloud, /if \(!bodyMoves && \(sampleAltitude < layer\.x \|\| sampleAltitude > layer\.y\)\) \{[\s\S]*let transportedAltitude = altitude\(densityPos\);[\s\S]*if \(transportedAltitude < layer\.x \|\| transportedAltitude > layer\.y\)/);
+  assert.match(lowCloud, /var bodyWeather = w;[\s\S]*if \(bodyMoves\) \{[\s\S]*bodyWeather = sampleWeather\(densityPos\);/);
+  assert.match(lowCloud, /let volumeBodyCount = min\(U\.debugFlags\.w, 8u\);/);
+  assert.match(lowCloud, /if \(layerIndex >= volumeBodyCount\) \{\s*break;/);
+  assert.match(rendererSource, /u32\[91\] = volumeBodies\.length;/);
+
+  const lightOptics = wgslFunctionSource('lowCloudLightOptics', '\nfn hpPhaseFunction');
+  assert.match(lightOptics, /evaluateLowCloud\(p, stepLen, true\)/);
+  assert.doesNotMatch(lightOptics, /evaluateLowCloud\(p, stepLen, false\)/);
+
+  const marchLow = wgslFunctionSource('marchLowCloud', '\nfn acesFitted');
+  assert.match(marchLow, /let volumeBodyCount = min\(U\.debugFlags\.w, 8u\);/);
+  assert.match(marchLow, /if \(layerIndex >= volumeBodyCount\) \{ break; \}/);
+
+  const stressBands = [
+    [400, 2800], [3000, 5500], [7000, 9000], [800, 2400],
+    [1000, 2200], [3500, 6000], [7500, 10000], [700, 9000],
+  ];
+  const activeAt = (altitudeM) => stressBands
+    .filter(([baseM, topM]) => altitudeM >= baseM && altitudeM <= topM).length;
+  const representativeCounts = [1000, 4000, 8000].map(activeAt);
+  assert.deepEqual(representativeCounts, [4, 3, 3]);
+  assert.ok(Math.max(...representativeCounts) <= stressBands.length / 2);
+});
+
 test('all ten cloud genera have explicit density evaluators behind one dispatcher', () => {
   const evaluatorNames = [
     'Cumulus', 'Stratus', 'Stratocumulus', 'Cumulonimbus', 'Altocumulus',
@@ -1115,7 +1151,8 @@ test('per-body motion transports the density domain and lifecycle scales density
   assert.match(densitySource, /let transportedPos = vec3f\(worldPos\.x - transport\.x/);
   assert.match(densitySource, /let densityPos = transportedPos \+ vec3f\(/);
   assert.match(densitySource, /layer\.z \* lifeScale,/);
-  assert.match(densitySource, /let bodyWeather = sampleWeather\(densityPos\);/);
+  assert.match(densitySource, /var bodyWeather = w;/);
+  assert.match(densitySource, /bodyWeather = sampleWeather\(densityPos\);/);
 });
 
 test('rotated elliptical bounds preserve global decks and feather local cloud edges', () => {

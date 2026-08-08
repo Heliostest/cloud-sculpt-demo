@@ -435,7 +435,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     u32[88] = DEBUG_MODE_INDEX[params.debugMode];
     u32[89] = params.detailOff ? 1 : 0;
     u32[90] = params.lightSteps;
-    u32[91] = 0;
+    u32[91] = volumeBodies.length;
 
     // hpLow0: densityThreshold, wispyReach, edgeSoftness, wispyTopHeight
     f32[92] = params.densityThreshold;

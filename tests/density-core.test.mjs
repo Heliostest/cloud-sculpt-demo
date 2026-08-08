@@ -322,6 +322,7 @@ function fiberDensityReference({
   height,
   fiberStrength,
   fiberSignal,
+  macroSupport = 1,
   erosionScale,
   tailSignal,
   recipe,
@@ -337,10 +338,15 @@ function fiberDensityReference({
     Math.min(1, Math.max(0, tailSignal)),
   );
   const breakupFactor = 1 + (tailMask - 1) * erosionAmount;
-  const fiberMask = ellipseSmoothstep(
-    0.38,
-    0.82,
+  const ridgeMask = ellipseSmoothstep(
+    0.48,
+    0.88,
     Math.min(1, Math.max(0, fiberSignal * breakupFactor)),
+  );
+  const fiberMask = ridgeMask * ellipseSmoothstep(
+    0.12,
+    0.82,
+    Math.min(1, Math.max(0, macroSupport)),
   );
   const fiberFactor = Math.min(
     recipe.valleyDensity + (recipe.peakDensity - recipe.valleyDensity) * fiberMask,
@@ -1068,7 +1074,7 @@ test('Sc, Ac, and Cc share body-local cells with ordered scale, connectivity, pr
   assert.equal(0.2 * simpleLod.detailWeight, 0, 'simple mode disables the Cc ripple');
 });
 
-test('Ci uses rotated body-local fibers with curl, branching, breakup, and a stable LOD fallback', () => {
+test('Ci uses sparse rotated-fBm support with curled body-local fibers and a stable LOD fallback', () => {
   const coordinate = densityWgslFunctionSource('bodyLocalFiberCoordinate', '\nfn evaluateFiberFamily');
   assert.match(coordinate, /recipe\.baseWidthMeters \* max\(context\.morphology0\.y, 0\.05\)/);
   assert.match(coordinate, /rotateMorphologyXZ\(\s*context\.bodyLocalMeters \/ fiberWidthMeters,\s*context\.morphology1\.y/);
@@ -1076,10 +1082,22 @@ test('Ci uses rotated body-local fibers with curl, branching, breakup, and a sta
   assert.match(coordinate, /max\(recipe\.verticalFrequency, 0\.05\)/);
   assert.match(coordinate, /max\(recipe\.crossFrequency, 0\.05\)/);
 
+  const macro = densityWgslFunctionSource('cirrusMacroFbm', '\nfn sheetMacroVariation');
+  assert.match(macro, /position \* vec2f\(0\.52, 1\.45\)/);
+  assert.match(macro, /point\.x \* 1\.6 - point\.y \* 1\.2/);
+  assert.match(macro, /point\.x \* 1\.2 \+ point\.y \* 1\.6/);
+  assert.match(macro, /if \(lod\.detailWeight > 1e-4\)/);
+  assert.equal((macro.match(/morphologyValueNoise2\(point\)/g) ?? []).length, 4);
+
   const family = densityWgslFunctionSource('evaluateFiberFamily', '\nfn evaluateCumulusDensity');
   assert.match(family, /let familyStrength = saturate\(recipe\.familyStrength \* context\.morphology1\.x\);/);
   assert.match(family, /if \(familyStrength <= 1e-5 \|\| compatibility\.density <= 0\.0\) \{\s*return compatibility;/);
   assert.match(family, /let curlWeight = saturate\(/);
+  assert.match(family, /let macroNoise = cirrusMacroFbm\(/);
+  assert.match(family, /let macroSupport = smoothstep\(0\.34, 0\.64, macroNoise\);/);
+  assert.match(family, /let flowNoise = morphologyValueNoise2\(/);
+  assert.match(family, /let flowOffset = \(flowNoise - 0\.5\) \* 1\.8 \* curlWeight;/);
+  assert.match(family, /coordinate \+ curl \+ vec3f\(0\.0, 0\.0, flowOffset\)/);
   assert.match(family, /let broadFiber = ridgeFiberCarrier\(/);
   assert.match(family, /if \(!context\.simpleMode && lod\.detailWeight > 1e-4\)/);
   assert.match(family, /recipe\.branchStrength[\s\S]*context\.detailAmount[\s\S]*lod\.detailWeight/);
@@ -1087,7 +1105,8 @@ test('Ci uses rotated body-local fibers with curl, branching, breakup, and a sta
   assert.match(family, /let forkDirection = select\(-1\.0, 1\.0, sin\(phase\.x \+ phase\.z\) >= 0\.0\);/);
   assert.match(family, /sin\(warpedCoordinate\.z \* 0\.33 \+ phase\.x\) \* 1\.15/);
   assert.match(family, /let breakupFactor = mix\(1\.0, tailMask, erosionAmount\);/);
-  assert.match(family, /let fiberMask = smoothstep\(\s*0\.38,\s*0\.82,/);
+  assert.match(family, /let ridgeMask = smoothstep\(\s*0\.48,\s*0\.88,/);
+  assert.match(family, /let fiberMask = ridgeMask \* smoothstep\(0\.12, 0\.82, macroSupport\);/);
   assert.match(family, /let fiberFactor = min\([\s\S]*1\.35/);
   assert.match(family, /return safeMorphBlend\(/);
   assert.doesNotMatch(family, /textureSample/);
@@ -1125,6 +1144,17 @@ test('Ci uses rotated body-local fibers with curl, branching, breakup, and a sta
     recipe,
     profile,
   }), 0);
+  assert.equal(fiberDensityReference({
+    compatibilityDensity,
+    height: 0.52,
+    fiberStrength: 1,
+    fiberSignal: 1,
+    macroSupport: 0,
+    erosionScale: 0,
+    tailSignal: 1,
+    recipe,
+    profile,
+  }), 0, 'macro support removes globally repeated fibers outside cirrus bands');
 
   for (let height = -0.1; height <= 1.1; height += 0.025) {
     for (let fiberSignal = 0; fiberSignal <= 1; fiberSignal += 0.1) {

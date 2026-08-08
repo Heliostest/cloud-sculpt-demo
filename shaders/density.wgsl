@@ -322,6 +322,68 @@ fn ridgeFiberCarrier(
   return smoothstep(0.32, 0.88, ridge);
 }
 
+fn morphologyHash21(position: vec2f) -> f32 {
+  return fract(sin(dot(position, vec2f(127.1, 311.7))) * 43758.5453);
+}
+
+fn morphologyValueNoise2(position: vec2f) -> f32 {
+  let cell = floor(position);
+  let local = fract(position);
+  let curve = local * local * (vec2f(3.0) - 2.0 * local);
+  let bottom = mix(
+    morphologyHash21(cell),
+    morphologyHash21(cell + vec2f(1.0, 0.0)),
+    curve.x,
+  );
+  let top = mix(
+    morphologyHash21(cell + vec2f(0.0, 1.0)),
+    morphologyHash21(cell + vec2f(1.0, 1.0)),
+    curve.x,
+  );
+  return mix(bottom, top, curve.y);
+}
+
+fn cirrusMacroFbm(
+  position: vec2f,
+  phase: vec2f,
+  lod: MorphologyLod,
+) -> f32 {
+  // Match the distant high-cloud construction used by WaterThreeJS: stretch
+  // one axis before a rotated fBm so octave boundaries cannot line up into a
+  // comb. Two broad octaves survive probe/light and far samples; the last two
+  // only refine nearby silhouettes.
+  let macroFrequency = mix(0.72, 1.0, lod.detailWeight);
+  var point = position * vec2f(0.52, 1.45) * macroFrequency
+    + phase * vec2f(3.1, 4.7);
+  var value = morphologyValueNoise2(point) * 0.56;
+  var weight = 0.56;
+
+  point = vec2f(
+    point.x * 1.6 - point.y * 1.2,
+    point.x * 1.2 + point.y * 1.6,
+  );
+  value += morphologyValueNoise2(point) * 0.29;
+  weight += 0.29;
+
+  if (lod.detailWeight > 1e-4) {
+    point = vec2f(
+      point.x * 1.6 - point.y * 1.2,
+      point.x * 1.2 + point.y * 1.6,
+    );
+    value += morphologyValueNoise2(point) * 0.1 * lod.detailWeight;
+    weight += 0.1 * lod.detailWeight;
+
+    point = vec2f(
+      point.x * 1.6 - point.y * 1.2,
+      point.x * 1.2 + point.y * 1.6,
+    );
+    value += morphologyValueNoise2(point) * 0.05 * lod.detailWeight;
+    weight += 0.05 * lod.detailWeight;
+  }
+
+  return saturate(value / max(weight, 1e-4));
+}
+
 fn sheetMacroVariation(
   position: vec3f,
   phase: vec3f,
@@ -1272,6 +1334,24 @@ fn evaluateFiberFamily(
   let coordinate = bodyLocalFiberCoordinate(context, recipe);
   let phase = context.bodyPhase * MORPHOLOGY_TWO_PI;
 
+  // A broad, sparse support field decides where fibers are allowed to exist.
+  // This prevents the analytic ridge carrier from tiling the entire CloudBody
+  // with equally eligible parallel strands.
+  let macroCoordinate = coordinate.xz + vec2f(
+    sin(coordinate.x * 0.17 + phase.z) * 0.31,
+    sin(coordinate.x * 0.11 + phase.y) * 0.18,
+  );
+  let macroNoise = cirrusMacroFbm(
+    macroCoordinate,
+    context.bodyPhase.xz,
+    lod,
+  );
+  let macroSupport = smoothstep(0.34, 0.64, macroNoise);
+  let flowNoise = morphologyValueNoise2(
+    macroCoordinate * vec2f(0.21, 0.27)
+      + context.bodyPhase.yx * vec2f(2.3, 3.7),
+  );
+
   // Curl changes slowly along the long axis. A broad portion survives the
   // cheap path so distant Ci stays curved instead of collapsing into bars.
   let axialPhase = coordinate.x * 0.73 + phase.x;
@@ -1287,7 +1367,11 @@ fn evaluateFiberFamily(
         + phase.y
     ),
   ) * curlWeight;
-  let warpedCoordinate = coordinate + curl;
+  // One very-low-frequency flow sample shifts the cross-axis locally. It
+  // preserves the requested average angle while allowing neighbouring cirrus
+  // bands to fan apart and converge instead of remaining globally parallel.
+  let flowOffset = (flowNoise - 0.5) * 1.8 * curlWeight;
+  let warpedCoordinate = coordinate + curl + vec3f(0.0, 0.0, flowOffset);
   let broadFiber = ridgeFiberCarrier(
     warpedCoordinate,
     context.bodyPhase,
@@ -1352,11 +1436,12 @@ fn evaluateFiberFamily(
     tailSignal,
   );
   let breakupFactor = mix(1.0, tailMask, erosionAmount);
-  let fiberMask = smoothstep(
-    0.38,
-    0.82,
+  let ridgeMask = smoothstep(
+    0.48,
+    0.88,
     saturate(fiberSignal * breakupFactor),
   );
+  let fiberMask = ridgeMask * smoothstep(0.12, 0.82, macroSupport);
   let fiberFactor = min(
     mix(
       max(recipe.valleyDensity, 0.0),

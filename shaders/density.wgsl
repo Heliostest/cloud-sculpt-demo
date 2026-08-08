@@ -49,12 +49,19 @@ const GENUS_CIRRUS: f32 = 7.0;
 const GENUS_CIRROSTRATUS: f32 = 8.0;
 const GENUS_CIRROCUMULUS: f32 = 9.0;
 const UNBOUNDED_BODY_LOCAL_SCALE_M: f32 = 10000.0;
+const MAX_MORPHOLOGY_DENSITY: f32 = 10000.0;
+const MORPHOLOGY_TWO_PI: f32 = 6.28318530718;
 
 struct CloudBodyLocalFrame {
   meters: vec3f,
   unit: vec3f,
   normalizedHeight: f32,
   phase: vec3f,
+};
+
+struct MorphologyLod {
+  frequencyScale: f32,
+  detailWeight: f32,
 };
 
 fn hashCloudBodyPhase(seed: u32) -> u32 {
@@ -112,6 +119,151 @@ fn deriveCloudBodyLocalFrame(
     saturate(heightMeters / heightSpan),
     cloudBodyPhase(bodyIndex, bounds.xy),
   );
+}
+
+fn sanitizeMorphologyDensity(density: f32) -> f32 {
+  if (density != density || density <= 0.0) {
+    return 0.0;
+  }
+  return min(density, MAX_MORPHOLOGY_DENSITY);
+}
+
+fn replaceSampleDensity(sample: DensitySample, density: f32) -> DensitySample {
+  return DensitySample(
+    sample.support,
+    sample.afterShape,
+    sanitizeMorphologyDensity(density),
+    sample.typeMix,
+    sample.height01,
+    sample.densityCoverage,
+  );
+}
+
+fn safeMorphBlend(
+  base: DensitySample,
+  shaped: DensitySample,
+  strength: f32,
+) -> DensitySample {
+  // Preserve the exact compatibility value when a family is disabled. This
+  // branch is also the migration guarantee for every genus still on the old
+  // density core.
+  if (strength != strength || strength <= 0.0) {
+    return base;
+  }
+  let weight = saturate(strength);
+  let density = mix(
+    sanitizeMorphologyDensity(base.density),
+    sanitizeMorphologyDensity(shaped.density),
+    weight,
+  );
+  return replaceSampleDensity(base, density);
+}
+
+fn verticalBand(h: f32, bottomSoft: f32, topSoft: f32) -> f32 {
+  if (h != h || h < 0.0 || h > 1.0) {
+    return 0.0;
+  }
+  let bottomWidth = select(saturate(bottomSoft), 0.0, bottomSoft != bottomSoft);
+  let topWidth = select(saturate(topSoft), 0.0, topSoft != topSoft);
+  var bottom = 1.0;
+  var top = 1.0;
+  if (bottomWidth > 1e-5) {
+    bottom = smoothstep(0.0, bottomWidth, h);
+  }
+  if (topWidth > 1e-5) {
+    top = 1.0 - smoothstep(1.0 - topWidth, 1.0, h);
+  }
+  return saturate(bottom * top);
+}
+
+fn rotateMorphologyXZ(position: vec3f, angle: f32) -> vec3f {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3f(
+    c * position.x + s * position.z,
+    position.y,
+    -s * position.x + c * position.z,
+  );
+}
+
+fn anisotropicCoordinate(position: vec3f, scale: vec3f) -> vec3f {
+  let finiteScale = select(abs(scale), vec3f(1.0), scale != scale);
+  return position * max(finiteScale, vec3f(1e-5));
+}
+
+fn morphologyLod(context: CloudGenusDensityContext) -> MorphologyLod {
+  // Probe/light samples enter through simpleMode and must avoid all optional
+  // fine structure. Keeping this branch first also makes the cheap path clear
+  // to shader compilers and source-level contract tests.
+  if (context.simpleMode) {
+    return MorphologyLod(0.45, 0.0);
+  }
+
+  let maximumDistance = max(5000.0, U.quality.w * 0.92);
+  let cameraDistance = length(context.worldPos - U.cameraPos);
+  let distanceWeight = 1.0 - smoothstep(
+    maximumDistance * 0.25,
+    maximumDistance * 0.8,
+    cameraDistance,
+  );
+  let layerHeight = max(context.topM - context.baseM, 1.0);
+  let referenceStep = max(16.0, layerHeight / 64.0);
+  let stepWeight = 1.0 - smoothstep(
+    referenceStep * 1.5,
+    referenceStep * 6.0,
+    max(context.stepLen, 0.0),
+  );
+  let detailWeight = saturate(distanceWeight * stepWeight);
+  return MorphologyLod(mix(0.45, 1.0, detailWeight), detailWeight);
+}
+
+fn cellularCarrier(
+  position: vec3f,
+  phase: vec3f,
+  lod: MorphologyLod,
+) -> f32 {
+  let q = position * (MORPHOLOGY_TWO_PI * lod.frequencyScale)
+    + phase * MORPHOLOGY_TWO_PI;
+  let broadCells = cos(q.x) * cos(q.z);
+  var signal = broadCells;
+  if (lod.detailWeight > 1e-4) {
+    let staggeredCells = cos(q.x * 0.57 + q.z * 0.83 + q.y * 0.31);
+    signal = mix(broadCells, staggeredCells, 0.3 * lod.detailWeight);
+  }
+  return saturate(0.5 + 0.5 * signal);
+}
+
+fn ridgeFiberCarrier(
+  position: vec3f,
+  phase: vec3f,
+  lod: MorphologyLod,
+) -> f32 {
+  let q = position * (MORPHOLOGY_TWO_PI * lod.frequencyScale)
+    + phase * MORPHOLOGY_TWO_PI;
+  let primary = sin(q.z + sin(q.x * 0.37 + phase.x * MORPHOLOGY_TWO_PI));
+  var fiberSignal = primary;
+  if (lod.detailWeight > 1e-4) {
+    let branch = sin((q.y + q.z) * 1.73 + sin(q.x * 0.41 + phase.y));
+    fiberSignal = mix(primary, branch, 0.28 * lod.detailWeight);
+  }
+  let ridge = saturate(1.0 - abs(fiberSignal));
+  return smoothstep(0.32, 0.88, ridge);
+}
+
+fn sheetMacroVariation(
+  position: vec3f,
+  phase: vec3f,
+  lod: MorphologyLod,
+) -> f32 {
+  let q = position * (MORPHOLOGY_TWO_PI * lod.frequencyScale)
+    + phase * MORPHOLOGY_TWO_PI;
+  let broad = sin(q.x * 0.31 + q.z * 0.23);
+  var signal = broad;
+  if (lod.detailWeight > 1e-4) {
+    let cross = cos(q.z * 0.19 - q.x * 0.17 + q.y * 0.11);
+    signal = mix(broad, cross, 0.35 * lod.detailWeight);
+  }
+  return saturate(0.75 + signal * 0.2);
 }
 
 fn emptyHighCloudSample() -> HighCloudSample {
@@ -506,9 +658,9 @@ fn evaluateLowCloudLayer(
   *outDensity = density;
 }
 
-// Compatibility bridge: all genus entry points intentionally share the
-// pre-dispatch density implementation in this first structural step. Replacing
-// an individual evaluator later can therefore be reviewed and tested per genus.
+// Compatibility bridge: every family starts from the pre-dispatch HP density
+// implementation. Family morphology may replace only the density channel, so
+// support, coverage, type mix, and the established vertical LUT remain stable.
 fn evaluateCompatibilityDensity(
   context: CloudGenusDensityContext,
   genusIndex: f32
@@ -540,8 +692,193 @@ fn evaluateCompatibilityDensity(
   return DensitySample(support, afterShape, density, typeMix, height01, densityCoverage);
 }
 
+fn cumulusCellCoordinate(
+  context: CloudGenusDensityContext,
+  development: f32,
+  verticalDevelopment: f32,
+  cellScale: f32,
+) -> vec3f {
+  let layerHeight = max(context.topM - context.baseM, 1.0);
+  let safeCellScale = max(cellScale, 0.05);
+  let horizontalCellM = max(
+    160.0,
+    layerHeight * mix(0.48, 0.32, development) * safeCellScale,
+  );
+  let verticalStretch = mix(
+    0.9,
+    1.85,
+    saturate(development * max(verticalDevelopment, 0.0)),
+  );
+  return anisotropicCoordinate(
+    context.bodyLocalMeters / horizontalCellM,
+    vec3f(1.0, 1.0 / verticalStretch, 1.0),
+  );
+}
+
+fn evaluateCumulusFamily(
+  context: CloudGenusDensityContext,
+  compatibility: DensitySample,
+) -> DensitySample {
+  // morphology0.z is the family migration switch. Zero must preserve the HP
+  // Cu/TCu result bit-for-bit, including density values outside the body.
+  let cellStrength = saturate(context.morphology0.z);
+  if (cellStrength <= 1e-5 || compatibility.density <= 0.0) {
+    return compatibility;
+  }
+
+  let development = saturate(context.cumulusDevelopment);
+  let verticalDevelopment = max(context.morphology0.x, 0.0);
+  let verticalArtDirection = saturate(verticalDevelopment);
+  let domeDevelopment = saturate(
+    development * mix(0.55, 1.25, verticalArtDirection)
+      + (verticalArtDirection - 0.55) * 0.25,
+  );
+  let cellScale = max(context.morphology0.y, 0.05);
+  let erosionScale = max(context.morphology1.w, 0.05);
+  let lod = morphologyLod(context);
+  let cellCoordinate = cumulusCellCoordinate(
+    context,
+    development,
+    verticalDevelopment,
+    cellScale,
+  );
+  let carrier = cellularCarrier(cellCoordinate, context.bodyPhase, lod);
+  let erosionAmount = saturate(erosionScale / 2.0);
+  let cauliflower = smoothstep(
+    mix(0.58, 0.34, erosionAmount),
+    mix(0.9, 0.7, erosionAmount),
+    carrier,
+  );
+
+  // Keep the cloud base flat: morphology fades in above the lower 16% of the
+  // established HP envelope. Development continuously raises the dome weight
+  // and elongates cells, while the HP Cu->TCu LUT still owns the main profile.
+  let bodyHeight = saturate(context.normalizedHeight);
+  let baseProtection = smoothstep(0.12, 0.22, bodyHeight);
+  let topProtection = 1.0 - smoothstep(0.94, 1.0, bodyHeight);
+  let morphologyBand = saturate(baseProtection * topProtection);
+  let domeWeight = smoothstep(
+    mix(0.62, 0.32, domeDevelopment),
+    mix(0.84, 0.56, domeDevelopment),
+    bodyHeight,
+  );
+  let cellFactor = mix(0.76, 1.24, cauliflower);
+  let domeFactor = 1.0 + domeWeight
+    * domeDevelopment
+    * mix(0.8, 1.2, verticalArtDirection)
+    * 0.22;
+  let shapedDensity = compatibility.density
+    * mix(1.0, cellFactor * domeFactor, morphologyBand);
+  return safeMorphBlend(
+    compatibility,
+    replaceSampleDensity(compatibility, shapedDensity),
+    cellStrength,
+  );
+}
+
+fn cumulonimbusCellCoordinate(
+  context: CloudGenusDensityContext,
+  cellScale: f32,
+  verticalDevelopment: f32,
+) -> vec3f {
+  let layerHeight = max(context.topM - context.baseM, 1.0);
+  let horizontalCellM = max(280.0, layerHeight * 0.16 * max(cellScale, 0.05));
+  let verticalStretch = mix(1.6, 3.2, saturate(verticalDevelopment));
+  return anisotropicCoordinate(
+    context.bodyLocalMeters / horizontalCellM,
+    vec3f(1.0, 1.0 / verticalStretch, 1.0),
+  );
+}
+
+fn cumulonimbusAnvilDensity(
+  context: CloudGenusDensityContext,
+  compatibility: DensitySample,
+  towerDensity: f32,
+  anvilStrength: f32,
+) -> f32 {
+  if (anvilStrength <= 1e-5) {
+    return towerDensity;
+  }
+
+  // The anvil exists only in the high band. Its body-local radial mask expands
+  // horizontally with strength; the regular layerHorizontalMask is applied
+  // after genus dispatch, so bounded bodies retain their authored feather.
+  let bodyHeight = saturate(context.normalizedHeight);
+  let anvilBand = smoothstep(0.7, 0.82, bodyHeight)
+    * (1.0 - smoothstep(0.96, 1.0, bodyHeight));
+  let anvilRadius = mix(0.52, 1.0, saturate(anvilStrength));
+  let radial = length(context.bodyLocalUnit.xz);
+  let footprint = 1.0 - smoothstep(anvilRadius * 0.68, anvilRadius, radial);
+  let anvilFoundation = compatibility.support
+    * compatibility.densityCoverage
+    * mix(0.36, 0.64, saturate(anvilStrength))
+    * footprint;
+  let expandedDensity = max(towerDensity, anvilFoundation);
+  return mix(
+    towerDensity,
+    expandedDensity,
+    saturate(anvilBand * anvilStrength),
+  );
+}
+
+fn evaluateCumulonimbusFamily(
+  context: CloudGenusDensityContext,
+  compatibility: DensitySample,
+) -> DensitySample {
+  let cellStrength = saturate(context.morphology0.z);
+  if (cellStrength <= 1e-5 || compatibility.support <= 0.0) {
+    return compatibility;
+  }
+
+  let verticalDevelopment = max(context.morphology0.x, 0.0);
+  let cellScale = max(context.morphology0.y, 0.05);
+  let erosionScale = max(context.morphology1.w, 0.05);
+  let lod = morphologyLod(context);
+  let cellCoordinate = cumulonimbusCellCoordinate(
+    context,
+    cellScale,
+    verticalDevelopment,
+  );
+  let macroCell = cellularCarrier(cellCoordinate, context.bodyPhase, lod);
+  var detailCell = macroCell;
+  if (!context.simpleMode && lod.detailWeight > 1e-4) {
+    detailCell = cellularCarrier(
+      cellCoordinate * vec3f(1.85, 1.2, 1.85),
+      context.bodyPhase.zxy,
+      MorphologyLod(lod.frequencyScale, lod.detailWeight * 0.65),
+    );
+  }
+  let convectiveCell = mix(macroCell, macroCell * detailCell, 0.42 * lod.detailWeight);
+  let erosionAmount = saturate(erosionScale / 2.0);
+  let cauliflower = smoothstep(
+    mix(0.55, 0.3, erosionAmount),
+    mix(0.88, 0.66, erosionAmount),
+    convectiveCell,
+  );
+
+  let bodyHeight = saturate(context.normalizedHeight);
+  let upperGate = smoothstep(0.26, 0.52, bodyHeight)
+    * (1.0 - smoothstep(0.94, 1.0, bodyHeight));
+  let scaffold = 0.58;
+  let carvedTower = compatibility.density
+    * mix(scaffold, 1.48, cauliflower);
+  let towerDensity = mix(compatibility.density, carvedTower, upperGate);
+  let anvilDensity = cumulonimbusAnvilDensity(
+    context,
+    compatibility,
+    towerDensity,
+    saturate(context.morphology1.z),
+  );
+  return safeMorphBlend(
+    compatibility,
+    replaceSampleDensity(compatibility, anvilDensity),
+    cellStrength,
+  );
+}
+
 fn evaluateCumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_CUMULUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_CUMULUS);
+  return evaluateCumulusFamily(context, compatibility);
 }
 
 fn evaluateStratusDensity(context: CloudGenusDensityContext) -> DensitySample {
@@ -553,7 +890,8 @@ fn evaluateStratocumulusDensity(context: CloudGenusDensityContext) -> DensitySam
 }
 
 fn evaluateCumulonimbusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_CUMULONIMBUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_CUMULONIMBUS);
+  return evaluateCumulonimbusFamily(context, compatibility);
 }
 
 fn evaluateAltocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {

@@ -16,6 +16,14 @@ function wgslFunctionSource(name, nextMarker) {
   return raymarchSource.slice(start, end);
 }
 
+function densityWgslFunctionSource(name, nextMarker) {
+  const start = densitySource.indexOf(`fn ${name}`);
+  const end = densitySource.indexOf(nextMarker, start);
+  assert.ok(start >= 0, `missing density WGSL function ${name}`);
+  assert.ok(end > start, `missing density WGSL marker after ${name}: ${nextMarker}`);
+  return densitySource.slice(start, end);
+}
+
 function traverseWithIterationBudget(totalDistance, maxIterations, requestedStep) {
   const traversalStepFloor = totalDistance / Math.max(maxIterations, 1);
   let distance = 0;
@@ -105,6 +113,143 @@ function deriveCloudBodyLocalFrame({
     normalizedHeight: Math.min(1, Math.max(0, heightMeters / heightSpan)),
     phase: cloudBodyPhase(bodyIndex, center),
   };
+}
+
+function sanitizeMorphologyDensity(density) {
+  if (Number.isNaN(density) || density <= 0) return 0;
+  return Math.min(density, 10_000);
+}
+
+function replaceSampleDensity(sample, density) {
+  return { ...sample, density: sanitizeMorphologyDensity(density) };
+}
+
+function safeMorphBlend(base, shaped, strength) {
+  if (Number.isNaN(strength) || strength <= 0) return base;
+  const weight = Math.min(1, Math.max(0, strength));
+  const density = sanitizeMorphologyDensity(base.density)
+    + (sanitizeMorphologyDensity(shaped.density) - sanitizeMorphologyDensity(base.density)) * weight;
+  return replaceSampleDensity(base, density);
+}
+
+function verticalBand(height, bottomSoft, topSoft) {
+  if (Number.isNaN(height) || height < 0 || height > 1) return 0;
+  const bottomWidth = Number.isNaN(bottomSoft) ? 0 : Math.min(1, Math.max(0, bottomSoft));
+  const topWidth = Number.isNaN(topSoft) ? 0 : Math.min(1, Math.max(0, topSoft));
+  const bottom = bottomWidth > 1e-5 ? ellipseSmoothstep(0, bottomWidth, height) : 1;
+  const top = topWidth > 1e-5 ? 1 - ellipseSmoothstep(1 - topWidth, 1, height) : 1;
+  return Math.min(1, Math.max(0, bottom * top));
+}
+
+function rotateMorphologyXZ(position, angle) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return [
+    c * position[0] + s * position[2],
+    position[1],
+    -s * position[0] + c * position[2],
+  ];
+}
+
+function anisotropicCoordinate(position, scale) {
+  return position.map((value, index) => {
+    const finiteScale = Number.isNaN(scale[index]) ? 1 : Math.abs(scale[index]);
+    return value * Math.max(finiteScale, 1e-5);
+  });
+}
+
+function morphologyLodReference({
+  simpleMode,
+  cameraDistance,
+  maximumDistance,
+  baseM,
+  topM,
+  stepLen,
+}) {
+  if (simpleMode) return { frequencyScale: 0.45, detailWeight: 0 };
+  const distanceWeight = 1 - ellipseSmoothstep(
+    maximumDistance * 0.25,
+    maximumDistance * 0.8,
+    cameraDistance,
+  );
+  const layerHeight = Math.max(topM - baseM, 1);
+  const referenceStep = Math.max(16, layerHeight / 64);
+  const stepWeight = 1 - ellipseSmoothstep(
+    referenceStep * 1.5,
+    referenceStep * 6,
+    Math.max(stepLen, 0),
+  );
+  const detailWeight = Math.min(1, Math.max(0, distanceWeight * stepWeight));
+  return { frequencyScale: 0.45 + (1 - 0.45) * detailWeight, detailWeight };
+}
+
+function cellularCarrierReference(position, phase, lod) {
+  const q = position.map((value, index) => value * Math.PI * 2 * lod.frequencyScale + phase[index] * Math.PI * 2);
+  const broadCells = Math.cos(q[0]) * Math.cos(q[2]);
+  let signal = broadCells;
+  if (lod.detailWeight > 1e-4) {
+    const staggeredCells = Math.cos(q[0] * 0.57 + q[2] * 0.83 + q[1] * 0.31);
+    signal = broadCells + (staggeredCells - broadCells) * 0.3 * lod.detailWeight;
+  }
+  return Math.min(1, Math.max(0, 0.5 + 0.5 * signal));
+}
+
+function ridgeFiberCarrierReference(position, phase, lod) {
+  const q = position.map((value, index) => value * Math.PI * 2 * lod.frequencyScale + phase[index] * Math.PI * 2);
+  const primary = Math.sin(q[2] + Math.sin(q[0] * 0.37 + phase[0] * Math.PI * 2));
+  let fiberSignal = primary;
+  if (lod.detailWeight > 1e-4) {
+    const branch = Math.sin((q[1] + q[2]) * 1.73 + Math.sin(q[0] * 0.41 + phase[1]));
+    fiberSignal = primary + (branch - primary) * 0.28 * lod.detailWeight;
+  }
+  const ridge = Math.min(1, Math.max(0, 1 - Math.abs(fiberSignal)));
+  return ellipseSmoothstep(0.32, 0.88, ridge);
+}
+
+function sheetMacroVariationReference(position, phase, lod) {
+  const q = position.map((value, index) => value * Math.PI * 2 * lod.frequencyScale + phase[index] * Math.PI * 2);
+  const broad = Math.sin(q[0] * 0.31 + q[2] * 0.23);
+  let signal = broad;
+  if (lod.detailWeight > 1e-4) {
+    const cross = Math.cos(q[2] * 0.19 - q[0] * 0.17 + q[1] * 0.11);
+    signal = broad + (cross - broad) * 0.35 * lod.detailWeight;
+  }
+  return Math.min(1, Math.max(0, 0.75 + signal * 0.2));
+}
+
+function cumulusMorphologyFactor({ height, development, verticalDevelopment, carrier, erosionScale }) {
+  const finiteDevelopment = Math.min(1, Math.max(0, development));
+  const verticalArtDirection = Math.min(1, Math.max(0, verticalDevelopment));
+  const domeDevelopment = Math.min(1, Math.max(0,
+    finiteDevelopment * (0.55 + (1.25 - 0.55) * verticalArtDirection)
+      + (verticalArtDirection - 0.55) * 0.25,
+  ));
+  const erosionAmount = Math.min(1, Math.max(0, Math.max(erosionScale, 0.05) / 2));
+  const cauliflower = ellipseSmoothstep(
+    0.58 + (0.34 - 0.58) * erosionAmount,
+    0.9 + (0.7 - 0.9) * erosionAmount,
+    carrier,
+  );
+  const baseProtection = ellipseSmoothstep(0.12, 0.22, height);
+  const topProtection = 1 - ellipseSmoothstep(0.94, 1, height);
+  const morphologyBand = Math.min(1, Math.max(0, baseProtection * topProtection));
+  const domeWeight = ellipseSmoothstep(
+    0.62 + (0.32 - 0.62) * domeDevelopment,
+    0.84 + (0.56 - 0.84) * domeDevelopment,
+    height,
+  );
+  const cellFactor = 0.76 + (1.24 - 0.76) * cauliflower;
+  const domeFactor = 1 + domeWeight
+    * domeDevelopment
+    * (0.8 + (1.2 - 0.8) * verticalArtDirection)
+    * 0.22;
+  return 1 + (cellFactor * domeFactor - 1) * morphologyBand;
+}
+
+function cumulonimbusAnvilWeight(height, strength) {
+  const anvilBand = ellipseSmoothstep(0.7, 0.82, height)
+    * (1 - ellipseSmoothstep(0.96, 1, height));
+  return Math.min(1, Math.max(0, anvilBand * strength));
 }
 
 function bodyLifecycleScale(enabled, life, peak, time) {
@@ -241,7 +386,7 @@ test('all ten cloud genera have explicit density evaluators behind one dispatche
   assert.match(densitySource, /let layerSample = dispatchCloudGenusDensity\(context, shapeDetail\.x\);/);
 });
 
-test('cloud genus contexts expose deterministic body-local morphology coordinates without consuming them yet', () => {
+test('cloud genus contexts expose deterministic body-local morphology coordinates to family evaluators', () => {
   const contextStart = densitySource.indexOf('struct CloudGenusDensityContext');
   const contextEnd = densitySource.indexOf('\n};', contextStart);
   const context = densitySource.slice(contextStart, contextEnd);
@@ -264,22 +409,30 @@ test('cloud genus contexts expose deterministic body-local morphology coordinate
   assert.match(densitySource, /let localFrame = deriveCloudBodyLocalFrame\(\s*layerIndex,\s*densityPos,/);
 
   const compatibilityStart = densitySource.indexOf('fn evaluateCompatibilityDensity');
-  const compatibilityEnd = densitySource.indexOf('\nfn evaluateCumulusDensity', compatibilityStart);
+  const compatibilityEnd = densitySource.indexOf('\nfn cumulusCellCoordinate', compatibilityStart);
   const compatibility = densitySource.slice(compatibilityStart, compatibilityEnd);
   for (const unusedField of ['bodyIndex', 'bodyLocalMeters', 'bodyLocalUnit', 'normalizedHeight', 'bodyPhase']) {
     assert.doesNotMatch(compatibility, new RegExp(`context\\.${unusedField}`));
   }
 
-  const evaluatorNames = [
-    'Cumulus', 'Stratus', 'Stratocumulus', 'Cumulonimbus', 'Altocumulus',
-    'Altostratus', 'Nimbostratus', 'Cirrus', 'Cirrostratus', 'Cirrocumulus',
+  const compatibilityEvaluatorNames = [
+    'Stratus', 'Stratocumulus', 'Altocumulus', 'Altostratus',
+    'Nimbostratus', 'Cirrus', 'Cirrostratus', 'Cirrocumulus',
   ];
-  for (const evaluatorName of evaluatorNames) {
+  for (const evaluatorName of compatibilityEvaluatorNames) {
     assert.match(
       densitySource,
       new RegExp(`fn evaluate${evaluatorName}Density\\(context: CloudGenusDensityContext\\) -> DensitySample \\{\\s*return evaluateCompatibilityDensity\\(context, GENUS_`),
     );
   }
+  assert.match(
+    densitySource,
+    /fn evaluateCumulusDensity\(context: CloudGenusDensityContext\)[\s\S]*evaluateCumulusFamily\(context, compatibility\)/,
+  );
+  assert.match(
+    densitySource,
+    /fn evaluateCumulonimbusDensity\(context: CloudGenusDensityContext\)[\s\S]*evaluateCumulonimbusFamily\(context, compatibility\)/,
+  );
 });
 
 test('body-local coordinates invert rotation and stay finite for bounded and unbounded bodies', () => {
@@ -323,6 +476,239 @@ test('body morphology phase is stable for the same body and distinguishes center
   assert.notDeepEqual(cloudBodyPhase(3, [1200, -4500]), phase);
   assert.notDeepEqual(cloudBodyPhase(2, [-4500, 1200]), phase);
   assert.equal(phase.every((value) => Number.isFinite(value) && value >= 0 && value <= 1), true);
+});
+
+test('shared morphology helpers exist without changing the compatibility evaluators', () => {
+  const helperStart = densitySource.indexOf('fn sanitizeMorphologyDensity');
+  const helperEnd = densitySource.indexOf('\nfn emptyHighCloudSample', helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  const helpers = densitySource.slice(helperStart, helperEnd);
+  for (const helperName of [
+    'sanitizeMorphologyDensity',
+    'replaceSampleDensity',
+    'safeMorphBlend',
+    'verticalBand',
+    'rotateMorphologyXZ',
+    'anisotropicCoordinate',
+    'morphologyLod',
+    'cellularCarrier',
+    'ridgeFiberCarrier',
+    'sheetMacroVariation',
+  ]) {
+    assert.match(helpers, new RegExp(`fn ${helperName}\\(`));
+  }
+  assert.doesNotMatch(helpers, /textureSample/);
+
+  const lodStart = helpers.indexOf('fn morphologyLod');
+  const cellularStart = helpers.indexOf('fn cellularCarrier');
+  const lodSource = helpers.slice(lodStart, cellularStart);
+  assert.match(lodSource, /if \(context\.simpleMode\) \{\s*return MorphologyLod\(0\.45, 0\.0\);/);
+  assert.match(lodSource, /length\(context\.worldPos - U\.cameraPos\)/);
+  assert.match(lodSource, /max\(context\.stepLen, 0\.0\)/);
+
+  const compatibilityStart = densitySource.indexOf('fn evaluateCompatibilityDensity');
+  const compatibilityEnd = densitySource.indexOf('\nfn cumulusCellCoordinate', compatibilityStart);
+  const compatibility = densitySource.slice(compatibilityStart, compatibilityEnd);
+  assert.doesNotMatch(
+    compatibility,
+    /replaceSampleDensity|safeMorphBlend|verticalBand|cellularCarrier|ridgeFiberCarrier|sheetMacroVariation/,
+  );
+});
+
+test('density replacement and morphology blending preserve compatibility metadata and finite density', () => {
+  const base = {
+    support: 0.8,
+    afterShape: 0.65,
+    density: 0.4,
+    typeMix: 0.25,
+    height01: 0.6,
+    densityCoverage: 0.7,
+  };
+  const shaped = { ...base, density: 1.2, support: 0.1, typeMix: 0.9 };
+
+  assert.deepEqual(safeMorphBlend(base, shaped, 0), base);
+  assert.deepEqual(safeMorphBlend(base, shaped, Number.NaN), base);
+  assert.deepEqual(safeMorphBlend(base, shaped, 1), { ...base, density: 1.2 });
+  assert.deepEqual(safeMorphBlend(base, shaped, 0.5), { ...base, density: 0.8 });
+  assert.deepEqual(replaceSampleDensity(base, -3), { ...base, density: 0 });
+  assert.deepEqual(replaceSampleDensity(base, Number.POSITIVE_INFINITY), { ...base, density: 10_000 });
+
+  for (const density of [Number.NaN, Number.NEGATIVE_INFINITY, -1, 0, 0.4, 10, Number.POSITIVE_INFINITY]) {
+    for (const strength of [0.1, 0.5, 1, 2]) {
+      const result = safeMorphBlend(base, { ...shaped, density }, strength);
+      assert.ok(Number.isFinite(result.density));
+      assert.ok(result.density >= 0 && result.density <= 10_000);
+      assert.equal(result.support, base.support);
+      assert.equal(result.typeMix, base.typeMix);
+      assert.equal(result.height01, base.height01);
+    }
+  }
+});
+
+test('vertical bands and morphology coordinates are bounded, directional, and finite', () => {
+  assert.equal(verticalBand(-0.01, 0.2, 0.3), 0);
+  assert.equal(verticalBand(1.01, 0.2, 0.3), 0);
+  assert.equal(verticalBand(0.5, 0.2, 0.3), 1);
+  assert.equal(verticalBand(0, 0, 0), 1);
+  assert.equal(verticalBand(Number.NaN, 0.2, 0.3), 0);
+
+  const quarterTurn = rotateMorphologyXZ([2, 5, 3], Math.PI / 2);
+  assert.ok(Math.abs(quarterTurn[0] - 3) < 1e-12);
+  assert.equal(quarterTurn[1], 5);
+  assert.ok(Math.abs(quarterTurn[2] + 2) < 1e-12);
+  assert.deepEqual(anisotropicCoordinate([1, 2, -3], [2, 0.5, -4]), [2, 1, -12]);
+  assert.deepEqual(anisotropicCoordinate([1, 2, -3], [Number.NaN, 0, 1]), [1, 0.00002, -3]);
+
+  for (let height = -0.2; height <= 1.2; height += 0.025) {
+    const band = verticalBand(height, 0.18, 0.24);
+    assert.ok(Number.isFinite(band));
+    assert.ok(band >= 0 && band <= 1);
+  }
+});
+
+test('analytic family carriers are deterministic, bounded, and respect morphology LOD', () => {
+  const near = morphologyLodReference({
+    simpleMode: false,
+    cameraDistance: 0,
+    maximumDistance: 100_000,
+    baseM: 1000,
+    topM: 4000,
+    stepLen: 16,
+  });
+  const far = morphologyLodReference({
+    simpleMode: false,
+    cameraDistance: 90_000,
+    maximumDistance: 100_000,
+    baseM: 1000,
+    topM: 4000,
+    stepLen: 500,
+  });
+  const simple = morphologyLodReference({
+    simpleMode: true,
+    cameraDistance: 0,
+    maximumDistance: 100_000,
+    baseM: 1000,
+    topM: 4000,
+    stepLen: 16,
+  });
+  assert.ok(near.detailWeight > far.detailWeight);
+  assert.equal(far.detailWeight, 0);
+  assert.deepEqual(simple, { frequencyScale: 0.45, detailWeight: 0 });
+
+  const phase = [0.13, 0.57, 0.91];
+  for (const lod of [near, far, simple]) {
+    for (const position of [[0, 0, 0], [0.2, 0.6, -0.4], [12, -3, 8]]) {
+      const values = [
+        cellularCarrierReference(position, phase, lod),
+        ridgeFiberCarrierReference(position, phase, lod),
+        sheetMacroVariationReference(position, phase, lod),
+      ];
+      assert.deepEqual(values, [
+        cellularCarrierReference(position, phase, lod),
+        ridgeFiberCarrierReference(position, phase, lod),
+        sheetMacroVariationReference(position, phase, lod),
+      ]);
+      for (const value of values) {
+        assert.ok(Number.isFinite(value));
+        assert.ok(value >= 0 && value <= 1);
+      }
+    }
+  }
+});
+
+test('Cu and TCu share a continuous cumulus family without reading Cb or fiber controls', () => {
+  const evaluator = densityWgslFunctionSource('evaluateCumulusFamily', '\nfn cumulonimbusCellCoordinate');
+  assert.match(evaluator, /let cellStrength = saturate\(context\.morphology0\.z\);/);
+  assert.match(evaluator, /if \(cellStrength <= 1e-5 \|\| compatibility\.density <= 0\.0\) \{\s*return compatibility;/);
+  assert.match(evaluator, /let development = saturate\(context\.cumulusDevelopment\);/);
+  assert.match(evaluator, /let verticalDevelopment = max\(context\.morphology0\.x, 0\.0\);/);
+  assert.match(evaluator, /let domeDevelopment = saturate\(/);
+  assert.match(evaluator, /let cellScale = max\(context\.morphology0\.y, 0\.05\);/);
+  assert.match(evaluator, /let erosionScale = max\(context\.morphology1\.w, 0\.05\);/);
+  assert.match(evaluator, /return safeMorphBlend\(/);
+  assert.doesNotMatch(evaluator, /morphology1\.[xz]/);
+  assert.doesNotMatch(evaluator, /anvil|fiber/i);
+
+  for (const height of [0, 0.08, 0.17, 0.35, 0.6, 0.85, 1]) {
+    let previous = cumulusMorphologyFactor({
+      height,
+      development: 0,
+      verticalDevelopment: 0.55,
+      carrier: 0.7,
+      erosionScale: 1,
+    });
+    assert.ok(Number.isFinite(previous));
+    for (let index = 1; index <= 100; index++) {
+      const next = cumulusMorphologyFactor({
+        height,
+        development: index / 100,
+        verticalDevelopment: 0.55,
+        carrier: 0.7,
+        erosionScale: 1,
+      });
+      assert.ok(Number.isFinite(next));
+      assert.ok(Math.abs(next - previous) < 0.02, `height=${height}, development=${index / 100}`);
+      previous = next;
+    }
+  }
+
+  const protectedBase = [0, 0.04, 0.1].map((height) => cumulusMorphologyFactor({
+    height,
+    development: 1,
+    verticalDevelopment: 1,
+    carrier: 0,
+    erosionScale: 2,
+  }));
+  assert.deepEqual(protectedBase, [1, 1, 1]);
+
+  const lowArtDome = cumulusMorphologyFactor({
+    height: 0.7,
+    development: 0.5,
+    verticalDevelopment: 0,
+    carrier: 0.7,
+    erosionScale: 1,
+  });
+  const highArtDome = cumulusMorphologyFactor({
+    height: 0.7,
+    development: 0.5,
+    verticalDevelopment: 1,
+    carrier: 0.7,
+    erosionScale: 1,
+  });
+  assert.ok(highArtDome > lowArtDome);
+});
+
+test('Cb carves vertically elongated upper cells and adds an anvil only in the high band', () => {
+  const coordinate = densityWgslFunctionSource('cumulonimbusCellCoordinate', '\nfn cumulonimbusAnvilDensity');
+  assert.match(coordinate, /let verticalStretch = mix\(1\.6, 3\.2, saturate\(verticalDevelopment\)\);/);
+  assert.match(coordinate, /vec3f\(1\.0, 1\.0 \/ verticalStretch, 1\.0\)/);
+
+  const anvil = densityWgslFunctionSource('cumulonimbusAnvilDensity', '\nfn evaluateCumulonimbusFamily');
+  assert.match(anvil, /if \(anvilStrength <= 1e-5\) \{\s*return towerDensity;/);
+  assert.match(anvil, /smoothstep\(0\.7, 0\.82, bodyHeight\)/);
+  assert.match(anvil, /let radial = length\(context\.bodyLocalUnit\.xz\);/);
+  assert.match(anvil, /let anvilRadius = mix\(0\.52, 1\.0, saturate\(anvilStrength\)\);/);
+
+  const evaluator = densityWgslFunctionSource('evaluateCumulonimbusFamily', '\nfn evaluateCumulusDensity');
+  assert.match(evaluator, /if \(cellStrength <= 1e-5 \|\| compatibility\.support <= 0\.0\) \{\s*return compatibility;/);
+  assert.match(evaluator, /if \(!context\.simpleMode && lod\.detailWeight > 1e-4\)/);
+  assert.match(evaluator, /let scaffold = 0\.58;/);
+  assert.match(evaluator, /smoothstep\(0\.26, 0\.52, bodyHeight\)/);
+  assert.match(evaluator, /cumulonimbusAnvilDensity\(/);
+
+  for (const height of [0, 0.2, 0.5, 0.69]) {
+    assert.equal(cumulonimbusAnvilWeight(height, 1), 0);
+  }
+  assert.ok(cumulonimbusAnvilWeight(0.82, 1) > 0.99);
+  assert.equal(cumulonimbusAnvilWeight(0.82, 0), 0);
+  assert.equal(cumulonimbusAnvilWeight(1, 1), 0);
+
+  const dispatcherEnd = densitySource.indexOf('\nfn distanceFade');
+  const horizontalMaskStart = densitySource.indexOf('fn layerHorizontalMask');
+  const layerEvaluationStart = densitySource.indexOf('let layerSample = dispatchCloudGenusDensity');
+  const horizontalApplication = densitySource.indexOf('density *= horizontalMask;', layerEvaluationStart);
+  assert.ok(dispatcherEnd < horizontalMaskStart);
+  assert.ok(layerEvaluationStart >= 0 && horizontalApplication > layerEvaluationStart);
 });
 
 test('per-body motion transports the density domain and lifecycle scales density smoothly', () => {

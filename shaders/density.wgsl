@@ -80,6 +80,25 @@ struct SheetProfile {
   topEnd: f32,
 };
 
+struct CellularRecipe {
+  familyStrength: f32,
+  baseCellMeters: f32,
+  verticalFrequency: f32,
+  crossFrequency: f32,
+  connectivity: f32,
+  valleyDensity: f32,
+  peakDensity: f32,
+  warpStrength: f32,
+  rippleStrength: f32,
+};
+
+struct CellularProfile {
+  bottomStart: f32,
+  bottomEnd: f32,
+  topStart: f32,
+  topEnd: f32,
+};
+
 fn hashCloudBodyPhase(seed: u32) -> u32 {
   var value = seed;
   value = value ^ (value >> 16u);
@@ -245,6 +264,24 @@ fn cellularCarrier(
   if (lod.detailWeight > 1e-4) {
     let staggeredCells = cos(q.x * 0.57 + q.z * 0.83 + q.y * 0.31);
     signal = mix(broadCells, staggeredCells, 0.3 * lod.detailWeight);
+  }
+  return saturate(0.5 + 0.5 * signal);
+}
+
+fn cellularFamilyCarrier(
+  position: vec3f,
+  phase: vec3f,
+  lod: MorphologyLod,
+) -> f32 {
+  let q = position * (MORPHOLOGY_TWO_PI * lod.frequencyScale)
+    + phase * MORPHOLOGY_TWO_PI;
+  let bentX = q.x + sin(q.z * 0.31 + phase.y * MORPHOLOGY_TWO_PI) * 0.68;
+  let bentZ = q.z + sin(q.x * 0.27 + phase.z * MORPHOLOGY_TWO_PI) * 0.68;
+  let broadCells = cos(bentX) * cos(bentZ);
+  var signal = broadCells;
+  if (lod.detailWeight > 1e-4) {
+    let staggered = cos(bentX * 0.57 + bentZ * 0.83 + q.y * 0.31);
+    signal = mix(broadCells, staggered, 0.3 * lod.detailWeight);
   }
   return saturate(0.5 + 0.5 * signal);
 }
@@ -595,6 +632,62 @@ fn cloudFromShape(
   return mix(densW, densB, coreMix) * densScale;
 }
 
+fn legacyStratocumulusStrength(genusIndex: f32, weather: vec4f) -> f32 {
+  // Preserve the authored weather-B mask and the preset override while the
+  // body-local cellular family is introduced on top of this compatibility
+  // scaffold. These branches are algebraically identical to stage 4.
+  let scMask = select(weather.b, saturate(U.hpSc2.z), U.hpSc2.z >= 0.0);
+  var strength = saturate(U.hpSc0.x * scMask);
+  if (abs(genusIndex - GENUS_STRATOCUMULUS) < 0.5) {
+    strength = 1.0;
+  }
+  return strength;
+}
+
+fn legacyStratocumulusCell(worldPos: vec3f, strength: f32) -> f32 {
+  if (strength <= 0.0) {
+    return 1.0;
+  }
+  return saturate(
+    textureSampleLevel(
+      scCellTex,
+      weatherSamp,
+      weatherUv(worldPos) * U.hpSc2.xy,
+      0.0,
+    ).r * U.hpSc1.y,
+  );
+}
+
+fn legacyStratocumulusCoverage(
+  rawCoverage: f32,
+  hpCoverage: f32,
+  cell: f32,
+  strength: f32,
+) -> f32 {
+  let scCoverage = saturate(
+    pow(saturate(rawCoverage), max(U.hpSc1.w, 0.001)) * U.hpSc1.z,
+  );
+  return mix(hpCoverage, scCoverage * cell, strength);
+}
+
+fn legacyStratocumulusHeight(
+  normalizedHeight: f32,
+  hpHeight: f32,
+  strength: f32,
+) -> f32 {
+  let compressedHeight = saturate(normalizedHeight / max(U.hpSc0.y, 0.01));
+  return mix(hpHeight, compressedHeight, strength);
+}
+
+fn legacyStratocumulusCellFactor(cell: f32, strength: f32) -> f32 {
+  if (strength <= 0.0) {
+    return 1.0;
+  }
+  let shaped = pow(max(cell, 0.001), max(U.hpSc0.w, 0.01));
+  let factor = mix(1.0, shaped, U.hpSc1.x);
+  return mix(1.0, factor, strength);
+}
+
 fn evaluateLowCloudLayer(
   worldPos: vec3f,
   baseM: f32,
@@ -630,24 +723,20 @@ fn evaluateLowCloudLayer(
   var densityCoverage = hpLoCoverage(w.r);
   // A negative override preserves the authored weather-map Sc mask. Presets
   // can opt into a uniform Sc deck without changing any existing cloud type.
-  let scMask = select(w.b, saturate(U.hpSc2.z), U.hpSc2.z >= 0.0);
-  var scStrength = saturate(U.hpSc0.x * scMask);
-  if (abs(genusIndex - GENUS_STRATOCUMULUS) < 0.5) {
-    scStrength = 1.0;
-  }
-  var scCell = 1.0;
-  if (scStrength > 0.0) {
-    scCell = saturate(textureSampleLevel(scCellTex, weatherSamp, weatherUv(worldPos) * U.hpSc2.xy, 0.0).r * U.hpSc1.y);
-    let scCoverage = saturate(pow(saturate(w.r), max(U.hpSc1.w, 0.001)) * U.hpSc1.z);
-    densityCoverage = mix(densityCoverage, scCoverage * scCell, scStrength);
-  }
+  let scStrength = legacyStratocumulusStrength(genusIndex, w);
+  let scCell = legacyStratocumulusCell(worldPos, scStrength);
+  densityCoverage = legacyStratocumulusCoverage(
+    w.r,
+    densityCoverage,
+    scCell,
+    scStrength,
+  );
   *outDensityCoverage = densityCoverage;
   let heightCoverage = hpLoHeightCoverage(w.r);
   let coverForTop = pow(saturate(heightCoverage), max(U.hpCoverTop.z, 0.01));
   let topScale = mix(1.0, max(U.hpCoverTop.y, 1.0), coverForTop * U.hpCoverTop.x);
   let heightForLut = h01 / (1.0 + (topScale - 1.0) * h01);
-  let scCompressedHeight = saturate(h01 / max(U.hpSc0.y, 0.01));
-  let localHeight = mix(heightForLut, scCompressedHeight, scStrength);
+  let localHeight = legacyStratocumulusHeight(h01, heightForLut, scStrength);
   let profiles = hpProfiles(localHeight, weatherUv(worldPos));
   let profile = mix(hpTypeValue(profiles, typeMix), profiles.r, scStrength);
   let support = densityCoverage * profile * densScale;
@@ -663,11 +752,7 @@ fn evaluateLowCloudLayer(
   *outAfterShape = baseShape * profile;
   var density = cloudFromShape(baseShape, worldPos, h01, localHeight, typeMix, scStrength, simpleMode, detailAmt, stepLen, densityCoverage, profile, densScale);
   density *= hpTypeValue(U.hpTypeDensity.xyz, typeMix) * U.hpTypeDensity.w;
-  if (scStrength > 0.0) {
-    let scCellShaped = pow(max(scCell, 0.001), max(U.hpSc0.w, 0.01));
-    let scCellFactor = mix(1.0, scCellShaped, U.hpSc1.x);
-    density *= mix(1.0, scCellFactor, scStrength);
-  }
+  density *= legacyStratocumulusCellFactor(scCell, scStrength);
   if (U.hpDensityPost0.z > 0.0) {
     density *= hpDensityDarkScale(densityCoverage);
   }
@@ -1006,6 +1091,116 @@ fn evaluateSheetFamily(
   );
 }
 
+fn cellularVerticalProfile(height: f32, profile: CellularProfile) -> f32 {
+  if (height < profile.bottomStart || height > profile.topEnd) {
+    return 0.0;
+  }
+  let bottom = smoothstep(profile.bottomStart, profile.bottomEnd, height);
+  let top = 1.0 - smoothstep(profile.topStart, profile.topEnd, height);
+  return saturate(bottom * top);
+}
+
+fn bodyLocalCellularCoordinate(
+  context: CloudGenusDensityContext,
+  recipe: CellularRecipe,
+) -> vec3f {
+  let cellMeters = max(
+    120.0,
+    recipe.baseCellMeters * max(context.morphology0.y, 0.05),
+  );
+  let phaseAngle = (context.bodyPhase.x - 0.5) * 1.2;
+  let rotated = rotateMorphologyXZ(context.bodyLocalMeters / cellMeters, phaseAngle);
+  return anisotropicCoordinate(
+    rotated,
+    vec3f(1.0, max(recipe.verticalFrequency, 0.02), max(recipe.crossFrequency, 0.05)),
+  );
+}
+
+fn evaluateCellularFamily(
+  context: CloudGenusDensityContext,
+  compatibility: DensitySample,
+  recipe: CellularRecipe,
+  profile: CellularProfile,
+) -> DensitySample {
+  let familyStrength = saturate(recipe.familyStrength * context.morphology0.z);
+  if (familyStrength <= 1e-5 || compatibility.density <= 0.0) {
+    return compatibility;
+  }
+
+  let profileBand = cellularVerticalProfile(
+    saturate(context.normalizedHeight),
+    profile,
+  );
+  let lod = morphologyLod(context);
+  let coordinate = bodyLocalCellularCoordinate(context, recipe);
+  // Keep a broad, cheap coordinate bend in simple/far modes so the remaining
+  // single carrier does not collapse into a regular checkerboard. Only the
+  // second cellular octave and directional ripple disappear with detail LOD.
+  let warpWeight = saturate(
+    recipe.warpStrength * mix(0.4, 1.0, lod.detailWeight),
+  );
+  let warp = vec3f(
+    sin(
+      coordinate.z * 0.43
+        + sin(coordinate.x * 0.19 + context.bodyPhase.x * MORPHOLOGY_TWO_PI)
+        + context.bodyPhase.y * MORPHOLOGY_TWO_PI
+    ),
+    0.0,
+    sin(
+      coordinate.x * 0.37
+        + sin(coordinate.z * 0.23 + context.bodyPhase.y * MORPHOLOGY_TWO_PI)
+        + context.bodyPhase.z * MORPHOLOGY_TWO_PI
+    ),
+  ) * warpWeight;
+  let warpedCoordinate = coordinate + warp;
+  let macroCell = cellularFamilyCarrier(warpedCoordinate, context.bodyPhase, lod);
+  var cellSignal = macroCell;
+  if (!context.simpleMode && lod.detailWeight > 1e-4) {
+    let detailCell = cellularFamilyCarrier(
+      warpedCoordinate * vec3f(1.83, 1.15, 1.67),
+      context.bodyPhase.zxy,
+      MorphologyLod(lod.frequencyScale, lod.detailWeight * 0.7),
+    );
+    cellSignal = mix(
+      macroCell,
+      macroCell * mix(0.58, 1.18, detailCell),
+      0.38 * lod.detailWeight,
+    );
+  }
+
+  let rippleWeight = saturate(recipe.rippleStrength * lod.detailWeight);
+  if (rippleWeight > 1e-5) {
+    let ripple = 0.5 + 0.5 * sin(
+      (warpedCoordinate.x * 1.9 + warpedCoordinate.z * 0.63)
+        * MORPHOLOGY_TWO_PI
+        + context.bodyPhase.y * MORPHOLOGY_TWO_PI,
+    );
+    let rippleFactor = mix(0.82, 1.12, ripple);
+    cellSignal *= mix(1.0, rippleFactor, rippleWeight);
+  }
+  cellSignal = saturate(cellSignal);
+
+  let sheetUniformity = saturate(context.morphology0.w);
+  let connectivity = saturate(recipe.connectivity * sheetUniformity);
+  let cellMask = smoothstep(
+    mix(0.56, 0.34, connectivity),
+    mix(0.88, 0.66, connectivity),
+    cellSignal,
+  );
+  let connectedMask = max(cellMask, connectivity * 0.52);
+  let cellFactor = mix(
+    max(recipe.valleyDensity, 0.0),
+    max(recipe.peakDensity, 0.0),
+    connectedMask,
+  );
+  let shapedDensity = compatibility.density * profileBand * cellFactor;
+  return safeMorphBlend(
+    compatibility,
+    replaceSampleDensity(compatibility, shapedDensity),
+    familyStrength,
+  );
+}
+
 fn evaluateCumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
   let compatibility = evaluateCompatibilityDensity(context, GENUS_CUMULUS);
   return evaluateCumulusFamily(context, compatibility);
@@ -1019,7 +1214,10 @@ fn evaluateStratusDensity(context: CloudGenusDensityContext) -> DensitySample {
 }
 
 fn evaluateStratocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_STRATOCUMULUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_STRATOCUMULUS);
+  let recipe = CellularRecipe(1.0, 1700.0, 0.18, 0.62, 0.5, 0.38, 1.28, 0.15, 0.06);
+  let profile = CellularProfile(0.01, 0.08, 0.24, 0.4);
+  return evaluateCellularFamily(context, compatibility, recipe, profile);
 }
 
 fn evaluateCumulonimbusDensity(context: CloudGenusDensityContext) -> DensitySample {
@@ -1028,7 +1226,10 @@ fn evaluateCumulonimbusDensity(context: CloudGenusDensityContext) -> DensitySamp
 }
 
 fn evaluateAltocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_ALTOCUMULUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_ALTOCUMULUS);
+  let recipe = CellularRecipe(1.0, 1400.0, 0.34, 1.0, 0.18, 0.12, 1.45, 0.24, 0.08);
+  let profile = CellularProfile(0.1, 0.24, 0.65, 0.85);
+  return evaluateCellularFamily(context, compatibility, recipe, profile);
 }
 
 fn evaluateAltostratusDensity(context: CloudGenusDensityContext) -> DensitySample {
@@ -1064,7 +1265,10 @@ fn evaluateCirrostratusDensity(context: CloudGenusDensityContext) -> DensitySamp
 }
 
 fn evaluateCirrocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_CIRROCUMULUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_CIRROCUMULUS);
+  let recipe = CellularRecipe(1.0, 1000.0, 0.22, 1.15, 0.1, 0.06, 1.55, 0.32, 0.2);
+  let profile = CellularProfile(0.34, 0.44, 0.56, 0.68);
+  return evaluateCellularFamily(context, compatibility, recipe, profile);
 }
 
 fn dispatchCloudGenusDensity(

@@ -473,9 +473,7 @@ test('cloud genus contexts expose deterministic body-local morphology coordinate
     assert.doesNotMatch(compatibility, new RegExp(`context\\.${unusedField}`));
   }
 
-  const compatibilityEvaluatorNames = [
-    'Stratocumulus', 'Altocumulus', 'Cirrus', 'Cirrocumulus',
-  ];
+  const compatibilityEvaluatorNames = ['Cirrus'];
   for (const evaluatorName of compatibilityEvaluatorNames) {
     assert.match(
       densitySource,
@@ -494,6 +492,12 @@ test('cloud genus contexts expose deterministic body-local morphology coordinate
     assert.match(
       densitySource,
       new RegExp(`fn evaluate${evaluatorName}Density\\(context: CloudGenusDensityContext\\)[\\s\\S]*evaluateSheetFamily\\(context, compatibility, recipe, profile\\)`),
+    );
+  }
+  for (const evaluatorName of ['Stratocumulus', 'Altocumulus', 'Cirrocumulus']) {
+    assert.match(
+      densitySource,
+      new RegExp(`fn evaluate${evaluatorName}Density\\(context: CloudGenusDensityContext\\)[\\s\\S]*evaluateCellularFamily\\(context, compatibility, recipe, profile\\)`),
     );
   }
 });
@@ -925,6 +929,106 @@ test('St, As, Ns, and Cs use distinct sheet thickness, density, droop, and fiber
   });
   assert.ok(csHighFiber > csLowFiber);
   assert.ok(csHighFiber / csLowFiber < 1.03);
+});
+
+test('legacy Sc compatibility math is extracted without losing the weather-B mask', () => {
+  const strength = densityWgslFunctionSource('legacyStratocumulusStrength', '\nfn legacyStratocumulusCell');
+  const cell = densityWgslFunctionSource('legacyStratocumulusCell', '\nfn legacyStratocumulusCoverage');
+  const coverage = densityWgslFunctionSource('legacyStratocumulusCoverage', '\nfn legacyStratocumulusHeight');
+  const height = densityWgslFunctionSource('legacyStratocumulusHeight', '\nfn legacyStratocumulusCellFactor');
+  const factor = densityWgslFunctionSource('legacyStratocumulusCellFactor', '\nfn evaluateLowCloudLayer');
+  assert.match(strength, /select\(weather\.b, saturate\(U\.hpSc2\.z\), U\.hpSc2\.z >= 0\.0\)/);
+  assert.match(strength, /abs\(genusIndex - GENUS_STRATOCUMULUS\) < 0\.5/);
+  assert.match(cell, /textureSampleLevel\(\s*scCellTex,[\s\S]*weatherUv\(worldPos\) \* U\.hpSc2\.xy/);
+  assert.match(coverage, /pow\(saturate\(rawCoverage\), max\(U\.hpSc1\.w, 0\.001\)\) \* U\.hpSc1\.z/);
+  assert.match(coverage, /return mix\(hpCoverage, scCoverage \* cell, strength\);/);
+  assert.match(height, /saturate\(normalizedHeight \/ max\(U\.hpSc0\.y, 0\.01\)\)/);
+  assert.match(factor, /pow\(max\(cell, 0\.001\), max\(U\.hpSc0\.w, 0\.01\)\)/);
+  assert.match(factor, /return mix\(1\.0, factor, strength\);/);
+
+  const core = densityWgslFunctionSource('evaluateLowCloudLayer', '\n// Compatibility bridge');
+  for (const helper of [
+    'legacyStratocumulusStrength',
+    'legacyStratocumulusCell',
+    'legacyStratocumulusCoverage',
+    'legacyStratocumulusHeight',
+    'legacyStratocumulusCellFactor',
+  ]) {
+    assert.match(core, new RegExp(`${helper}\\(`));
+  }
+  assert.doesNotMatch(core, /textureSampleLevel\(scCellTex/);
+});
+
+test('Sc, Ac, and Cc share body-local cells with ordered scale, connectivity, profile, and LOD', () => {
+  const carrier = densityWgslFunctionSource('cellularFamilyCarrier', '\nfn ridgeFiberCarrier');
+  assert.match(carrier, /let bentX = q\.x \+ sin\(q\.z \* 0\.31/);
+  assert.match(carrier, /let bentZ = q\.z \+ sin\(q\.x \* 0\.27/);
+  assert.doesNotMatch(carrier, /textureSample/);
+
+  const coordinate = densityWgslFunctionSource('bodyLocalCellularCoordinate', '\nfn evaluateCellularFamily');
+  assert.match(coordinate, /recipe\.baseCellMeters \* max\(context\.morphology0\.y, 0\.05\)/);
+  assert.match(coordinate, /rotateMorphologyXZ\(context\.bodyLocalMeters \/ cellMeters, phaseAngle\)/);
+  assert.match(coordinate, /max\(recipe\.verticalFrequency, 0\.02\)/);
+  assert.match(coordinate, /max\(recipe\.crossFrequency, 0\.05\)/);
+
+  const family = densityWgslFunctionSource('evaluateCellularFamily', '\nfn evaluateCumulusDensity');
+  assert.match(family, /let familyStrength = saturate\(recipe\.familyStrength \* context\.morphology0\.z\);/);
+  assert.match(family, /if \(familyStrength <= 1e-5 \|\| compatibility\.density <= 0\.0\) \{\s*return compatibility;/);
+  assert.match(family, /if \(!context\.simpleMode && lod\.detailWeight > 1e-4\)/);
+  assert.match(family, /let rippleWeight = saturate\(recipe\.rippleStrength \* lod\.detailWeight\);/);
+  assert.match(family, /let macroCell = cellularFamilyCarrier\(/);
+  assert.match(family, /let sheetUniformity = saturate\(context\.morphology0\.w\);/);
+  assert.match(family, /let connectivity = saturate\(recipe\.connectivity \* sheetUniformity\);/);
+  assert.match(family, /return safeMorphBlend\(/);
+  assert.doesNotMatch(family, /textureSample/);
+
+  const evaluators = {
+    sc: densityWgslFunctionSource('evaluateStratocumulusDensity', '\nfn evaluateCumulonimbusDensity'),
+    ac: densityWgslFunctionSource('evaluateAltocumulusDensity', '\nfn evaluateAltostratusDensity'),
+    cc: densityWgslFunctionSource('evaluateCirrocumulusDensity', '\nfn dispatchCloudGenusDensity'),
+  };
+  assert.match(evaluators.sc, /CellularRecipe\(1\.0, 1700\.0, 0\.18, 0\.62, 0\.5, 0\.38, 1\.28, 0\.15, 0\.06\)/);
+  assert.match(evaluators.ac, /CellularRecipe\(1\.0, 1400\.0, 0\.34, 1\.0, 0\.18, 0\.12, 1\.45, 0\.24, 0\.08\)/);
+  assert.match(evaluators.cc, /CellularRecipe\(1\.0, 1000\.0, 0\.22, 1\.15, 0\.1, 0\.06, 1\.55, 0\.32, 0\.2\)/);
+  for (const source of Object.values(evaluators)) {
+    assert.match(source, /evaluateCompatibilityDensity\(context, GENUS_/);
+    assert.match(source, /return evaluateCellularFamily\(context, compatibility, recipe, profile\);/);
+  }
+
+  const effectiveCellMeters = {
+    sc: 1700 * 1.2,
+    ac: 1400 * 0.7,
+    cc: 1000 * 0.35,
+  };
+  assert.ok(effectiveCellMeters.sc > effectiveCellMeters.ac);
+  assert.ok(effectiveCellMeters.ac > effectiveCellMeters.cc);
+
+  const profiles = {
+    sc: { bottomStart: 0.01, bottomEnd: 0.08, topStart: 0.24, topEnd: 0.4 },
+    ac: { bottomStart: 0.1, bottomEnd: 0.24, topStart: 0.65, topEnd: 0.85 },
+    cc: { bottomStart: 0.34, bottomEnd: 0.44, topStart: 0.56, topEnd: 0.68 },
+  };
+  const profileCount = (profile) => Array.from({ length: 101 }, (_, index) => index / 100)
+    .filter((heightValue) => sheetVerticalProfileReference(heightValue, profile) > 0).length;
+  assert.ok(profileCount(profiles.sc) < profileCount(profiles.ac));
+  assert.ok(profileCount(profiles.cc) < profileCount(profiles.sc));
+
+  const connectivity = {
+    sc: 0.5 * 0.6,
+    ac: 0.18 * 0.4,
+    cc: 0.1 * 0.35,
+  };
+  assert.ok(connectivity.sc > connectivity.ac);
+  assert.ok(connectivity.ac > connectivity.cc);
+  const simpleLod = morphologyLodReference({
+    simpleMode: true,
+    cameraDistance: 0,
+    maximumDistance: 100_000,
+    baseM: 6000,
+    topM: 10_000,
+    stepLen: 16,
+  });
+  assert.equal(0.2 * simpleLod.detailWeight, 0, 'simple mode disables the Cc ripple');
 });
 
 test('per-body motion transports the density domain and lifecycle scales density smoothly', () => {

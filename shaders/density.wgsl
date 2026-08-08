@@ -64,6 +64,22 @@ struct MorphologyLod {
   detailWeight: f32,
 };
 
+struct SheetRecipe {
+  familyStrength: f32,
+  densityMultiplier: f32,
+  macroVariationStrength: f32,
+  bottomErosionStrength: f32,
+  bottomDroopStrength: f32,
+  directionalFiberStrength: f32,
+};
+
+struct SheetProfile {
+  bottomStart: f32,
+  bottomEnd: f32,
+  topStart: f32,
+  topEnd: f32,
+};
+
 fn hashCloudBodyPhase(seed: u32) -> u32 {
   var value = seed;
   value = value ^ (value >> 16u);
@@ -876,13 +892,130 @@ fn evaluateCumulonimbusFamily(
   );
 }
 
+fn sheetVerticalProfile(height: f32, profile: SheetProfile) -> f32 {
+  if (height < profile.bottomStart || height > profile.topEnd) {
+    return 0.0;
+  }
+  let bottom = smoothstep(profile.bottomStart, profile.bottomEnd, height);
+  let top = 1.0 - smoothstep(profile.topStart, profile.topEnd, height);
+  return saturate(bottom * top);
+}
+
+fn evaluateSheetFoundation(
+  context: CloudGenusDensityContext,
+  recipe: SheetRecipe,
+  profile: SheetProfile,
+) -> f32 {
+  if (recipe.familyStrength <= 1e-5 || context.densityScale <= 1e-5) {
+    return 0.0;
+  }
+
+  // Sheet coverage comes directly from the weather field. Uniformity fills
+  // sparse values inside that finite support, but never creates density when
+  // coverage is zero or beyond the weather-map boundary.
+  let rawCoverage = saturate(context.weather.r);
+  if (rawCoverage <= 1e-5) {
+    return 0.0;
+  }
+  let weatherSupport = smoothstep(0.0, 0.12, rawCoverage);
+  let sheetUniformity = saturate(context.morphology0.w);
+  let sheetCoverage = mix(rawCoverage, weatherSupport, sheetUniformity);
+
+  let lod = morphologyLod(context);
+  let layerHeight = max(context.topM - context.baseM, 1.0);
+  let macroScaleM = max(
+    1200.0,
+    layerHeight * max(context.morphology0.y, 0.05) * 1.6,
+  );
+  let macroCoordinate = anisotropicCoordinate(
+    context.bodyLocalMeters / macroScaleM,
+    vec3f(1.0, 0.08, 1.0),
+  );
+  let macroVariation = sheetMacroVariation(
+    macroCoordinate,
+    context.bodyPhase,
+    lod,
+  );
+
+  // A small height offset lets thick rain sheets hang lower in broad pockets.
+  // The offset disappears above the lower half so the top remains calm.
+  let bodyHeight = saturate(context.normalizedHeight);
+  let bottomRegion = 1.0 - smoothstep(0.2, 0.55, bodyHeight);
+  let profileHeight = saturate(
+    bodyHeight
+      + (1.0 - macroVariation)
+        * max(recipe.bottomDroopStrength, 0.0)
+        * bottomRegion,
+  );
+  let verticalShape = sheetVerticalProfile(profileHeight, profile);
+  if (verticalShape <= 0.0) {
+    return 0.0;
+  }
+
+  let variationWeight = saturate(
+    recipe.macroVariationStrength * mix(1.0, 0.35, sheetUniformity),
+  );
+  let macroFactor = mix(1.0, macroVariation, variationWeight);
+  let lowerEdge = 1.0 - smoothstep(profile.bottomEnd, profile.topStart, profileHeight);
+  let softEdge = 1.0 - smoothstep(0.45, 0.95, verticalShape);
+  let erosionRegion = saturate(max(lowerEdge, softEdge * 0.35));
+  let erosionWeight = saturate(
+    recipe.bottomErosionStrength
+      * max(context.morphology1.w, 0.0)
+      * saturate(context.detailAmount)
+      * erosionRegion,
+  );
+  let erosionFactor = mix(1.0, mix(0.72, 1.0, macroVariation), erosionWeight);
+
+  var fiberFactor = 1.0;
+  let fiberStrength = saturate(recipe.directionalFiberStrength);
+  if (fiberStrength > 1e-5) {
+    let fiberCoordinate = rotateMorphologyXZ(
+      macroCoordinate * vec3f(0.55, 0.15, 2.2),
+      context.morphology1.y,
+    );
+    let fiber = ridgeFiberCarrier(fiberCoordinate, context.bodyPhase.zxy, lod);
+    fiberFactor = 1.0 + (fiber - 0.5) * fiberStrength * 0.16;
+  }
+
+  return sanitizeMorphologyDensity(
+    sheetCoverage
+      * verticalShape
+      * macroFactor
+      * erosionFactor
+      * fiberFactor
+      * context.densityScale
+      * max(recipe.densityMultiplier, 0.0),
+  );
+}
+
+fn evaluateSheetFamily(
+  context: CloudGenusDensityContext,
+  compatibility: DensitySample,
+  recipe: SheetRecipe,
+  profile: SheetProfile,
+) -> DensitySample {
+  if (recipe.familyStrength <= 1e-5) {
+    return compatibility;
+  }
+  let sheetDensity = evaluateSheetFoundation(context, recipe, profile);
+  return safeMorphBlend(
+    compatibility,
+    replaceSampleDensity(compatibility, sheetDensity),
+    recipe.familyStrength,
+  );
+}
+
 fn evaluateCumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
   let compatibility = evaluateCompatibilityDensity(context, GENUS_CUMULUS);
   return evaluateCumulusFamily(context, compatibility);
 }
 
 fn evaluateStratusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_STRATUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_STRATUS);
+  let recipe = SheetRecipe(1.0, 0.72, 0.22, 0.22, 0.015, 0.0);
+  let profile = SheetProfile(0.03, 0.18, 0.58, 0.86);
+  return evaluateSheetFamily(context, compatibility, recipe, profile);
 }
 
 fn evaluateStratocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
@@ -899,11 +1032,17 @@ fn evaluateAltocumulusDensity(context: CloudGenusDensityContext) -> DensitySampl
 }
 
 fn evaluateAltostratusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_ALTOSTRATUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_ALTOSTRATUS);
+  let recipe = SheetRecipe(1.0, 0.48, 0.12, 0.1, 0.0, 0.0);
+  let profile = SheetProfile(0.14, 0.28, 0.7, 0.88);
+  return evaluateSheetFamily(context, compatibility, recipe, profile);
 }
 
 fn evaluateNimbostratusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_NIMBOSTRATUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_NIMBOSTRATUS);
+  let recipe = SheetRecipe(1.0, 1.28, 0.18, 0.5, 0.06, 0.0);
+  let profile = SheetProfile(0.02, 0.16, 0.84, 0.98);
+  return evaluateSheetFamily(context, compatibility, recipe, profile);
 }
 
 fn evaluateCirrusDensity(context: CloudGenusDensityContext) -> DensitySample {
@@ -911,7 +1050,17 @@ fn evaluateCirrusDensity(context: CloudGenusDensityContext) -> DensitySample {
 }
 
 fn evaluateCirrostratusDensity(context: CloudGenusDensityContext) -> DensitySample {
-  return evaluateCompatibilityDensity(context, GENUS_CIRROSTRATUS);
+  let compatibility = evaluateCompatibilityDensity(context, GENUS_CIRROSTRATUS);
+  let recipe = SheetRecipe(
+    1.0,
+    0.28,
+    0.08,
+    0.04,
+    0.0,
+    min(saturate(context.morphology1.x), 0.18),
+  );
+  let profile = SheetProfile(0.4, 0.48, 0.62, 0.7);
+  return evaluateSheetFamily(context, compatibility, recipe, profile);
 }
 
 fn evaluateCirrocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {

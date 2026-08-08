@@ -252,6 +252,64 @@ function cumulonimbusAnvilWeight(height, strength) {
   return Math.min(1, Math.max(0, anvilBand * strength));
 }
 
+function sheetVerticalProfileReference(height, profile) {
+  if (height < profile.bottomStart || height > profile.topEnd) return 0;
+  const bottom = ellipseSmoothstep(profile.bottomStart, profile.bottomEnd, height);
+  const top = 1 - ellipseSmoothstep(profile.topStart, profile.topEnd, height);
+  return Math.min(1, Math.max(0, bottom * top));
+}
+
+function sheetFoundationReference({
+  rawCoverage,
+  sheetUniformity,
+  densityScale,
+  detailAmount,
+  erosionScale,
+  height,
+  macroVariation,
+  fiber = 0.5,
+  recipe,
+  profile,
+}) {
+  if (recipe.familyStrength <= 1e-5 || densityScale <= 1e-5 || rawCoverage <= 1e-5) return 0;
+  const weatherSupport = ellipseSmoothstep(0, 0.12, Math.min(1, Math.max(0, rawCoverage)));
+  const uniformity = Math.min(1, Math.max(0, sheetUniformity));
+  const sheetCoverage = rawCoverage + (weatherSupport - rawCoverage) * uniformity;
+  const bottomRegion = 1 - ellipseSmoothstep(0.2, 0.55, height);
+  const profileHeight = Math.min(1, Math.max(0,
+    height + (1 - macroVariation) * Math.max(recipe.bottomDroopStrength, 0) * bottomRegion,
+  ));
+  const verticalShape = sheetVerticalProfileReference(profileHeight, profile);
+  if (verticalShape <= 0) return 0;
+  const variationWeight = Math.min(1, Math.max(0,
+    recipe.macroVariationStrength * (1 + (0.35 - 1) * uniformity),
+  ));
+  const macroFactor = 1 + (macroVariation - 1) * variationWeight;
+  const lowerEdge = 1 - ellipseSmoothstep(profile.bottomEnd, profile.topStart, profileHeight);
+  const softEdge = 1 - ellipseSmoothstep(0.45, 0.95, verticalShape);
+  const erosionRegion = Math.min(1, Math.max(0, Math.max(lowerEdge, softEdge * 0.35)));
+  const erosionWeight = Math.min(1, Math.max(0,
+    recipe.bottomErosionStrength
+      * Math.max(erosionScale, 0)
+      * Math.min(1, Math.max(0, detailAmount))
+      * erosionRegion,
+  ));
+  const erosionTarget = 0.72 + (1 - 0.72) * macroVariation;
+  const erosionFactor = 1 + (erosionTarget - 1) * erosionWeight;
+  const fiberFactor = 1 + (fiber - 0.5)
+    * Math.min(1, Math.max(0, recipe.directionalFiberStrength))
+    * 0.16;
+  return sanitizeMorphologyDensity(
+    sheetCoverage
+      * verticalShape
+      * macroFactor
+      * erosionFactor
+      * fiberFactor
+      * densityScale
+      * Math.max(recipe.densityMultiplier, 0),
+  );
+}
+
 function bodyLifecycleScale(enabled, life, peak, time) {
   if (!enabled) return 1;
   const birth = life[0];
@@ -416,8 +474,7 @@ test('cloud genus contexts expose deterministic body-local morphology coordinate
   }
 
   const compatibilityEvaluatorNames = [
-    'Stratus', 'Stratocumulus', 'Altocumulus', 'Altostratus',
-    'Nimbostratus', 'Cirrus', 'Cirrostratus', 'Cirrocumulus',
+    'Stratocumulus', 'Altocumulus', 'Cirrus', 'Cirrocumulus',
   ];
   for (const evaluatorName of compatibilityEvaluatorNames) {
     assert.match(
@@ -433,6 +490,12 @@ test('cloud genus contexts expose deterministic body-local morphology coordinate
     densitySource,
     /fn evaluateCumulonimbusDensity\(context: CloudGenusDensityContext\)[\s\S]*evaluateCumulonimbusFamily\(context, compatibility\)/,
   );
+  for (const evaluatorName of ['Stratus', 'Altostratus', 'Nimbostratus', 'Cirrostratus']) {
+    assert.match(
+      densitySource,
+      new RegExp(`fn evaluate${evaluatorName}Density\\(context: CloudGenusDensityContext\\)[\\s\\S]*evaluateSheetFamily\\(context, compatibility, recipe, profile\\)`),
+    );
+  }
 });
 
 test('body-local coordinates invert rotation and stay finite for bounded and unbounded bodies', () => {
@@ -709,6 +772,159 @@ test('Cb carves vertically elongated upper cells and adds an anvil only in the h
   const horizontalApplication = densitySource.indexOf('density *= horizontalMask;', layerEvaluationStart);
   assert.ok(dispatcherEnd < horizontalMaskStart);
   assert.ok(layerEvaluationStart >= 0 && horizontalApplication > layerEvaluationStart);
+});
+
+test('sheet foundation builds finite weather-bounded curtains without the Cu LUT', () => {
+  const foundation = densityWgslFunctionSource('evaluateSheetFoundation', '\nfn evaluateSheetFamily');
+  assert.match(foundation, /if \(recipe\.familyStrength <= 1e-5 \|\| context\.densityScale <= 1e-5\)/);
+  assert.match(foundation, /let rawCoverage = saturate\(context\.weather\.r\);/);
+  assert.match(foundation, /if \(rawCoverage <= 1e-5\) \{\s*return 0\.0;/);
+  assert.match(foundation, /let sheetUniformity = saturate\(context\.morphology0\.w\);/);
+  assert.match(foundation, /let sheetCoverage = mix\(rawCoverage, weatherSupport, sheetUniformity\);/);
+  assert.match(foundation, /sheetMacroVariation\(/);
+  assert.match(foundation, /recipe\.bottomErosionStrength[\s\S]*context\.morphology1\.w[\s\S]*context\.detailAmount/);
+  assert.doesNotMatch(foundation, /hpProfiles|hpProfile\(|cloudLutTex|selectedCloudType|cellularCarrier|sampleBaseShape/);
+
+  const family = densityWgslFunctionSource('evaluateSheetFamily', '\nfn evaluateCumulusDensity');
+  assert.match(family, /if \(recipe\.familyStrength <= 1e-5\) \{\s*return compatibility;/);
+  assert.match(family, /let sheetDensity = evaluateSheetFoundation\(context, recipe, profile\);/);
+  assert.match(family, /return safeMorphBlend\(/);
+
+  const recipe = {
+    familyStrength: 1,
+    densityMultiplier: 0.72,
+    macroVariationStrength: 0.22,
+    bottomErosionStrength: 0.22,
+    bottomDroopStrength: 0.015,
+    directionalFiberStrength: 0,
+  };
+  const profile = { bottomStart: 0.03, bottomEnd: 0.18, topStart: 0.58, topEnd: 0.86 };
+  const common = {
+    rawCoverage: 0.18,
+    densityScale: 0.8,
+    detailAmount: 0.6,
+    erosionScale: 0.35,
+    macroVariation: 0.74,
+    recipe,
+    profile,
+  };
+  assert.equal(sheetFoundationReference({ ...common, rawCoverage: 0, sheetUniformity: 1, height: 0.4 }), 0);
+  assert.equal(sheetFoundationReference({
+    ...common,
+    sheetUniformity: 1,
+    height: 0.4,
+    recipe: { ...recipe, familyStrength: 0 },
+  }), 0);
+  const weatherDriven = sheetFoundationReference({ ...common, sheetUniformity: 0, height: 0.4 });
+  const uniformCurtain = sheetFoundationReference({ ...common, sheetUniformity: 1, height: 0.4 });
+  assert.ok(uniformCurtain > weatherDriven);
+  for (let height = -0.1; height <= 1.1; height += 0.01) {
+    const density = sheetFoundationReference({ ...common, sheetUniformity: 0.95, height });
+    assert.ok(Number.isFinite(density));
+    assert.ok(density >= 0 && density <= 10_000);
+  }
+});
+
+test('St, As, Ns, and Cs use distinct sheet thickness, density, droop, and fiber recipes', () => {
+  const evaluators = {
+    Stratus: densityWgslFunctionSource('evaluateStratusDensity', '\nfn evaluateStratocumulusDensity'),
+    Altostratus: densityWgslFunctionSource('evaluateAltostratusDensity', '\nfn evaluateNimbostratusDensity'),
+    Nimbostratus: densityWgslFunctionSource('evaluateNimbostratusDensity', '\nfn evaluateCirrusDensity'),
+    Cirrostratus: densityWgslFunctionSource('evaluateCirrostratusDensity', '\nfn evaluateCirrocumulusDensity'),
+  };
+  for (const source of Object.values(evaluators)) {
+    assert.match(source, /evaluateCompatibilityDensity\(context, GENUS_/);
+    assert.match(source, /return evaluateSheetFamily\(context, compatibility, recipe, profile\);/);
+    assert.doesNotMatch(source, /evaluateCumulusFamily|evaluateCumulonimbusFamily|cellularCarrier/);
+  }
+  assert.match(evaluators.Stratus, /SheetRecipe\(1\.0, 0\.72, 0\.22, 0\.22, 0\.015, 0\.0\)/);
+  assert.match(evaluators.Altostratus, /SheetRecipe\(1\.0, 0\.48, 0\.12, 0\.1, 0\.0, 0\.0\)/);
+  assert.match(evaluators.Nimbostratus, /SheetRecipe\(1\.0, 1\.28, 0\.18, 0\.5, 0\.06, 0\.0\)/);
+  assert.match(evaluators.Cirrostratus, /min\(saturate\(context\.morphology1\.x\), 0\.18\)/);
+
+  const recipes = {
+    st: { familyStrength: 1, densityMultiplier: 0.72, macroVariationStrength: 0.22, bottomErosionStrength: 0.22, bottomDroopStrength: 0.015, directionalFiberStrength: 0 },
+    as: { familyStrength: 1, densityMultiplier: 0.48, macroVariationStrength: 0.12, bottomErosionStrength: 0.1, bottomDroopStrength: 0, directionalFiberStrength: 0 },
+    ns: { familyStrength: 1, densityMultiplier: 1.28, macroVariationStrength: 0.18, bottomErosionStrength: 0.5, bottomDroopStrength: 0.06, directionalFiberStrength: 0 },
+    cs: { familyStrength: 1, densityMultiplier: 0.28, macroVariationStrength: 0.08, bottomErosionStrength: 0.04, bottomDroopStrength: 0, directionalFiberStrength: 0.18 },
+  };
+  const profiles = {
+    st: { bottomStart: 0.03, bottomEnd: 0.18, topStart: 0.58, topEnd: 0.86 },
+    as: { bottomStart: 0.14, bottomEnd: 0.28, topStart: 0.7, topEnd: 0.88 },
+    ns: { bottomStart: 0.02, bottomEnd: 0.16, topStart: 0.84, topEnd: 0.98 },
+    cs: { bottomStart: 0.4, bottomEnd: 0.48, topStart: 0.62, topEnd: 0.7 },
+  };
+  const samples = {};
+  for (const genus of Object.keys(recipes)) {
+    samples[genus] = Array.from({ length: 101 }, (_, index) => sheetFoundationReference({
+      rawCoverage: 0.6,
+      sheetUniformity: genus === 'st' ? 0.95 : genus === 'as' ? 0.9 : 0.98,
+      densityScale: 1,
+      detailAmount: 0.5,
+      erosionScale: 0.35,
+      height: index / 100,
+      macroVariation: 0.75,
+      recipe: recipes[genus],
+      profile: profiles[genus],
+    }));
+  }
+  const nonzeroCount = (values) => values.filter((value) => value > 1e-6).length;
+  const average = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  assert.ok(nonzeroCount(samples.cs) < nonzeroCount(samples.as));
+  assert.ok(nonzeroCount(samples.as) < nonzeroCount(samples.ns));
+  assert.ok(average(samples.ns) > average(samples.as) * 2);
+
+  const nsWithoutDroop = sheetFoundationReference({
+    rawCoverage: 0.6,
+    sheetUniformity: 0.98,
+    densityScale: 1,
+    detailAmount: 0.5,
+    erosionScale: 0.25,
+    height: 0.015,
+    macroVariation: 0,
+    recipe: { ...recipes.ns, bottomDroopStrength: 0 },
+    profile: profiles.ns,
+  });
+  const nsWithDroop = sheetFoundationReference({
+    rawCoverage: 0.6,
+    sheetUniformity: 0.98,
+    densityScale: 1,
+    detailAmount: 0.5,
+    erosionScale: 0.25,
+    height: 0.015,
+    macroVariation: 0,
+    recipe: recipes.ns,
+    profile: profiles.ns,
+  });
+  assert.equal(nsWithoutDroop, 0);
+  assert.ok(nsWithDroop > 0);
+
+  const csLowFiber = sheetFoundationReference({
+    rawCoverage: 0.6,
+    sheetUniformity: 0.98,
+    densityScale: 1,
+    detailAmount: 0.15,
+    erosionScale: 0.25,
+    height: 0.55,
+    macroVariation: 0.75,
+    fiber: 0,
+    recipe: recipes.cs,
+    profile: profiles.cs,
+  });
+  const csHighFiber = sheetFoundationReference({
+    rawCoverage: 0.6,
+    sheetUniformity: 0.98,
+    densityScale: 1,
+    detailAmount: 0.15,
+    erosionScale: 0.25,
+    height: 0.55,
+    macroVariation: 0.75,
+    fiber: 1,
+    recipe: recipes.cs,
+    profile: profiles.cs,
+  });
+  assert.ok(csHighFiber > csLowFiber);
+  assert.ok(csHighFiber / csLowFiber < 1.03);
 });
 
 test('per-body motion transports the density domain and lifecycle scales density smoothly', () => {

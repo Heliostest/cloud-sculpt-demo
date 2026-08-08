@@ -109,6 +109,14 @@ test('GUI and main apply presets directly to the object collection with explicit
   assert.match(guiSource, /folderLabel\('bodyLifecycle'\)/);
   assert.match(guiSource, /advancedBodyFolders/);
   assert.match(guiSource, /lifecycleFolder\.add\(body, 'lifeEnabled'\)/);
+  assert.match(guiSource, /cloudRenderPathLabel\(body\.path\)/);
+  assert.match(guiSource, /folder\.add\(body, 'path'\)\.disable\(\)/);
+  assert.match(guiSource, /body\?\.isLocal/);
+  assert.match(mainSource, /query\.get\(`enabled\$\{i\}`\)/);
+  assert.match(mainSource, /query\.get\(`bounded\$\{i\}`\)/);
+  assert.match(mainSource, /query\.get\(`bodyDensity\$\{i\}`\)/);
+  assert.match(mainSource, /query\.get\('local'\)/);
+  assert.match(mainSource, /bodyStore\.add\('local-volume', true\)/);
   assert.doesNotMatch(guiSource, /high\.add\(params, '(?:highBaseKm|highTopKm|highDensityMultiplier)'/);
   assert.doesNotMatch(guiSource, /highCell\.add\(params, 'highWispStrength'/);
 });

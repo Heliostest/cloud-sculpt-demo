@@ -483,6 +483,8 @@ TCu 不是第十一个 genus，继续由 `genus=cumulus` 和 `cumulusDevelopment
 
 ## 12. 阶段 6：纤维状家族 Ci
 
+> 状态：**未完成，暂时跳过**（2026-08-08，按用户决定）。现有 Ci 实验代码不视为视觉验收通过，也不作为后续阶段的完成依赖；恢复本阶段时需要重新确定形态方案。
+
 Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 
 ### 12.1 坐标与主方向
@@ -521,6 +523,8 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 
 ## 13. 阶段 7：特殊渲染路径语义收口
 
+> 状态：**已完成**（2026-08-08）。阶段 7 只收口路径和配方语义，没有继续调整或验收阶段 6 的卷云形态。
+
 当前 CloudBody 包含 `volume`、`local-volume` 和 `high-sheet` 三条路径。最终必须明确谁是 canonical 实现。
 
 ### 决策
@@ -532,12 +536,18 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 
 ### 任务
 
-- [ ] local-volume 消费 Cb 的 vertical/cell/anvil 配方；
-- [ ] high-sheet 消费 Ac/As 的 cell/sheet/erosion 配方；
-- [ ] 明确哪些参数在特殊路径中被近似或忽略；
-- [ ] GUI 标注渲染路径，不让用户误认为是额外云属；
-- [ ] 对 canonical volume 与特殊路径建立并排截图；
-- [ ] 若特殊路径不再提供明显价值，单独规划删除，不在形态提交中顺手移除。
+- [x] local-volume 消费 Cb 的 vertical/cell/anvil 配方；
+- [x] high-sheet 消费 Ac/As 的 cell/sheet/erosion 配方；
+- [x] 明确哪些参数在特殊路径中被近似或忽略；
+- [x] GUI 标注渲染路径，不让用户误认为是额外云属；
+- [x] 对 canonical volume 与特殊路径建立并排截图；
+- [x] 两条特殊路径仍分别提供近景 Cb 和远景 Ac/As 的明确价值，暂不删除；若以后删除，单独规划，不混入形态提交。
+
+### 特殊路径近似边界
+
+- `local-volume` 固定为 Cb hero 路径，直接调用 canonical Cb evaluator，并消费 `verticalDevelopment`、`cellScale`、`cellStrength`、`anvilStrength` 与 `erosionScale`。它仍使用轴对齐局部椭圆和固定边缘羽化，不实现 volume body 的旋转、独立运动或生命周期。
+- `high-sheet` 固定为 Ac/As 性能路径，消费 `verticalDevelopment`、`cellScale`、`cellStrength`、`sheetUniformity` 与 `erosionScale`。它用二维高云纹理和独立高云光学近似 volume 形态；`fiberStrength`、`fiberAngleDeg`、`anvilStrength` 在此路径中明确忽略。
+- `volume + genus dispatcher` 始终是 canonical 实现；特殊路径可以降低空间维度或细节成本，但不得重新解释 genus，也不得恢复隐藏 type slot。
 
 ### 验收
 
@@ -709,8 +719,8 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 - [ ] 阶段 3：积状家族；
 - [ ] 阶段 4：层状家族；
 - [ ] 阶段 5：蜂窝块状家族；
-- [ ] 阶段 6：纤维状家族；
-- [ ] 阶段 7：特殊路径语义收口；
+- [ ] 阶段 6：纤维状家族（未完成，按用户决定暂时跳过）；
+- [x] 阶段 7：特殊路径语义收口；
 - [ ] 阶段 8：Preset 与 GUI 收口；
 - [ ] 阶段 9：十云属最终校准。
 
@@ -724,4 +734,3 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 4. 不让任何 evaluator 消费这些新增字段；
 5. 用逐像素对比证明画面没有变化；
 6. 通过后再开始 Cu 的第一个积状形态切片。
-

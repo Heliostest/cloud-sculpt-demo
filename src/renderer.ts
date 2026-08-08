@@ -31,7 +31,7 @@ import {
   type DemoParams,
 } from './params';
 
-const UNIFORM_SIZE = 880;
+const UNIFORM_SIZE = 944;
 const CLOUD_BODY_UNIFORM_SIZE = CLOUD_BODY_FLOAT_COUNT * 4;
 
 export interface CameraState {
@@ -416,7 +416,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
 
     f32[76] = localBody?.coverage ?? 0;
     f32[77] = localBody?.densityScale ?? 0;
-    f32[78] = params.exposure;
+    f32[78] = localBody?.detailAmount ?? 0;
     f32[79] = 0;
 
     f32[80] = params.minPrimaryStep;
@@ -606,6 +606,29 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[217] = (params.hpShapeSecondaryRotationDeg * Math.PI) / 180;
     f32[218] = params.hpShapeSecondaryWeight;
     f32[219] = 0;
+
+    // Special render paths consume the same authored morphology recipe as the
+    // canonical volume dispatcher. Their shaders may approximate a field, but
+    // the meaning and zero/default values stay owned by CloudBody.
+    const localMorphology = localBody?.morphology;
+    f32[220] = localMorphology?.verticalDevelopment ?? 0;
+    f32[221] = localMorphology?.cellScale ?? 0;
+    f32[222] = localMorphology?.cellStrength ?? 0;
+    f32[223] = localMorphology?.sheetUniformity ?? 0;
+    f32[224] = localMorphology?.fiberStrength ?? 0;
+    f32[225] = ((localMorphology?.fiberAngleDeg ?? 0) * Math.PI) / 180;
+    f32[226] = localMorphology?.anvilStrength ?? 0;
+    f32[227] = localMorphology?.erosionScale ?? 0;
+
+    const highMorphology = highBody?.morphology;
+    f32[228] = highMorphology?.verticalDevelopment ?? 0;
+    f32[229] = highMorphology?.cellScale ?? 0;
+    f32[230] = highMorphology?.cellStrength ?? 0;
+    f32[231] = highMorphology?.sheetUniformity ?? 0;
+    f32[232] = highMorphology?.fiberStrength ?? 0;
+    f32[233] = ((highMorphology?.fiberAngleDeg ?? 0) * Math.PI) / 180;
+    f32[234] = highMorphology?.anvilStrength ?? 0;
+    f32[235] = highMorphology?.erosionScale ?? 0;
 
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
     device.queue.writeBuffer(cloudBodyUniformBuf, 0, cloudBodyUniformCPU);

@@ -394,20 +394,37 @@ fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
   if (coverage < 0.001) {
     return HighCloudSample(0.0, coverage, saturate(weather.a), typeMix, normalizedHeight, 0.0);
   }
-  let cellStrength = mix(U.hpHigh3.z, U.hpHigh3.y, typeMix);
+  // high-sheet is a performance-specialized approximation of the canonical
+  // Ac/As families. It consumes the same cell scale/strength, sheet
+  // uniformity, vertical development and erosion recipe fields. Fiber angle,
+  // fiber strength and anvil strength are intentionally ignored on this path.
+  let morphology = U.hpHighMorphology0;
+  let cellScale = max(morphology.y, 0.05);
+  let recipeCellStrength = saturate(morphology.z);
+  let sheetUniformity = saturate(morphology.w);
+  let verticalDevelopment = saturate(morphology.x);
+  let cellStrength = mix(U.hpHigh3.z, U.hpHigh3.y, typeMix)
+    * recipeCellStrength
+    * mix(1.0, 0.45, sheetUniformity);
   let baseUv = highWeatherUv(worldPos);
   let windUv = U.windOffset * U.hpHigh1.w;
   let warpUv = baseUv * U.hpHigh2.zw + windUv * 0.5;
   let warp = (textureSampleLevel(highWarpTex, weatherSamp, warpUv, 0.0).rg * 2.0 - 1.0) * U.hpHigh3.x;
-  let cellUv = baseUv * U.hpHigh2.xy + windUv + warp;
+  let cellUv = baseUv * U.hpHigh2.xy / cellScale + windUv + warp;
   let cellRaw = saturate(textureSampleLevel(highCellTex, weatherSamp, cellUv, 0.0).r);
   let cellShaped = pow(max(cellRaw, 0.001), max(U.hpHigh3.w, 0.01));
 
   let coverForHeight = pow(coverage, max(U.hpHigh4.w, 0.01));
-  let drivenTop = mix(U.hpHigh4.x, U.hpHigh4.y, coverForHeight);
+  let authoredCenter = (U.hpHigh4.x + U.hpHigh4.y) * 0.5;
+  let authoredHalfSpan = (U.hpHigh4.y - U.hpHigh4.x) * 0.5
+    * mix(0.58, 1.28, verticalDevelopment);
+  let authoredBottom = authoredCenter - authoredHalfSpan;
+  let authoredTop = authoredCenter + authoredHalfSpan;
+  let drivenTop = mix(authoredBottom, authoredTop, coverForHeight);
   let thickFactor = mix(1.0, cellShaped, saturate(cellStrength * 0.5));
-  let effectiveTop = U.hpHigh4.x + (drivenTop - U.hpHigh4.x) * thickFactor;
-  let effectiveBottom = U.hpHigh4.x - (U.hpHigh4.y - U.hpHigh4.x) * U.hpHigh4.z * coverForHeight;
+  let effectiveTop = authoredBottom + (drivenTop - authoredBottom) * thickFactor;
+  let effectiveBottom = authoredBottom
+    - (authoredTop - authoredBottom) * U.hpHigh4.z * coverForHeight;
 
   let distXZ = length((worldPos - U.cameraPos).xz);
   let distT = smoothstep(U.hpHigh6.w, max(U.hpHigh6.w + 1.0, U.hpHigh7.x), distXZ);
@@ -424,7 +441,11 @@ fn evaluateHighCloudDensity(worldPos: vec3f) -> HighCloudSample {
   let densitySoft = U.hpHigh5.y * (1.0 - pow(saturate(weather.a), max(U.hpHigh5.w, 0.01)));
   let baseDensity = remapClamped(coverage, U.hpHigh5.x, U.hpHigh5.x + max(densitySoft, 0.001));
   let cellFactor = mix(1.0, cellShaped, saturate(cellStrength));
-  var density = (baseDensity * cellFactor - wisp * U.hpHigh6.z * typeMix) * bandMask;
+  let erosionScale = max(U.hpHighMorphology1.w, 0.0);
+  var density = (
+    baseDensity * mix(1.0, cellFactor, 1.0 - sheetUniformity * 0.72)
+      - wisp * U.hpHigh6.z * erosionScale * typeMix
+  ) * bandMask;
   if (U.hpDensityPost0.z > 0.0) {
     let darkWeight = 1.0 - pow(saturate(weather.a), max(U.hpDensityPost0.w, 0.01));
     density *= 1.0 - saturate(U.hpDensityPost0.z * darkWeight);
@@ -542,30 +563,6 @@ fn verticalProfile(h01: f32, typeMix: f32) -> f32 {
 fn anvilFootprintBoost(h01: f32, typeMix: f32) -> f32 {
   let anvil = softstep(0.58, 0.9, h01) * typeMix;
   return 1.0 + anvil * 0.9;
-}
-
-fn heroSupport(worldPos: vec3f) -> vec4f {
-  if (U.hero0.w < 0.5) {
-    return vec4f(0.0);
-  }
-  let center = vec2f(U.hero0.x, U.hero0.y);
-  let radii = max(vec2f(U.hero0.z, U.hero1.x), vec2f(1.0));
-  let d = (worldPos.xz - center) / radii;
-  let ell = length(d);
-  let fade = 1.0 - softstep(0.7, 1.08, ell);
-  if (fade <= 0.0) {
-    return vec4f(0.0);
-  }
-  let baseM = U.hero1.y;
-  let thick = max(50.0, U.hero1.z);
-  let h01 = saturate((altitude(worldPos) - baseM) / thick);
-  let typeMix = saturate(U.hero1.w);
-  let anvilR = anvilFootprintBoost(h01, typeMix);
-  let ell2 = length((worldPos.xz - center) / (radii * anvilR));
-  let fade2 = 1.0 - softstep(0.7, 1.08, ell2);
-  let profile = verticalProfile(h01, typeMix);
-  let support = fade2 * profile * U.hero2.x * U.hero2.y;
-  return vec4f(support, typeMix, h01, 1.0);
 }
 
 fn volumeFootprintLod(stepLen: f32, scale: vec3f, texelsPerAxis: f32, manualOffset: f32) -> f32 {
@@ -1566,6 +1563,67 @@ fn layerHorizontalMask(worldPos: vec3f, bounds: vec4f, transform: vec4f) -> f32 
   return 1.0 - smoothstep(1.0 - feather, 1.0, ellipseDistance);
 }
 
+fn evaluateLocalCumulonimbusDensity(
+  worldPos: vec3f,
+  stepLen: f32,
+  simpleMode: bool,
+) -> DensitySample {
+  if (U.hero0.w < 0.5) {
+    return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+  }
+  let baseM = U.hero1.y;
+  let topM = baseM + max(50.0, U.hero1.z);
+  let bounds = vec4f(
+    U.hero0.xy,
+    max(vec2f(U.hero0.z, U.hero1.x), vec2f(1.0)),
+  );
+  let transform = vec4f(0.0, 0.3, 1.0, 0.0);
+  let horizontalMask = layerHorizontalMask(worldPos, bounds, transform);
+  if (horizontalMask <= 0.0) {
+    return DensitySample(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+  }
+
+  let localFrame = deriveCloudBodyLocalFrame(
+    8u,
+    worldPos,
+    baseM,
+    topM,
+    bounds,
+    transform,
+  );
+  var localWeather = sampleWeather(worldPos);
+  // Body coverage scales the canonical weather field instead of replacing it;
+  // local-volume therefore retains the same large-scale Cb gaps as volume.
+  localWeather.r = saturate(localWeather.r * U.hero2.x);
+  let context = CloudGenusDensityContext(
+    worldPos,
+    8u,
+    localFrame.meters,
+    localFrame.unit,
+    localFrame.normalizedHeight,
+    localFrame.phase,
+    baseM,
+    topM,
+    U.hero2.y,
+    U.hero2.z,
+    0.0,
+    localWeather,
+    U.heroMorphology0,
+    U.heroMorphology1,
+    stepLen,
+    simpleMode,
+  );
+  let sample = evaluateCumulonimbusDensity(context);
+  return DensitySample(
+    sample.support * horizontalMask,
+    sample.afterShape * horizontalMask,
+    sample.density * horizontalMask,
+    sample.typeMix,
+    sample.height01,
+    sample.densityCoverage * horizontalMask,
+  );
+}
+
 fn bodyLifecycleScale(enabled: f32, life: vec4f, peakDensity: f32, time: f32) -> f32 {
   if (enabled < 0.5) {
     return 1.0;
@@ -1687,22 +1745,14 @@ fn evaluateLowCloud(worldPos: vec3f, stepLen: f32, simpleMode: bool) -> DensityS
     }
   }
 
-  let hs = heroSupport(worldPos);
-  if (hs.x > bestSupport) {
-    let typeMix = hs.y;
-    let h01 = hs.z;
-    let profile = hpProfile(h01, typeMix, lowWeatherUv);
-    let baseShape = sampleBaseShape(worldPos, stepLen);
-    bestSupport = hs.x;
-    bestAfter = baseShape * profile;
-    bestDens = cloudFromShape(baseShape, worldPos, h01, h01, typeMix, 0.0, simpleMode, 1.0, stepLen, U.hero2.x, profile, U.hero2.y);
-    bestDens *= hpTypeValue(U.hpTypeDensity.xyz, typeMix) * U.hpTypeDensity.w;
-    if (U.hpDensityPost0.z > 0.0) {
-      bestDens *= hpDensityDarkScale(U.hero2.x);
-    }
-    bestType = typeMix;
-    bestH = h01;
-    bestDensityCoverage = max(bestDensityCoverage, U.hero2.x);
+  let localSample = evaluateLocalCumulonimbusDensity(worldPos, stepLen, simpleMode);
+  bestDensityCoverage = max(bestDensityCoverage, localSample.densityCoverage);
+  bestSupport = max(bestSupport, localSample.support);
+  if (localSample.density > bestDens) {
+    bestAfter = localSample.afterShape;
+    bestDens = localSample.density;
+    bestType = localSample.typeMix;
+    bestH = localSample.height01;
   }
 
   return DensitySample(

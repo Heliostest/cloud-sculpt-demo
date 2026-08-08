@@ -5,6 +5,7 @@ import type { CloudBody, CloudBodyStore } from './cloudBodies';
 import {
   cloudGenusLabel,
   cloudGenusOptions,
+  cloudRenderPathLabel,
   cloudPresetOptions,
   debugModeOptions,
   folderLabel,
@@ -303,7 +304,12 @@ export function createGui(
     const activeBodies = bodyStore.active();
     genusControllers.forEach((controller, index) => {
       const body = activeBodies[index];
-      controller.options(cloudGenusOptions(body?.isHighSheet ? HIGH_CLOUD_GENERA : CLOUD_GENERA));
+      const genera = body?.isHighSheet
+        ? HIGH_CLOUD_GENERA
+        : body?.isLocal
+          ? (['cumulonimbus'] as const)
+          : CLOUD_GENERA;
+      controller.options(cloudGenusOptions(genera));
     });
     debugController.options(debugModeOptions(debugModes));
 
@@ -334,7 +340,7 @@ export function createGui(
 
   let bodyFolders: GUI[] = [];
   const bodyTitle = (body: CloudBody, index: number): string =>
-    `${parameterLabel('cloudBody')} B${index + 1} · ${cloudGenusLabel(body.genus)}`;
+    `${parameterLabel('cloudBody')} B${index + 1} · ${cloudRenderPathLabel(body.path)} · ${cloudGenusLabel(body.genus)}`;
 
   const selectBody = (body: CloudBody | null): void => {
     selectedBodyId = body?.id ?? null;
@@ -363,8 +369,13 @@ export function createGui(
       bodyFolders.push(folder);
       folder.$title.title = folderTip('cloudBody');
       folder.$title.addEventListener('pointerdown', () => selectBody(body));
+      folder.add(body, 'path').disable();
 
-      const genera = body.isHighSheet ? HIGH_CLOUD_GENERA : CLOUD_GENERA;
+      const genera = body.isHighSheet
+        ? HIGH_CLOUD_GENERA
+        : body.isLocal
+          ? (['cumulonimbus'] as const)
+          : CLOUD_GENERA;
       const genusController = folder.add(body, 'genus', cloudGenusOptions(genera))
         .onChange(() => {
           folder.title(bodyTitle(body, index));
@@ -377,7 +388,7 @@ export function createGui(
       folder.add(body, 'baseKm', 0.2, 14, 0.05);
       folder.add(body, 'topKm', 0.5, 18, 0.05);
       folder.add(body, 'densityScale', 0, 3, 0.01);
-      if (!body.isLocal) folder.add(body, 'detailAmount', 0, 1.5, 0.01);
+      folder.add(body, 'detailAmount', 0, 1.5, 0.01);
       if (body.canToggleBounds) {
         folder.add(body, 'bounded').onChange(() => {
           selectBody(body);

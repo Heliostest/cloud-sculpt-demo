@@ -59,6 +59,10 @@ struct Uniforms {
   hpSky1: vec4f,
   hpShapeWarp0: vec4f,
   hpShapeBlend0: vec4f,
+  heroMorphology0: vec4f,
+  heroMorphology1: vec4f,
+  hpHighMorphology0: vec4f,
+  hpHighMorphology1: vec4f,
 };
 
 struct CloudBodyUniforms {

@@ -52,6 +52,7 @@ const FOLDERS: Record<string, { label: Copy; tip: Copy }> = {
 };
 
 const PARAMETERS: Record<string, ParameterCopy> = {
+  path: parameter('Render Path', '渲染路径', 'Renderer implementation used by this cloud body; genus recipe meanings stay consistent across paths.', '该云体使用的渲染实现；不同路径仍共享一致的云属配方语义。'),
   windDeg: parameter('Body Wind Direction (°)', '单体风向（°）', 'Direction in which this cloud body is transported.', '这个云体整体移动的方向。'),
   windSpeedMps: parameter('Body Wind Speed (m/s)', '单体风速（m/s）', 'Horizontal transport speed of this cloud body.', '这个云体整体水平移动的速度。'),
   morphRate: parameter('Morph Rate', '形变速率', 'Rate of slow internal density-domain variation; zero keeps the authored shape stable.', '内部密度域缓慢变化的速率；设为零时保持原始形态。'),
@@ -225,6 +226,12 @@ const CLOUD_GENERA: Record<string, Copy> = {
   cirrocumulus: copy('Cirrocumulus', '卷积云'),
 };
 
+const RENDER_PATHS: Record<string, Copy> = {
+  volume: copy('Canonical Volume', '标准体积'),
+  'local-volume': copy('Local Hero Cb', '局部主角积雨云'),
+  'high-sheet': copy('High Sheet Ac / As', '高空薄层高积云 / 高层云'),
+};
+
 const PRESETS: Record<string, Copy> = {
   default: copy('Default', '默认'),
   'side-cu': copy('Side Cumulus', '侧视积云'),
@@ -306,6 +313,10 @@ export function cloudGenusOptions(values: readonly string[]): Record<string, str
 
 export function cloudGenusLabel(value: string): string {
   return text(CLOUD_GENERA[value], value);
+}
+
+export function cloudRenderPathLabel(value: string): string {
+  return text(RENDER_PATHS[value], value);
 }
 
 export function cloudPresetOptions(values: readonly string[]): Record<string, string> {

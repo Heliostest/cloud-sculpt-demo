@@ -156,6 +156,9 @@ function parseCloudBodySnapshot(value: unknown): CloudBodySnapshot {
   if (value.path === 'high-sheet' && !isHighCloudGenus(value.genus)) {
     throw new Error(`High-sheet cloud ${value.id} must use a supported high-cloud genus.`);
   }
+  if (value.path === 'local-volume' && value.genus !== 'cumulonimbus') {
+    throw new Error(`Local-volume cloud ${value.id} must use the canonical cumulonimbus recipe.`);
+  }
   if (typeof value.placementLocked !== 'boolean') {
     throw new Error(`Cloud body ${value.id} has an invalid placementLocked flag.`);
   }
@@ -245,15 +248,15 @@ const DEFAULT_LOCAL_VOLUME_BODY_SEED: CloudBodySeed = {
   path: 'local-volume',
   genus: 'cumulonimbus',
   cumulusDevelopment: 0,
-  baseKm: 0.7,
-  topKm: 9.2,
-  densityScale: 1.35,
-  detailAmount: 0.42,
-  coverage: 0.9,
+  baseKm: 0.5,
+  topKm: 12.0,
+  densityScale: 0.8,
+  detailAmount: 1.2,
+  coverage: 1.0,
   bounded: true,
-  centerZ: -2000,
-  radiusX: 1800,
-  radiusZ: 1600,
+  centerZ: 0,
+  radiusX: 3000,
+  radiusZ: 3000,
 };
 
 const DEFAULT_HIGH_SHEET_BODY_SEED: CloudBodySeed = {
@@ -331,6 +334,7 @@ export class CloudBody {
 
   set genus(value: CloudGenus) {
     if (this.isHighSheet && !isHighCloudGenus(value)) return;
+    if (this.isLocal && value !== 'cumulonimbus') return;
     const changed = this.genusValue !== value;
     this.genusValue = value;
     if (changed) this.morphology = createCloudMorphologyRecipe(value);
@@ -545,7 +549,7 @@ export class CloudBody {
       target.baseKm = this.baseKm;
       target.topKm = this.topKm;
       target.densityScale = this.densityScale;
-      if (!target.isLocal) target.detailAmount = this.detailAmount;
+      target.detailAmount = this.detailAmount;
       if (target.canToggleBounds) {
         target.bounded = this.supportsBounds ? this.bounded : false;
         if (this.supportsBounds) {
@@ -650,13 +654,18 @@ export class CloudBodyStore {
   canDuplicate(id: string): boolean {
     const source = this.find(id);
     if (!source || source.isHighSheet) return false;
-    return this.findAvailablePath(['volume', 'local-volume']) !== undefined;
+    if (this.findAvailablePath(['volume'])) return true;
+    return source.genus === 'cumulonimbus'
+      && this.findAvailablePath(['local-volume']) !== undefined;
   }
 
   duplicate(id: string): CloudBody | undefined {
     const source = this.find(id);
     if (!source || source.isHighSheet) return undefined;
-    const path = this.findAvailablePath(['volume', 'local-volume']);
+    const path = this.findAvailablePath(['volume'])
+      ?? (source.genus === 'cumulonimbus'
+        ? this.findAvailablePath(['local-volume'])
+        : undefined);
     if (!path) return undefined;
     const target = this.createDefaultBody(path);
     source.copyTo(target);

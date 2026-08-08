@@ -186,6 +186,18 @@ async function main(): Promise<void> {
   }
   const volumeBodies = bodyStore.bodies.filter((body) => body.path === 'volume');
   for (let i = 0; i < volumeBodies.length; i++) {
+    const enabled = query.get(`enabled${i}`);
+    if (enabled !== null) {
+      volumeBodies[i].enabled = enabled === '1' || enabled === 'true';
+    }
+    const bounded = query.get(`bounded${i}`);
+    if (bounded !== null) {
+      volumeBodies[i].bounded = bounded === '1' || bounded === 'true';
+    }
+    const bodyDensity = Number(query.get(`bodyDensity${i}`));
+    if (query.has(`bodyDensity${i}`) && Number.isFinite(bodyDensity)) {
+      volumeBodies[i].densityScale = Math.max(0, Math.min(3, bodyDensity));
+    }
     const genus = query.get(`genus${i}`);
     if (isCloudGenus(genus)) volumeBodies[i].genus = genus;
     const applyGenusDefaults = query.get(`genusDefaults${i}`);
@@ -255,6 +267,13 @@ async function main(): Promise<void> {
   if (forceSimpleMode !== null) params.forceSimpleMode = forceSimpleMode === '1' || forceSimpleMode === 'true';
   const detailFade = query.get('detailFade');
   if (detailFade !== null) params.detailFadeEnabled = detailFade !== '0' && detailFade !== 'false';
+  const localCloud = query.get('local');
+  if (localCloud !== null) {
+    const localBody = bodyStore.bodies.find((body) => body.path === 'local-volume');
+    const shouldEnable = localCloud === '1' || localCloud === 'true';
+    if (shouldEnable && !localBody) bodyStore.add('local-volume', true);
+    if (!shouldEnable && localBody) bodyStore.remove(localBody.id);
+  }
   const highCloud = query.get('high');
   if (highCloud !== null) {
     const highBody = bodyStore.bodies.find((body) => body.path === 'high-sheet');

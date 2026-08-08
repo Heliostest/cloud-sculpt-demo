@@ -86,6 +86,32 @@ test('the tenth object routes to the existing independent high-cloud path', () =
   assert.equal(store.add(), undefined);
 });
 
+test('special paths enforce canonical genus ownership instead of becoming extra type slots', () => {
+  const store = CloudBodyStore.createDefault();
+  while (store.bodies.filter((body) => body.path === 'volume').length < 8) {
+    store.add('volume');
+  }
+
+  const primary = store.bodies[0];
+  assert.equal(primary.genus, 'cumulus');
+  assert.equal(store.canDuplicate(primary.id), false, 'non-Cb bodies cannot spill into local-volume');
+
+  primary.genus = 'cumulonimbus';
+  assert.equal(store.canDuplicate(primary.id), true);
+  const local = store.duplicate(primary.id);
+  assert.equal(local.path, 'local-volume');
+  assert.equal(local.genus, 'cumulonimbus');
+  local.genus = 'stratus';
+  assert.equal(local.genus, 'cumulonimbus');
+
+  const invalid = structuredClone(store.exportSnapshot());
+  invalid.bodies.find((body) => body.path === 'local-volume').genus = 'stratus';
+  assert.throws(
+    () => CloudBodyStore.createDefault().restoreSnapshot(invalid),
+    /must use the canonical cumulonimbus recipe/,
+  );
+});
+
 test('preset reset rebuilds the collection directly without a parameter compatibility layer', () => {
   const params = createDefaultParams();
   const store = CloudBodyStore.createDefault(() => params.sceneTime);

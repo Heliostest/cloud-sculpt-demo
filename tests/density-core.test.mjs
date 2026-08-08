@@ -444,6 +444,39 @@ test('all ten cloud genera have explicit density evaluators behind one dispatche
   assert.match(densitySource, /let layerSample = dispatchCloudGenusDensity\(context, shapeDetail\.x\);/);
 });
 
+test('special render paths consume canonical CloudBody morphology semantics', () => {
+  assert.match(commonSource, /heroMorphology0: vec4f/);
+  assert.match(commonSource, /heroMorphology1: vec4f/);
+  assert.match(commonSource, /hpHighMorphology0: vec4f/);
+  assert.match(commonSource, /hpHighMorphology1: vec4f/);
+  assert.match(rendererSource, /const UNIFORM_SIZE = 944;/);
+  assert.match(rendererSource, /f32\[220\] = localMorphology\?\.verticalDevelopment \?\? 0;/);
+  assert.match(rendererSource, /f32\[226\] = localMorphology\?\.anvilStrength \?\? 0;/);
+  assert.match(rendererSource, /f32\[229\] = highMorphology\?\.cellScale \?\? 0;/);
+  assert.match(rendererSource, /f32\[235\] = highMorphology\?\.erosionScale \?\? 0;/);
+
+  const local = densityWgslFunctionSource(
+    'evaluateLocalCumulonimbusDensity',
+    '\nfn bodyLifecycleScale',
+  );
+  assert.match(local, /U\.heroMorphology0/);
+  assert.match(local, /U\.heroMorphology1/);
+  assert.match(local, /evaluateCumulonimbusDensity\(context\)/);
+  assert.match(local, /localWeather\.r = saturate\(localWeather\.r \* U\.hero2\.x\);/);
+  assert.match(local, /sample\.density \* horizontalMask/);
+  assert.doesNotMatch(densitySource, /fn heroSupport\(/);
+  assert.match(densitySource, /let localSample = evaluateLocalCumulonimbusDensity\(worldPos, stepLen, simpleMode\);/);
+
+  const high = densityWgslFunctionSource('evaluateHighCloudDensity', '\nfn sampleWeather');
+  assert.match(high, /let morphology = U\.hpHighMorphology0;/);
+  assert.match(high, /let cellScale = max\(morphology\.y, 0\.05\);/);
+  assert.match(high, /let recipeCellStrength = saturate\(morphology\.z\);/);
+  assert.match(high, /let sheetUniformity = saturate\(morphology\.w\);/);
+  assert.match(high, /let verticalDevelopment = saturate\(morphology\.x\);/);
+  assert.match(high, /U\.hpHighMorphology1\.w/);
+  assert.match(high, /baseUv \* U\.hpHigh2\.xy \/ cellScale/);
+});
+
 test('cloud genus contexts expose deterministic body-local morphology coordinates to family evaluators', () => {
   const contextStart = densitySource.indexOf('struct CloudGenusDensityContext');
   const contextEnd = densitySource.indexOf('\n};', contextStart);

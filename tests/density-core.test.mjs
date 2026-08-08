@@ -1019,7 +1019,7 @@ test('Sc, Ac, and Cc share body-local cells with ordered scale, connectivity, pr
   };
   assert.match(evaluators.sc, /CellularRecipe\(1\.0, 1700\.0, 0\.18, 0\.62, 0\.5, 0\.38, 1\.28, 0\.15, 0\.06\)/);
   assert.match(evaluators.ac, /CellularRecipe\(1\.0, 1400\.0, 0\.34, 1\.0, 0\.18, 0\.12, 1\.45, 0\.24, 0\.08\)/);
-  assert.match(evaluators.cc, /CellularRecipe\(1\.0, 1000\.0, 0\.22, 1\.15, 0\.1, 0\.06, 1\.55, 0\.32, 0\.2\)/);
+  assert.match(evaluators.cc, /CellularRecipe\(1\.0, 1000\.0, 0\.55, 0\.5, 0\.1, 0\.06, 1\.55, 0\.15, 0\.2\)/);
   for (const source of Object.values(evaluators)) {
     assert.match(source, /evaluateCompatibilityDensity\(context, GENUS_/);
     assert.match(source, /return evaluateCellularFamily\(context, compatibility, recipe, profile\);/);
@@ -1028,7 +1028,7 @@ test('Sc, Ac, and Cc share body-local cells with ordered scale, connectivity, pr
   const effectiveCellMeters = {
     sc: 1700 * 1.2,
     ac: 1400 * 0.7,
-    cc: 1000 * 0.35,
+    cc: 1000 * 0.55,
   };
   assert.ok(effectiveCellMeters.sc > effectiveCellMeters.ac);
   assert.ok(effectiveCellMeters.ac > effectiveCellMeters.cc);
@@ -1046,7 +1046,7 @@ test('Sc, Ac, and Cc share body-local cells with ordered scale, connectivity, pr
   const connectivity = {
     sc: 0.5 * 0.6,
     ac: 0.18 * 0.4,
-    cc: 0.1 * 0.35,
+    cc: 0.1 * 0.28,
   };
   assert.ok(connectivity.sc > connectivity.ac);
   assert.ok(connectivity.ac > connectivity.cc);

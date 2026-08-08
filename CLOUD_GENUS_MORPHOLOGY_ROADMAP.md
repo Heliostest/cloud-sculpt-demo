@@ -594,6 +594,8 @@ Ci 是唯一纯纤维家族，但仍保留独立 evaluator 和配方。
 
 ## 15. 阶段 9：十云属最终校准
 
+> 状态：**部分完成**（2026-08-09）。Cu/TCu/Cb、St/As/Ns/Cs、Sc/Ac/Cc 已完成固定主视角、三视角和 Final/FinalDensity/Support/AfterShape 证据归档；8-body 压力 fixture 与同机 GPU 计时已建立。Ci 继续遵循阶段 6 的“未完成、暂时跳过”决定，因此本阶段不能标记为十云属全部完成。证据见 `docs/evidence/genus-morphology/stage9-calibration/`。
+
 ### 15.1 形态验收矩阵
 
 | 云属 | 必须可辨识的密度特征 | 不属于本阶段的特效 |

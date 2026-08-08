@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-08-09",
+  "validation": true,
+  "frozenTime": 6,
+  "views": ["side", "oblique", "top"],
+  "debugModes": ["Final", "FinalDensity", "Support", "AfterShape"],
+  "fixtures": [
+    { "id": "cumulus", "genus": "cumulus", "preset": "side-cu", "primaryView": "side", "status": "accepted" },
+    { "id": "towering-cumulus", "genus": "cumulus", "cumulusDevelopment": 1, "preset": "oblique-tcu", "primaryView": "oblique", "status": "accepted" },
+    { "id": "cumulonimbus", "genus": "cumulonimbus", "preset": "oblique-cb", "primaryView": "oblique", "status": "accepted" },
+    { "id": "stratus", "genus": "stratus", "preset": "genus-stratus", "primaryView": "side", "status": "accepted" },
+    { "id": "stratocumulus", "genus": "stratocumulus", "preset": "stratocumulus-sheet", "primaryView": "oblique", "status": "accepted" },
+    { "id": "altocumulus", "genus": "altocumulus", "preset": "genus-altocumulus", "primaryView": "top", "status": "accepted" },
+    { "id": "altostratus", "genus": "altostratus", "preset": "genus-altostratus", "primaryView": "side", "status": "accepted" },
+    { "id": "nimbostratus", "genus": "nimbostratus", "preset": "genus-nimbostratus", "primaryView": "side", "status": "accepted" },
+    { "id": "cirrostratus", "genus": "cirrostratus", "preset": "genus-cirrostratus", "primaryView": "side", "status": "accepted" },
+    { "id": "cirrocumulus", "genus": "cirrocumulus", "preset": "genus-cirrocumulus", "primaryView": "top", "status": "accepted" },
+    { "id": "cirrus", "genus": "cirrus", "preset": "cirrus-oblique", "primaryView": "oblique", "status": "deferred", "reason": "Stage 6 was explicitly left unfinished and skipped by user decision." }
+  ]
+}

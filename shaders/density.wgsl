@@ -1498,7 +1498,9 @@ fn evaluateCirrostratusDensity(context: CloudGenusDensityContext) -> DensitySamp
 
 fn evaluateCirrocumulusDensity(context: CloudGenusDensityContext) -> DensitySample {
   let compatibility = evaluateCompatibilityDensity(context, GENUS_CIRROCUMULUS);
-  let recipe = CellularRecipe(1.0, 1000.0, 0.22, 1.15, 0.1, 0.06, 1.55, 0.32, 0.2);
+  // A broader, more strongly warped carrier keeps the small cloudlets legible
+  // without exposing a regular 3D lattice in top and oblique validation views.
+  let recipe = CellularRecipe(1.0, 1000.0, 0.55, 0.5, 0.1, 0.06, 1.55, 0.15, 0.2);
   let profile = CellularProfile(0.34, 0.44, 0.56, 0.68);
   return evaluateCellularFamily(context, compatibility, recipe, profile);
 }

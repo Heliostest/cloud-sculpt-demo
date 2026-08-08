@@ -1,0 +1,24 @@
+{
+  "capturedAt": "2026-08-09",
+  "timestampQuerySupported": true,
+  "singleBody": {
+    "preset": "side-cu",
+    "bodyCount": 1,
+    "sampleCount": 16,
+    "gpuMs": 6.070
+  },
+  "eightBody": {
+    "preset": "eight-body-stress",
+    "bodyCount": 8,
+    "sampleCount": 16,
+    "gpuMs": 130.359
+  },
+  "eightBodySimpleMode": {
+    "preset": "eight-body-stress",
+    "bodyCount": 8,
+    "sampleCount": 15,
+    "gpuMs": 125.912
+  },
+  "budgetStatus": "unresolved",
+  "budgetNote": "No stage-0 eight-body timing exists on the same machine, so the planned relative 20% budget cannot be calculated honestly."
+}

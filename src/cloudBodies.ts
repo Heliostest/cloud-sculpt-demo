@@ -41,7 +41,7 @@ const GENUS_MORPHOLOGY_DEFAULTS: Readonly<Record<CloudGenus, Readonly<CloudMorph
   nimbostratus: { verticalDevelopment: 0.35, cellScale: 2.8, cellStrength: 0.2, sheetUniformity: 0.98, fiberStrength: 0, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.25 },
   cirrus: { verticalDevelopment: 0.08, cellScale: 0.45, cellStrength: 0.15, sheetUniformity: 0.25, fiberStrength: 1, fiberAngleDeg: 20, anvilStrength: 0, erosionScale: 1.3 },
   cirrostratus: { verticalDevelopment: 0.05, cellScale: 3, cellStrength: 0.05, sheetUniformity: 0.98, fiberStrength: 0.25, fiberAngleDeg: 15, anvilStrength: 0, erosionScale: 0.25 },
-  cirrocumulus: { verticalDevelopment: 0.1, cellScale: 0.35, cellStrength: 0.85, sheetUniformity: 0.35, fiberStrength: 0.15, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 1.1 },
+  cirrocumulus: { verticalDevelopment: 0.1, cellScale: 0.55, cellStrength: 0.78, sheetUniformity: 0.28, fiberStrength: 0.15, fiberAngleDeg: 0, anvilStrength: 0, erosionScale: 0.95 },
 };
 
 export function createCloudMorphologyRecipe(genus: CloudGenus): CloudMorphologyRecipe {
@@ -115,7 +115,7 @@ const GENUS_PLACEMENT_DEFAULTS: Record<CloudGenus, { baseKm: number; thicknessKm
   nimbostratus: { baseKm: 1, thicknessKm: 3, halfExtentM: 10000 },
   cirrus: { baseKm: 7, thicknessKm: 5, halfExtentM: 4000 },
   cirrostratus: { baseKm: 6, thicknessKm: 5, halfExtentM: 12000 },
-  cirrocumulus: { baseKm: 6, thicknessKm: 4, halfExtentM: 2000 },
+  cirrocumulus: { baseKm: 6, thicknessKm: 2, halfExtentM: 2000 },
 };
 const SNAPSHOT_NUMBER_FIELDS = [
   'cumulusDevelopment',

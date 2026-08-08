@@ -84,6 +84,7 @@ export type CloudPresetName =
   | 'genus-nimbostratus'
   | 'genus-cirrostratus'
   | 'genus-cirrocumulus'
+  | 'eight-body-stress'
   | 'detail-off'
   | 'stratocumulus-sheet'
   | 'hp-ocean-day';
@@ -98,12 +99,24 @@ export interface CloudPreset {
   cumulusDevelopment: number;
   frozenTime: number;
   validationGenus?: CloudGenus;
+  validationView?: 'side' | 'oblique' | 'top';
   sunAzimuthDeg?: number;
   sunElevationDeg?: number;
   exposure?: number;
   bodyDensityScale?: number;
   bodyDetailAmount?: number;
   bodyBounded?: boolean;
+  bodyPlacement?: {
+    baseKm?: number;
+    topKm?: number;
+    centerX?: number;
+    centerZ?: number;
+    radiusX?: number;
+    radiusZ?: number;
+    rotationDeg?: number;
+    feather?: number;
+  };
+  bodyCount?: number;
   morphologyOverride?: {
     values: Partial<CloudMorphologyRecipe>;
     note: string;
@@ -136,6 +149,9 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'cumulus',
+    validationView: 'side',
+    bodyBounded: true,
+    bodyPlacement: { radiusX: 1600, radiusZ: 1300, feather: 0.32 },
   },
   'oblique-cb': {
     label: 'Oblique Cb',
@@ -147,6 +163,11 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'cumulonimbus',
+    validationView: 'oblique',
+    bodyDensityScale: 0.72,
+    bodyDetailAmount: 0.9,
+    bodyBounded: true,
+    bodyPlacement: { radiusX: 4200, radiusZ: 3600, feather: 0.3 },
   },
   'oblique-tcu': {
     label: 'Oblique TCu',
@@ -157,6 +178,11 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     genus: 'cumulus',
     cumulusDevelopment: 1,
     frozenTime: 6,
+    validationView: 'oblique',
+    bodyDensityScale: 0.78,
+    bodyDetailAmount: 0.9,
+    bodyBounded: true,
+    bodyPlacement: { baseKm: 0.8, topKm: 5.5, radiusX: 1800, radiusZ: 1500, feather: 0.32 },
   },
   'top-density': {
     label: 'Top Density',
@@ -218,9 +244,10 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'stratus',
-    bodyDensityScale: 0.45,
-    bodyDetailAmount: 0.3,
-    bodyBounded: true,
+    validationView: 'side',
+    bodyDensityScale: 0.28,
+    bodyDetailAmount: 0.15,
+    bodyBounded: false,
   },
   'genus-altocumulus': {
     label: 'Validate Altocumulus',
@@ -232,9 +259,11 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'altocumulus',
-    bodyDensityScale: 0.28,
-    bodyDetailAmount: 0.4,
+    validationView: 'top',
+    bodyDensityScale: 0.24,
+    bodyDetailAmount: 0.3,
     bodyBounded: true,
+    bodyPlacement: { radiusX: 3600, radiusZ: 3000, feather: 0.24 },
   },
   'genus-altostratus': {
     label: 'Validate Altostratus',
@@ -246,9 +275,10 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'altostratus',
-    bodyDensityScale: 0.3,
-    bodyDetailAmount: 0.25,
-    bodyBounded: true,
+    validationView: 'side',
+    bodyDensityScale: 0.14,
+    bodyDetailAmount: 0.1,
+    bodyBounded: false,
   },
   'genus-nimbostratus': {
     label: 'Validate Nimbostratus',
@@ -260,9 +290,10 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'nimbostratus',
-    bodyDensityScale: 0.5,
-    bodyDetailAmount: 0.25,
-    bodyBounded: true,
+    validationView: 'side',
+    bodyDensityScale: 0.38,
+    bodyDetailAmount: 0.15,
+    bodyBounded: false,
   },
   'genus-cirrostratus': {
     label: 'Validate Cirrostratus',
@@ -274,9 +305,10 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'cirrostratus',
-    bodyDensityScale: 0.14,
-    bodyDetailAmount: 0.2,
-    bodyBounded: true,
+    validationView: 'side',
+    bodyDensityScale: 0.08,
+    bodyDetailAmount: 0.05,
+    bodyBounded: false,
   },
   'genus-cirrocumulus': {
     label: 'Validate Cirrocumulus',
@@ -288,9 +320,13 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'cirrocumulus',
-    bodyDensityScale: 0.2,
-    bodyDetailAmount: 0.35,
+    validationView: 'top',
+    sunAzimuthDeg: 210,
+    sunElevationDeg: 75,
+    bodyDensityScale: 0.12,
+    bodyDetailAmount: 0.18,
     bodyBounded: true,
+    bodyPlacement: { baseKm: 6, topKm: 8, radiusX: 4200, radiusZ: 3200, feather: 0.22 },
   },
   'detail-off': {
     label: 'Detail Off',
@@ -314,6 +350,10 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
     cumulusDevelopment: 0,
     frozenTime: 6,
     validationGenus: 'stratocumulus',
+    validationView: 'oblique',
+    bodyDensityScale: 0.58,
+    bodyDetailAmount: 0.2,
+    bodyBounded: false,
     scStrength: 1,
     hpDensity: {
       // Raise broad weather-map coverage without closing every sky gap.
@@ -429,6 +469,17 @@ export const CLOUD_PRESETS: Record<CloudPresetName, CloudPreset> = {
       scatterSourceCurvePow: 1.0,
     },
   },
+  'eight-body-stress': {
+    label: 'Eight-Body Stress',
+    version: 1,
+    camera: 'oblique45',
+    debugMode: 'Final',
+    detailOff: false,
+    genus: 'cumulus',
+    cumulusDevelopment: 0.5,
+    frozenTime: 6,
+    bodyCount: 8,
+  },
 };
 
 export const CLOUD_PRESET_OPTIONS = Object.fromEntries(
@@ -485,10 +536,17 @@ export function applyCloudBodyPreset(store: CloudBodyStore, preset: CloudPreset)
   if (preset.bodyDensityScale !== undefined) primary.densityScale = preset.bodyDensityScale;
   if (preset.bodyDetailAmount !== undefined) primary.detailAmount = preset.bodyDetailAmount;
   if (preset.bodyBounded !== undefined) primary.bounded = preset.bodyBounded;
+  if (preset.bodyPlacement !== undefined) {
+    Object.assign(primary, preset.bodyPlacement);
+  }
   if (preset.morphologyOverride !== undefined) {
     if (preset.morphologyOverride.note.trim() === '') {
       throw new Error(`Preset ${preset.label} must explain its morphology override.`);
     }
     Object.assign(primary.morphology, preset.morphologyOverride.values);
+  }
+  const targetCount = Math.max(1, Math.min(8, Math.round(preset.bodyCount ?? 1)));
+  while (store.bodies.filter((body) => body.path === 'volume').length < targetCount) {
+    store.add('volume', true);
   }
 }

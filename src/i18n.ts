@@ -270,6 +270,7 @@ const PRESETS: Record<string, Copy> = {
   'genus-nimbostratus': copy('Validate Nimbostratus', '验证雨层云'),
   'genus-cirrostratus': copy('Validate Cirrostratus', '验证卷层云'),
   'genus-cirrocumulus': copy('Validate Cirrocumulus', '验证卷积云'),
+  'eight-body-stress': copy('Eight-Body Stress', '八云体压力测试'),
   'detail-off': copy('Detail Off', '关闭细节'),
   'stratocumulus-sheet': copy('Stratocumulus Sheet', '层积云片层'),
   'hp-ocean-day': copy('HP Ocean Day', 'HP 海洋白天'),

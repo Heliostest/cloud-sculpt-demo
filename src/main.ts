@@ -8,6 +8,7 @@ import {
   applyCloudPreset,
   CLOUD_PRESETS,
   resolvePresetRequest,
+  type CloudPreset,
   type CloudPresetName,
 } from './cloudPresets';
 
@@ -84,6 +85,50 @@ function applyCameraPreset(preset: CameraPreset, cam: Orbit): void {
   }
 }
 
+type ValidationView = 'side' | 'oblique' | 'top';
+
+function isValidationView(value: string | null): value is ValidationView {
+  return value === 'side' || value === 'oblique' || value === 'top';
+}
+
+function applyCloudPresetCamera(
+  preset: CloudPreset,
+  cloudBodies: readonly CloudBody[],
+  cam: Orbit,
+  requestedView?: ValidationView,
+): void {
+  applyCameraPreset(preset.camera, cam);
+  const view = requestedView ?? preset.validationView;
+  const body = cloudBodies.find((candidate) => candidate.enabled && candidate.path === 'volume');
+  if (!view || !body) return;
+
+  const baseM = body.baseKm * 1000;
+  const topM = body.topKm * 1000;
+  const verticalSpan = Math.max(500, topM - baseM);
+  const horizontalSpan = Math.max(1000, Math.max(body.radiusX, body.radiusZ) * 2);
+  const frameSpan = Math.max(2000, horizontalSpan, verticalSpan * 1.15);
+  const targetY = (baseM + topM) * 0.5;
+
+  cam.targetX = body.centerX;
+  cam.targetY = targetY;
+  cam.targetZ = body.centerZ;
+  cam.yaw = view === 'top' ? 0.2 : Math.PI * 0.5;
+  cam.fovYDeg = 52;
+
+  if (view === 'top') {
+    cam.pitch = Math.PI * 0.5 - 1e-4;
+    cam.dist = frameSpan * 1.5;
+    return;
+  }
+
+  cam.dist = frameSpan * (view === 'side' ? 1.25 : 1.35);
+  const desiredCameraY = view === 'side'
+    ? Math.max(50, baseM - 600)
+    : topM + frameSpan * 0.35;
+  const heightRatio = Math.max(-0.75, Math.min(0.75, (desiredCameraY - targetY) / cam.dist));
+  cam.pitch = Math.asin(heightRatio);
+}
+
 function orbitToCamera(yaw: number, pitch: number, dist: number, target: [number, number, number], fovYDeg: number): CameraState {
   const cp = Math.cos(pitch);
   const sp = Math.sin(pitch);
@@ -155,6 +200,8 @@ async function main(): Promise<void> {
   let currentPresetName = presetRequest.name;
   let currentPreset = CLOUD_PRESETS[currentPresetName];
   const validationMode = presetRequest.validation;
+  const requestedValidationView = query.get('view');
+  const validationView = isValidationView(requestedValidationView) ? requestedValidationView : undefined;
   applyCloudPreset(params, currentPreset);
   const bodyStore = CloudBodyStore.createDefault(() => params.sceneTime);
   applyCloudBodyPreset(bodyStore, currentPreset);
@@ -335,11 +382,12 @@ async function main(): Promise<void> {
     targetZ: 0,
     fovYDeg: 55,
   };
-  applyCameraPreset(currentPreset.camera, orbit);
+  applyCloudPresetCamera(currentPreset, bodyStore.bodies, orbit, validationView);
   document.body.dataset.cloudPreset = currentPresetName;
   document.body.dataset.presetVersion = String(currentPreset.version);
   document.body.dataset.validationMode = String(validationMode);
   document.body.dataset.validationScenario = validationMode ? currentPresetName : 'interactive';
+  document.body.dataset.validationView = validationView ?? currentPreset.validationView ?? 'preset';
   syncParameterDataset(params, bodyStore.bodies);
 
   let selectedCloudBody: CloudBody | null = null;
@@ -406,13 +454,14 @@ async function main(): Promise<void> {
       currentPreset = CLOUD_PRESETS[presetName];
       applyCloudPreset(params, currentPreset);
       applyCloudBodyPreset(bodyStore, currentPreset);
-      applyCameraPreset(currentPreset.camera, orbit);
+      applyCloudPresetCamera(currentPreset, bodyStore.bodies, orbit);
       windOffset = [0, 0];
       time = currentPreset.frozenTime;
       last = performance.now();
       document.body.dataset.cloudPreset = currentPresetName;
       document.body.dataset.presetVersion = String(currentPreset.version);
       document.body.dataset.validationScenario = 'interactive';
+      document.body.dataset.validationView = currentPreset.validationView ?? 'preset';
       syncParameterDataset(params, bodyStore.bodies);
       const url = new URL(window.location.href);
       url.search = '';

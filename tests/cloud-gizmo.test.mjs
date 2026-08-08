@@ -119,6 +119,9 @@ test('GUI and main apply presets directly to the object collection with explicit
   assert.match(mainSource, /query\.get\(`bodyDensity\$\{i\}`\)/);
   assert.match(mainSource, /query\.get\('local'\)/);
   assert.match(mainSource, /bodyStore\.add\('local-volume', true\)/);
+  assert.match(mainSource, /applyCloudPresetCamera\(currentPreset, bodyStore\.bodies, orbit/);
+  assert.match(mainSource, /query\.get\('view'\)/);
+  assert.match(mainSource, /document\.body\.dataset\.validationView/);
   assert.match(guiSource, /BASIC_MORPHOLOGY_FIELDS/);
   assert.match(guiSource, /addMorphologyControls\(advancedMorphologyFolder, CLOUD_MORPHOLOGY_FIELDS\)/);
   assert.match(guiSource, /body\.setGenus\(value, bodyAuthoring\.genusMorphologyChange\)/);

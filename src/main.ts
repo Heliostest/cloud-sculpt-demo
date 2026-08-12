@@ -1,10 +1,15 @@
 import { createGui } from './gui';
-import { createDefaultParams, isDebugMode, isToneMapper, type CameraPreset, type DemoParams } from './params';
+import { CloudGizmo } from './cloudGizmo';
+import { CloudBodyStore, type CloudBody } from './cloudBodies';
+import { createDefaultParams, isCloudGenus, isDebugMode, isHighCloudGenus, isToneMapper, type CameraPreset, type DemoParams } from './params';
 import { createRenderer, type CameraState } from './renderer';
 import {
+  applyCloudBodyPreset,
   applyCloudPreset,
+  applyVolumeBodyCount,
   CLOUD_PRESETS,
   resolvePresetRequest,
+  type CloudPreset,
   type CloudPresetName,
 } from './cloudPresets';
 
@@ -19,7 +24,31 @@ type Orbit = {
 };
 
 function applyCameraPreset(preset: CameraPreset, cam: Orbit): void {
-  if (preset === 'side') {
+  if (preset === 'cirrusSide') {
+    cam.targetX = 0;
+    cam.targetY = 9500;
+    cam.targetZ = 0;
+    cam.yaw = Math.PI * 0.5;
+    cam.pitch = 0.03;
+    cam.dist = 9000;
+    cam.fovYDeg = 55;
+  } else if (preset === 'cirrusOblique') {
+    cam.targetX = 0;
+    cam.targetY = 9500;
+    cam.targetZ = 0;
+    cam.yaw = 0.7;
+    cam.pitch = -0.28;
+    cam.dist = 10500;
+    cam.fovYDeg = 55;
+  } else if (preset === 'cirrusTop') {
+    cam.targetX = 0;
+    cam.targetY = 9500;
+    cam.targetZ = 0;
+    cam.yaw = 0.2;
+    cam.pitch = 1.45;
+    cam.dist = 13500;
+    cam.fovYDeg = 55;
+  } else if (preset === 'side') {
     // 看向云环上一点，沿层内切向平视，避免对着中心空洞
     cam.targetX = 10000;
     cam.targetY = 1400;
@@ -57,6 +86,50 @@ function applyCameraPreset(preset: CameraPreset, cam: Orbit): void {
   }
 }
 
+type ValidationView = 'side' | 'oblique' | 'top';
+
+function isValidationView(value: string | null): value is ValidationView {
+  return value === 'side' || value === 'oblique' || value === 'top';
+}
+
+function applyCloudPresetCamera(
+  preset: CloudPreset,
+  cloudBodies: readonly CloudBody[],
+  cam: Orbit,
+  requestedView?: ValidationView,
+): void {
+  applyCameraPreset(preset.camera, cam);
+  const view = requestedView ?? preset.validationView;
+  const body = cloudBodies.find((candidate) => candidate.enabled && candidate.path === 'volume');
+  if (!view || !body) return;
+
+  const baseM = body.baseKm * 1000;
+  const topM = body.topKm * 1000;
+  const verticalSpan = Math.max(500, topM - baseM);
+  const horizontalSpan = Math.max(1000, Math.max(body.radiusX, body.radiusZ) * 2);
+  const frameSpan = Math.max(2000, horizontalSpan, verticalSpan * 1.15);
+  const targetY = (baseM + topM) * 0.5;
+
+  cam.targetX = body.centerX;
+  cam.targetY = targetY;
+  cam.targetZ = body.centerZ;
+  cam.yaw = view === 'top' ? 0.2 : Math.PI * 0.5;
+  cam.fovYDeg = 52;
+
+  if (view === 'top') {
+    cam.pitch = Math.PI * 0.5 - 1e-4;
+    cam.dist = frameSpan * 1.5;
+    return;
+  }
+
+  cam.dist = frameSpan * (view === 'side' ? 1.25 : 1.35);
+  const desiredCameraY = view === 'side'
+    ? Math.max(50, baseM - 600)
+    : topM + frameSpan * 0.35;
+  const heightRatio = Math.max(-0.75, Math.min(0.75, (desiredCameraY - targetY) / cam.dist));
+  cam.pitch = Math.asin(heightRatio);
+}
+
 function orbitToCamera(yaw: number, pitch: number, dist: number, target: [number, number, number], fovYDeg: number): CameraState {
   const cp = Math.cos(pitch);
   const sp = Math.sin(pitch);
@@ -69,14 +142,16 @@ function orbitToCamera(yaw: number, pitch: number, dist: number, target: [number
   };
 }
 
-function syncParameterDataset(params: DemoParams): void {
+function syncParameterDataset(params: DemoParams, cloudBodies: readonly CloudBody[]): void {
   const data = document.body.dataset;
+  const volumeBodies = cloudBodies.filter((body) => body.enabled && body.path === 'volume');
+  const highBody = cloudBodies.find((body) => body.enabled && body.path === 'high-sheet');
   data.noiseMipOffset = String(params.noiseMipOffset);
   data.erosionMipOffset = String(params.erosionMipOffset);
   data.forceSimpleMode = String(params.forceSimpleMode);
   data.detailFadeEnabled = String(params.detailFadeEnabled);
-  data.highCloudEnabled = String(params.highCloudEnabled);
-  data.highCloudType = String(params.highCloudTypeOverride);
+  data.highSheetEnabled = String(highBody !== undefined);
+  data.highSheetGenus = highBody?.genus ?? '';
   data.highDensityThreshold = String(params.highDensityThreshold);
   data.highDensitySoftness = String(params.highDensitySoftness);
   data.highViewAbsorption = String(params.highViewAbsorption);
@@ -90,7 +165,9 @@ function syncParameterDataset(params: DemoParams): void {
   data.colorSaturation = String(params.colorSaturation);
   data.colorContrast = String(params.colorContrast);
   data.scStrength = String(params.scStrength);
-  data.cloudTypeOverride = String(params.cloudTypeOverride);
+  data.volumeBodyCount = String(volumeBodies.length);
+  data.layerGenera = volumeBodies.map((body) => body.genus).join(',');
+  data.cumulusDevelopment = volumeBodies.map((body) => body.cumulusDevelopment).join(',');
   data.loCovCoverIntensity = String(params.loCovCoverIntensity);
   data.loCovCoverContrast = String(params.loCovCoverContrast);
   data.densityMultiplier = String(params.densityMultiplier);
@@ -125,7 +202,11 @@ async function main(): Promise<void> {
   let currentPresetName = presetRequest.name;
   let currentPreset = CLOUD_PRESETS[currentPresetName];
   const validationMode = presetRequest.validation;
+  const requestedValidationView = query.get('view');
+  const validationView = isValidationView(requestedValidationView) ? requestedValidationView : undefined;
   applyCloudPreset(params, currentPreset);
+  const bodyStore = CloudBodyStore.createDefault(() => params.sceneTime);
+  applyCloudBodyPreset(bodyStore, currentPreset);
   const scStrength = Number(query.get('sc'));
   if (query.has('sc') && Number.isFinite(scStrength)) params.scStrength = Math.max(0, Math.min(1, scStrength));
   const debugMode = query.get('debug');
@@ -139,7 +220,48 @@ async function main(): Promise<void> {
   const densityMultiplier = Number(query.get('densityMultiplier'));
   if (query.has('densityMultiplier') && Number.isFinite(densityMultiplier)) params.densityMultiplier = Math.max(0, Math.min(4, densityMultiplier));
   const cloudType = Number(query.get('cloudType'));
-  if (query.has('cloudType') && Number.isFinite(cloudType)) params.cloudTypeOverride = Math.max(-1, Math.min(1, cloudType));
+  if (query.has('cloudType') && Number.isFinite(cloudType) && cloudType >= 0) {
+    // Legacy global Cu/TCu/Cb URL adapter. New URLs should use genusN and
+    // cuDevelopmentN so each layer keeps independent semantics.
+    for (const layer of bodyStore.bodies.filter((body) => body.path === 'volume')) {
+      if (cloudType >= 0.75) {
+        layer.genus = 'cumulonimbus';
+        layer.cumulusDevelopment = 0;
+      } else {
+        layer.genus = 'cumulus';
+        layer.cumulusDevelopment = Math.max(0, Math.min(1, cloudType * 2));
+      }
+    }
+  }
+  const volumeBodies = bodyStore.bodies.filter((body) => body.path === 'volume');
+  const requestedBodyCount = Number(query.get('bodyCount'));
+  if (query.has('bodyCount') && Number.isFinite(requestedBodyCount)) {
+    applyVolumeBodyCount(bodyStore, requestedBodyCount);
+  }
+  for (let i = 0; i < volumeBodies.length; i++) {
+    const enabled = query.get(`enabled${i}`);
+    if (enabled !== null) {
+      volumeBodies[i].enabled = enabled === '1' || enabled === 'true';
+    }
+    const bounded = query.get(`bounded${i}`);
+    if (bounded !== null) {
+      volumeBodies[i].bounded = bounded === '1' || bounded === 'true';
+    }
+    const bodyDensity = Number(query.get(`bodyDensity${i}`));
+    if (query.has(`bodyDensity${i}`) && Number.isFinite(bodyDensity)) {
+      volumeBodies[i].densityScale = Math.max(0, Math.min(3, bodyDensity));
+    }
+    const genus = query.get(`genus${i}`);
+    if (isCloudGenus(genus)) volumeBodies[i].genus = genus;
+    const applyGenusDefaults = query.get(`genusDefaults${i}`);
+    if (applyGenusDefaults === '1' || applyGenusDefaults === 'true') {
+      volumeBodies[i].applyGenusDefaults();
+    }
+    const development = Number(query.get(`cuDevelopment${i}`));
+    if (query.has(`cuDevelopment${i}`) && Number.isFinite(development)) {
+      volumeBodies[i].cumulusDevelopment = Math.max(0, Math.min(1, development));
+    }
+  }
   const weatherMapCenterX = Number(query.get('weatherCenterX'));
   if (query.has('weatherCenterX') && Number.isFinite(weatherMapCenterX)) params.weatherMapCenterX = Math.max(-1000000, Math.min(1000000, weatherMapCenterX));
   const weatherMapCenterZ = Number(query.get('weatherCenterZ'));
@@ -198,12 +320,32 @@ async function main(): Promise<void> {
   if (forceSimpleMode !== null) params.forceSimpleMode = forceSimpleMode === '1' || forceSimpleMode === 'true';
   const detailFade = query.get('detailFade');
   if (detailFade !== null) params.detailFadeEnabled = detailFade !== '0' && detailFade !== 'false';
+  const localCloud = query.get('local');
+  if (localCloud !== null) {
+    const localBody = bodyStore.bodies.find((body) => body.path === 'local-volume');
+    const shouldEnable = localCloud === '1' || localCloud === 'true';
+    if (shouldEnable && !localBody) bodyStore.add('local-volume', true);
+    if (!shouldEnable && localBody) bodyStore.remove(localBody.id);
+  }
   const highCloud = query.get('high');
-  if (highCloud !== null) params.highCloudEnabled = highCloud === '1' || highCloud === 'true';
+  if (highCloud !== null) {
+    const highBody = bodyStore.bodies.find((body) => body.path === 'high-sheet');
+    const shouldEnable = highCloud === '1' || highCloud === 'true';
+    if (shouldEnable && !highBody) bodyStore.add('high-sheet', true);
+    if (!shouldEnable && highBody) bodyStore.remove(highBody.id);
+  }
+  const activeHighBody = bodyStore.bodies.find((body) => body.path === 'high-sheet');
+  const highGenus = query.get('highGenus');
+  if (activeHighBody && isHighCloudGenus(highGenus)) activeHighBody.genus = highGenus;
   const highType = Number(query.get('highType'));
-  if (query.has('highType') && Number.isFinite(highType)) params.highCloudTypeOverride = Math.max(-1, Math.min(1, highType));
+  if (!isHighCloudGenus(highGenus) && query.has('highType') && Number.isFinite(highType) && highType >= 0) {
+    // Legacy Ac/As URL adapter: the old endpoints were 0 = As and 1 = Ac.
+    if (activeHighBody) activeHighBody.genus = highType >= 0.5 ? 'altocumulus' : 'altostratus';
+  }
   const highDensity = Number(query.get('highDensity'));
-  if (query.has('highDensity') && Number.isFinite(highDensity)) params.highDensityMultiplier = Math.max(0, Math.min(3, highDensity));
+  if (activeHighBody && query.has('highDensity') && Number.isFinite(highDensity)) {
+    activeHighBody.densityScale = Math.max(0, Math.min(3, highDensity));
+  }
   const highThreshold = Number(query.get('highThreshold'));
   if (query.has('highThreshold') && Number.isFinite(highThreshold)) params.highDensityThreshold = Math.max(0, Math.min(1, highThreshold));
   const highSoftness = Number(query.get('highSoftness'));
@@ -246,26 +388,50 @@ async function main(): Promise<void> {
     targetZ: 0,
     fovYDeg: 55,
   };
-  applyCameraPreset(currentPreset.camera, orbit);
+  applyCloudPresetCamera(currentPreset, bodyStore.bodies, orbit, validationView);
   document.body.dataset.cloudPreset = currentPresetName;
   document.body.dataset.presetVersion = String(currentPreset.version);
   document.body.dataset.validationMode = String(validationMode);
   document.body.dataset.validationScenario = validationMode ? currentPresetName : 'interactive';
-  syncParameterDataset(params);
+  document.body.dataset.validationView = validationView ?? currentPreset.validationView ?? 'preset';
+  syncParameterDataset(params, bodyStore.bodies);
+
+  let selectedCloudBody: CloudBody | null = null;
+  let gui: ReturnType<typeof createGui> | null = null;
+  const gizmo = new CloudGizmo(canvas, () => {
+    if (!selectedCloudBody || !gui) return;
+    for (const controller of gui.controllersRecursive()) {
+      if (controller.object === selectedCloudBody) controller.updateDisplay();
+    }
+  });
 
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
   canvas.addEventListener('pointerdown', (e) => {
+    if (gizmo.pointerDown(e)) {
+      dragging = false;
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     dragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
     canvas.setPointerCapture(e.pointerId);
   });
-  canvas.addEventListener('pointerup', () => {
+  const endPointerInteraction = (e: PointerEvent): void => {
+    gizmo.pointerUp();
     dragging = false;
-  });
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+  };
+  canvas.addEventListener('pointerup', endPointerInteraction);
+  canvas.addEventListener('pointercancel', endPointerInteraction);
   canvas.addEventListener('pointermove', (e) => {
+    if (gizmo.pointerMove(e)) {
+      e.preventDefault();
+      return;
+    }
     if (!dragging) return;
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
@@ -287,29 +453,33 @@ async function main(): Promise<void> {
   let last = performance.now();
   let time = currentPreset.frozenTime;
   let validationReady = false;
-  let gui: ReturnType<typeof createGui>;
-  gui = createGui(params, {
+  gui = createGui(params, bodyStore, {
     initialCloudPreset: currentPresetName,
     onCloudPreset(presetName: CloudPresetName) {
       currentPresetName = presetName;
       currentPreset = CLOUD_PRESETS[presetName];
       applyCloudPreset(params, currentPreset);
-      applyCameraPreset(currentPreset.camera, orbit);
+      applyCloudBodyPreset(bodyStore, currentPreset);
+      applyCloudPresetCamera(currentPreset, bodyStore.bodies, orbit);
       windOffset = [0, 0];
       time = currentPreset.frozenTime;
       last = performance.now();
       document.body.dataset.cloudPreset = currentPresetName;
       document.body.dataset.presetVersion = String(currentPreset.version);
       document.body.dataset.validationScenario = 'interactive';
-      syncParameterDataset(params);
+      document.body.dataset.validationView = currentPreset.validationView ?? 'preset';
+      syncParameterDataset(params, bodyStore.bodies);
       const url = new URL(window.location.href);
       url.search = '';
       if (presetName !== 'default') url.searchParams.set('preset', presetName);
       window.history.replaceState(null, '', url);
-      for (const controller of gui.controllersRecursive()) controller.updateDisplay();
+      for (const controller of gui?.controllersRecursive() ?? []) controller.updateDisplay();
     },
     onCameraPreset(preset) {
       applyCameraPreset(preset, orbit);
+    },
+    onCloudSelection(body) {
+      selectedCloudBody = body;
     },
   });
   if (validationMode) gui.hide();
@@ -319,6 +489,7 @@ async function main(): Promise<void> {
     const animationDt = validationMode ? 0 : dt;
     last = now;
     time = validationMode ? currentPreset.frozenTime : time + dt;
+    params.sceneTime = time;
 
     const ang = (params.windAngleDeg * Math.PI) / 180;
     const wx = Math.cos(ang) * params.windSpeed;
@@ -341,7 +512,8 @@ async function main(): Promise<void> {
     document.body.dataset.sunAzimuthDeg = params.sunAzimuthDeg.toFixed(2);
     document.body.dataset.sunElevationDeg = params.sunElevationDeg.toFixed(2);
     document.body.dataset.exposure = params.exposure.toFixed(3);
-    renderer.render(params, cam, time, windOffset);
+    gizmo.update(cam, validationMode ? null : selectedCloudBody);
+    renderer.render(params, bodyStore.bodies, cam, time, windOffset);
     const gpuTiming = renderer.getGpuTimingInfo();
     document.body.dataset.gpuTimingSupported = String(gpuTiming.supported);
     document.body.dataset.gpuSampleCount = String(gpuTiming.sampleCount);

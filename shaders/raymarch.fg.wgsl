@@ -13,6 +13,21 @@ fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
   return o;
 }
 
+// A static integer avalanche hash avoids the diagonal lattice of IGN while
+// keeping the first sample stable in this single-frame (non-TAA) renderer.
+fn hashU32(value: u32) -> u32 {
+  var x = value;
+  x = ((x >> 16u) ^ x) * 0x7feb352du;
+  x = ((x >> 15u) ^ x) * 0x846ca68bu;
+  return (x >> 16u) ^ x;
+}
+
+fn screenSpaceJitter(pixelCoord: vec2f) -> f32 {
+  let pixel = vec2u(floor(pixelCoord));
+  let seed = (pixel.x * 0x1f123bb5u) ^ (pixel.y * 0x5f356495u);
+  return f32(hashU32(seed) & 0x00ffffffu) / 16777216.0;
+}
+
 fn lowCloudLightOptics(pos: vec3f, dens0: f32) -> vec2f {
   let steps = max(1u, U.debugFlags.z);
   let sun = U.sunDir;
@@ -23,7 +38,10 @@ fn lowCloudLightOptics(pos: vec3f, dens0: f32) -> vec2f {
     if (i >= steps) { break; }
     t += stepLen;
     let p = pos + sun * t;
-    let s = evaluateLowCloud(p, stepLen, false);
+    // Shadow rays only need the broad optical-depth field. Using the existing
+    // simple morphology path skips detail erosion and secondary family octaves
+    // while keeping coverage, height profiles and genus silhouettes intact.
+    let s = evaluateLowCloud(p, stepLen, true);
     tau += s.density * U.optical.y * stepLen;
     stepLen *= 1.6;
   }
@@ -69,7 +87,7 @@ fn highLightTransmittance(pos: vec3f, coverBright: f32) -> f32 {
   return exp(-min(tau, 12.0));
 }
 
-fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
+fn marchHighCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
   if (U.hpHigh0.x < 0.5) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
@@ -78,7 +96,11 @@ fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
   let t0 = max(shell.x, 0.0);
-  let t1 = min(shell.y, U.quality.w);
+  var t1 = min(shell.y, U.quality.w);
+  let groundT = rayGroundDistance(ro, rd);
+  if (groundT > 0.0) {
+    t1 = min(t1, groundT);
+  }
   if (t1 <= t0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
@@ -91,8 +113,7 @@ fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
 
   let stepCount = max(4u, min(256u, u32(U.hpHigh0.w)));
   let stepLen = (t1 - t0) / f32(stepCount);
-  let jitter = fract(sin(dot(ro + rd * t0, vec3f(41.7, 289.1, 113.5))) * 15731.743);
-  var t = t0 + jitter * stepLen;
+  var t = t0 + rayJitter * stepLen;
   var transmittance = 1.0;
   var radiance = vec3f(0.0);
   var maxBand = 0.0;
@@ -129,12 +150,15 @@ fn marchHighCloud(ro: vec3f, rd: vec3f) -> vec4f {
   return vec4f(radiance, transmittance);
 }
 
-fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
+fn marchLowCloud(ro: vec3f, rd: vec3f, rayJitter: f32) -> vec4f {
   let topAlt = U.optical.w;
   var baseAlt = topAlt;
-  if (U.layer0.w > 0.5) { baseAlt = min(baseAlt, U.layer0.x); }
-  if (U.layer1.w > 0.5) { baseAlt = min(baseAlt, U.layer1.x); }
-  if (U.layer2.w > 0.5) { baseAlt = min(baseAlt, U.layer2.x); }
+  let volumeBodyCount = min(U.debugFlags.w, 8u);
+  for (var layerIndex = 0u; layerIndex < 8u; layerIndex += 1u) {
+    if (layerIndex >= volumeBodyCount) { break; }
+    let layer = B.layers[layerIndex];
+    if (layer.w > 0.5) { baseAlt = min(baseAlt, layer.x); }
+  }
   if (U.hero0.w > 0.5) { baseAlt = min(baseAlt, U.hero1.y); }
   if (baseAlt >= topAlt) { baseAlt = 0.0; }
 
@@ -144,7 +168,11 @@ fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
   }
   // 不再用世界 XZ 盒硬裁（会把地平线远云切掉）
   let t0 = max(shell.x, 0.0);
-  let t1 = min(shell.y, U.quality.w);
+  var t1 = min(shell.y, U.quality.w);
+  let groundT = rayGroundDistance(ro, rd);
+  if (groundT > 0.0) {
+    t1 = min(t1, groundT);
+  }
   if (t1 <= t0) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
@@ -162,8 +190,6 @@ fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
     return vec4f(vec3f(s.densityCoverage), 0.0);
   }
 
-  let jitter = fract(sin(dot(ro + rd * t0, vec3f(127.1, 311.7, 74.7))) * 43758.5453);
-  var t = t0 + jitter * min(U.quality.x, 40.0);
   var transmittance = 1.0;
   var radiance = vec3f(0.0);
   var dbgSupport = 0.0;
@@ -179,6 +205,11 @@ fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
   // kilometres; the unvisited remainder was then composited as clear sky,
   // which looked like a transparent proxy shell hiding all clouds behind it.
   let traversalStepFloor = (t1 - t0) / f32(max(maxIter, 1u));
+  // Jitter across the actual minimum segment used by this ray. Limiting the
+  // old offset to minStep left long horizon rays almost phase-aligned after
+  // traversalStepFloor raised their effective step to hundreds of metres.
+  let initialJitterSpan = min(max(minStep, traversalStepFloor), t1 - t0);
+  var t = t0 + rayJitter * initialJitterSpan;
   // 刚离开云面后若干步保持小步长，避免大步跳过后方云体
   var exitHold = 0u;
 
@@ -209,14 +240,37 @@ fn marchLowCloud(ro: vec3f, rd: vec3f) -> vec4f {
     // edge. This is the demo equivalent of HP's stepSmall = totalDist/maxIter.
     stepLen = max(stepLen, traversalStepFloor);
     stepLen = min(stepLen, t1 - t);
-    let s = evaluateLowCloud(pos, stepLen, false);
+    var s = evaluateLowCloud(pos, stepLen, false);
+    // Long, almost horizontal segments are where a single point sample most
+    // visibly turns density error into a screen-space pattern. Add a midpoint
+    // density sample only near supported cloud, but still advance by stepLen so
+    // the finite iteration budget reaches the far shell exit.
+    let horizonRefinement = 1.0 - smoothstep(0.04, 0.22, abs(rd.y));
+    if (horizonRefinement > 0.01
+        && stepLen > minStep * 1.25
+        && (probe.support > 0.001 || exitHold > 0u)) {
+      let refinementPos = pos + rd * (stepLen * 0.5);
+      let refinement = evaluateLowCloud(refinementPos, stepLen * 0.5, false);
+      let primaryDensity = s.density;
+      let pairDensity = 0.5 * (s.density + refinement.density);
+      s.support = max(s.support, refinement.support);
+      s.afterShape = max(s.afterShape, refinement.afterShape);
+      s.density = mix(s.density, pairDensity, horizonRefinement);
+      s.densityCoverage = max(s.densityCoverage, refinement.densityCoverage);
+      if (refinement.density > primaryDensity) {
+        s.typeMix = mix(s.typeMix, refinement.typeMix, horizonRefinement);
+        s.height01 = mix(s.height01, refinement.height01, horizonRefinement);
+      }
+    }
     dbgSupport = max(dbgSupport, s.support);
     dbgAfter = max(dbgAfter, s.afterShape);
     dbgDens = max(dbgDens, s.density);
 
-    // 过低密度不积分：否则薄 support 边会变成“看不见却挡后景”的黑壳
-    if (s.density > 0.012) {
-      let dens = s.density;
+    // Smoothly suppress sub-visible density so stochastic samples cannot toggle
+    // an entire segment at a hard threshold near the horizon.
+    let densityGate = smoothstep(0.002, 0.02, s.density);
+    let dens = s.density * densityGate;
+    if (dens > 1e-5) {
       let typeW = mix(1.0, 1.08, s.typeMix);
       // 消光≈散射（高反照率），禁止 sigmaT>>sigmaS 造隐形壳体
       let sigmaT = dens * U.optical.y * typeW;
@@ -316,10 +370,11 @@ fn fs(inp: VSOut) -> @location(0) vec4f {
   let nearW = near.xyz / near.w;
   let rd = normalize(farW - nearW);
   let ro = U.cameraPos;
+  let rayJitter = screenSpaceJitter(inp.pos.xy);
 
   let bg = sampleBackground(ro, rd);
-  let lowCloud = marchLowCloud(ro, rd);
-  let highCloud = marchHighCloud(ro, rd);
+  let lowCloud = marchLowCloud(ro, rd, rayJitter);
+  let highCloud = marchHighCloud(ro, rd, rayJitter);
   var cloud = lowCloud;
   if (U.hpHigh0.x >= 0.5) {
     let highBottomAlt = U.hpHigh0.y + U.hpHigh4.x * (U.hpHigh0.z - U.hpHigh0.y);

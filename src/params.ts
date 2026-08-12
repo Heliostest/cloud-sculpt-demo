@@ -2,30 +2,69 @@ export type DebugMode = 'Final' | 'Support' | 'AfterShape' | 'FinalDensity' | 'W
 
 export type ToneMapper = 'reinhard' | 'aces';
 
-export type CameraPreset = 'side' | 'oblique45' | 'top' | 'hpOcean';
+export type CameraPreset =
+  | 'side'
+  | 'oblique45'
+  | 'top'
+  | 'hpOcean'
+  | 'cirrusSide'
+  | 'cirrusOblique'
+  | 'cirrusTop';
 
-export interface LayerParams {
-  enabled: boolean;
-  baseKm: number;
-  topKm: number;
-  densityScale: number;
-  detailAmount: number;
+export const CLOUD_GENERA = [
+  'cumulus',
+  'stratus',
+  'stratocumulus',
+  'cumulonimbus',
+  'altocumulus',
+  'altostratus',
+  'nimbostratus',
+  'cirrus',
+  'cirrostratus',
+  'cirrocumulus',
+] as const;
+
+export type CloudGenus = (typeof CLOUD_GENERA)[number];
+
+export const HIGH_CLOUD_GENERA = [
+  'altocumulus',
+  'altostratus',
+] as const satisfies readonly CloudGenus[];
+
+export type HighCloudGenus = (typeof HIGH_CLOUD_GENERA)[number];
+
+export const CLOUD_GENUS_INDEX = {
+  cumulus: 0,
+  stratus: 1,
+  stratocumulus: 2,
+  cumulonimbus: 3,
+  altocumulus: 4,
+  altostratus: 5,
+  nimbostratus: 6,
+  cirrus: 7,
+  cirrostratus: 8,
+  cirrocumulus: 9,
+} as const satisfies Record<CloudGenus, number>;
+
+export function isCloudGenus(value: string | null): value is CloudGenus {
+  return value !== null && (CLOUD_GENERA as readonly string[]).includes(value);
 }
 
-export interface HeroParams {
-  enabled: boolean;
-  typeCb: number;
-  cx: number;
-  cz: number;
-  rx: number;
-  rz: number;
-  baseKm: number;
-  thicknessKm: number;
-  coverage: number;
-  densityMul: number;
+export function isHighCloudGenus(value: string | null): value is HighCloudGenus {
+  return value !== null && (HIGH_CLOUD_GENERA as readonly string[]).includes(value);
 }
+
+export function cloudGenusTypeMix(genus: CloudGenus, cumulusDevelopment: number): number {
+  if (genus === 'cumulonimbus') return 1;
+  if (genus === 'cumulus') return Math.min(1, Math.max(0, cumulusDevelopment)) * 0.5;
+  return 0;
+}
+
+export const MAX_VOLUME_CLOUD_BODIES = 8;
 
 export interface DemoParams {
+  /** Runtime-only scene clock used to restart per-body lifecycles interactively. */
+  sceneTime: number;
   weatherMapCenterX: number;
   weatherMapCenterZ: number;
   weatherMapWorldSizeKm: number;
@@ -45,7 +84,6 @@ export interface DemoParams {
   loCovCoverContrast: number;
   loCovHeightIntensity: number;
   loCovHeightContrast: number;
-  cloudTypeOverride: number;
   hpShapeScaleX: number;
   hpShapeScaleY: number;
   hpShapeScaleZ: number;
@@ -94,12 +132,8 @@ export interface DemoParams {
   erosionMipOffset: number;
   forceSimpleMode: boolean;
   detailFadeEnabled: boolean;
-  highCloudEnabled: boolean;
   highWeatherRepeat: number;
-  highBaseKm: number;
-  highTopKm: number;
   highSteps: number;
-  highCloudTypeOverride: number;
   highCellScaleX: number;
   highCellScaleZ: number;
   highCellWindSpeed: number;
@@ -118,8 +152,6 @@ export interface DemoParams {
   highCloudSoftness: number;
   highWispScaleX: number;
   highWispScaleZ: number;
-  highWispStrength: number;
-  highDensityMultiplier: number;
   highViewAbsorption: number;
   highLightAbsorption: number;
   highCoverAbsorptionStrength: number;
@@ -139,8 +171,6 @@ export interface DemoParams {
   aoUpwardScale: number;
   scatterSourceODScale: number;
   scatterSourceCurvePow: number;
-  layers: [LayerParams, LayerParams, LayerParams];
-  hero: HeroParams;
   minPrimaryStep: number;
   maxPrimaryStep: number;
   maxIterations: number;
@@ -166,17 +196,18 @@ export interface DemoParams {
 
 export function createDefaultParams(): DemoParams {
   return {
+    sceneTime: 0,
     // Keep the tuned southwest weather phase while allowing the long view
     // rays to enter the active (non-saturated) HP radial-LUT range.
     weatherMapCenterX: 205000,
     weatherMapCenterZ: 205000,
     weatherMapWorldSizeKm: 500,
-    windSpeed: 8,
+    windSpeed: 15,
     windAngleDeg: 35,
     detailStrength: 0.42,
     detailRepeat: 0.0009,
     wispyEdgeWidth: 0.28,
-    densityThreshold: 0.0,
+    densityThreshold: 0.03,
     wispyReach: 0.252,
     edgeSoftness: 0.25,
     wispyTopHeight: 0.55,
@@ -187,7 +218,6 @@ export function createDefaultParams(): DemoParams {
     loCovCoverContrast: 1.0,
     loCovHeightIntensity: 1.0,
     loCovHeightContrast: 1.0,
-    cloudTypeOverride: -1,
     hpShapeScaleX: 0.00011,
     hpShapeScaleY: 0.00011,
     hpShapeScaleZ: 0.00011,
@@ -236,12 +266,8 @@ export function createDefaultParams(): DemoParams {
     erosionMipOffset: 0.0,
     forceSimpleMode: false,
     detailFadeEnabled: true,
-    highCloudEnabled: false,
     highWeatherRepeat: 0.000018,
-    highBaseKm: 6.5,
-    highTopKm: 10.5,
     highSteps: 96,
-    highCloudTypeOverride: -1,
     highCellScaleX: 4.0,
     highCellScaleZ: 4.0,
     highCellWindSpeed: 1.5,
@@ -260,8 +286,6 @@ export function createDefaultParams(): DemoParams {
     highCloudSoftness: 0.055,
     highWispScaleX: 7.0,
     highWispScaleZ: 7.0,
-    highWispStrength: 0.28,
-    highDensityMultiplier: 0.06,
     highViewAbsorption: 0.012,
     highLightAbsorption: 0.012,
     highCoverAbsorptionStrength: 0.35,
@@ -281,41 +305,6 @@ export function createDefaultParams(): DemoParams {
     aoUpwardScale: 1.0,
     scatterSourceODScale: 0.02,
     scatterSourceCurvePow: 1.0,
-    layers: [
-      {
-        enabled: true,
-        baseKm: 0.4,
-        topKm: 2.8,
-        densityScale: 0.85,
-        detailAmount: 1.0,
-      },
-      {
-        enabled: false,
-        baseKm: 3.0,
-        topKm: 5.5,
-        densityScale: 0.28,
-        detailAmount: 0.4,
-      },
-      {
-        enabled: false,
-        baseKm: 7.0,
-        topKm: 9.0,
-        densityScale: 0.25,
-        detailAmount: 0.0,
-      },
-    ],
-    hero: {
-      enabled: false,
-      typeCb: 1.0,
-      cx: 0,
-      cz: -2000,
-      rx: 1800,
-      rz: 1600,
-      baseKm: 0.7,
-      thicknessKm: 8.5,
-      coverage: 0.9,
-      densityMul: 1.35,
-    },
     minPrimaryStep: 16,
     maxPrimaryStep: 220,
     maxIterations: 512,

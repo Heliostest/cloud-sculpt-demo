@@ -4,3 +4,5 @@ dist/
 *.local
 .vite/
 .worktrees/
+
+vite-dev.*.log

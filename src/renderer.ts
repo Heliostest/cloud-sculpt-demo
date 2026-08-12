@@ -17,9 +17,22 @@ import {
   generateShapeRGBA,
   generateVolumeMipChainRGBA,
 } from './noiseAtlasGen';
-import { DEBUG_MODE_INDEX, TONE_MAPPER_INDEX, type DemoParams } from './params';
+import type { CloudBody } from './cloudBodies';
+import {
+  CLOUD_BODY_FLOAT_COUNT,
+  packVolumeCloudBodies,
+  selectVolumeCloudBodies,
+} from './cloudBodyPacking';
+import {
+  CLOUD_GENUS_INDEX,
+  DEBUG_MODE_INDEX,
+  TONE_MAPPER_INDEX,
+  cloudGenusTypeMix,
+  type DemoParams,
+} from './params';
 
-const UNIFORM_SIZE = 880;
+const UNIFORM_SIZE = 944;
+const CLOUD_BODY_UNIFORM_SIZE = CLOUD_BODY_FLOAT_COUNT * 4;
 
 export interface CameraState {
   position: [number, number, number];
@@ -265,6 +278,10 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     size: UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+  const cloudBodyUniformBuf = device.createBuffer({
+    size: CLOUD_BODY_UNIFORM_SIZE,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
 
   const timestampQuerySet = timestampSupported ? device.createQuerySet({ type: 'timestamp', count: 2 }) : null;
   const timestampResolveBuffer = timestampSupported ? device.createBuffer({
@@ -284,7 +301,9 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
   const module = device.createShaderModule({ code });
   const info = await module.getCompilationInfo();
   for (const m of info.messages) {
-    console[m.type === 'error' ? 'error' : 'warn'](`[WGSL ${m.type}] ${m.message}`);
+    console[m.type === 'error' ? 'error' : 'warn'](
+      `[WGSL ${m.type}] ${m.lineNum}:${m.linePos} ${m.message}`,
+    );
   }
   if (info.messages.some((m) => m.type === 'error')) {
     throw new Error('WGSL compile failed');
@@ -313,15 +332,19 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
       { binding: 12, resource: highWarpTex.createView() },
       { binding: 13, resource: highWispTex.createView() },
       { binding: 14, resource: weatherClampSamp },
+      { binding: 15, resource: { buffer: cloudBodyUniformBuf } },
     ],
   });
 
   const uniformCPU = new ArrayBuffer(UNIFORM_SIZE);
   const f32 = new Float32Array(uniformCPU);
   const u32 = new Uint32Array(uniformCPU);
+  const cloudBodyUniformCPU = new ArrayBuffer(CLOUD_BODY_UNIFORM_SIZE);
+  const cloudBodyF32 = new Float32Array(cloudBodyUniformCPU);
 
   function writeUniforms(
     params: DemoParams,
+    cloudBodies: readonly CloudBody[],
     camera: CameraState,
     aspect: number,
     time: number,
@@ -372,53 +395,28 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[41] = 0;
     f32[42] = 0;
     f32[43] = 0;
+    // Preserve the original main-uniform layout while cloud body records live
+    // in their own buffer. Keeping this range zero avoids stale compatibility
+    // data if writeUniforms is reused during hot reload.
+    f32.fill(0, 44, 68);
 
-    const L = params.layers;
-    // layer0: base, top, densScale, enabled
-    f32[44] = L[0].baseKm * 1000;
-    f32[45] = L[0].topKm * 1000;
-    f32[46] = L[0].densityScale;
-    f32[47] = L[0].enabled ? 1 : 0;
+    const volumeBodies = selectVolumeCloudBodies(cloudBodies);
+    packVolumeCloudBodies(volumeBodies, cloudBodyF32);
 
-    f32[48] = L[1].baseKm * 1000;
-    f32[49] = L[1].topKm * 1000;
-    f32[50] = L[1].densityScale;
-    f32[51] = L[1].enabled ? 1 : 0;
+    const localBody = cloudBodies.find((body) => body.enabled && body.path === 'local-volume');
+    f32[68] = localBody?.centerX ?? 0;
+    f32[69] = localBody?.centerZ ?? 0;
+    f32[70] = localBody?.radiusX ?? 1;
+    f32[71] = localBody ? 1 : 0;
 
-    f32[52] = L[2].baseKm * 1000;
-    f32[53] = L[2].topKm * 1000;
-    f32[54] = L[2].densityScale;
-    f32[55] = L[2].enabled ? 1 : 0;
+    f32[72] = localBody?.radiusZ ?? 1;
+    f32[73] = (localBody?.baseKm ?? 0) * 1000;
+    f32[74] = localBody ? Math.max(0.1, localBody.topKm - localBody.baseKm) * 1000 : 0;
+    f32[75] = localBody ? cloudGenusTypeMix(localBody.genus, localBody.cumulusDevelopment) : 0;
 
-    f32[56] = 0;
-    f32[57] = L[0].detailAmount;
-    f32[58] = 0;
-    f32[59] = 0;
-
-    f32[60] = 0;
-    f32[61] = L[1].detailAmount;
-    f32[62] = 0;
-    f32[63] = 0;
-
-    f32[64] = 0;
-    f32[65] = L[2].detailAmount;
-    f32[66] = 0;
-    f32[67] = 0;
-
-    const h = params.hero;
-    f32[68] = h.cx;
-    f32[69] = h.cz;
-    f32[70] = h.rx;
-    f32[71] = h.enabled ? 1 : 0;
-
-    f32[72] = h.rz;
-    f32[73] = h.baseKm * 1000;
-    f32[74] = h.thicknessKm * 1000;
-    f32[75] = h.typeCb;
-
-    f32[76] = h.coverage;
-    f32[77] = h.densityMul;
-    f32[78] = params.exposure;
+    f32[76] = localBody?.coverage ?? 0;
+    f32[77] = localBody?.densityScale ?? 0;
+    f32[78] = localBody?.detailAmount ?? 0;
     f32[79] = 0;
 
     f32[80] = params.minPrimaryStep;
@@ -430,16 +428,14 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[85] = params.extinction;
     f32[86] = params.boxHalfKm * 1000;
     let topKm = 0.5;
-    for (const layer of L) {
-      if (layer.enabled) topKm = Math.max(topKm, layer.topKm);
-    }
-    if (h.enabled) topKm = Math.max(topKm, h.baseKm + h.thicknessKm);
+    for (const body of volumeBodies) topKm = Math.max(topKm, body.topKm);
+    if (localBody) topKm = Math.max(topKm, localBody.topKm);
     f32[87] = topKm * 1000 + 500;
 
     u32[88] = DEBUG_MODE_INDEX[params.debugMode];
     u32[89] = params.detailOff ? 1 : 0;
     u32[90] = params.lightSteps;
-    u32[91] = 0;
+    u32[91] = volumeBodies.length;
 
     // hpLow0: densityThreshold, wispyReach, edgeSoftness, wispyTopHeight
     f32[92] = params.densityThreshold;
@@ -447,11 +443,11 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[94] = params.edgeSoftness;
     f32[95] = params.wispyTopHeight;
 
-    // hpLow1: wispyTopHardness, bottomSmoothHeight, bottomSmoothPow, typeOverride
+    // hpLow1: wispyTopHardness, bottomSmoothHeight, bottomSmoothPow, reserved
     f32[96] = params.wispyTopHardness;
     f32[97] = params.bottomSmoothHeight;
     f32[98] = params.bottomSmoothPow;
-    f32[99] = params.cloudTypeOverride;
+    f32[99] = 0;
 
     // hpCoverage0: Cover intensity/contrast, Height intensity/contrast
     f32[100] = params.loCovCoverIntensity;
@@ -523,14 +519,16 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[150] = params.forceSimpleMode ? 1 : 0;
     f32[151] = params.detailFadeEnabled ? 1 : 0;
 
-    // Independent HP Ac/As high-cloud path. The general demo layer 2 remains separate.
-    f32[152] = params.highCloudEnabled ? 1 : 0;
-    f32[153] = params.highBaseKm * 1000;
-    f32[154] = params.highTopKm * 1000;
+    // Independent HP Ac/As density path, with common body properties supplied
+    // by the same authoring collection as volume and local-volume bodies.
+    const highBody = cloudBodies.find((body) => body.enabled && body.path === 'high-sheet');
+    f32[152] = highBody ? 1 : 0;
+    f32[153] = (highBody?.baseKm ?? 0) * 1000;
+    f32[154] = (highBody?.topKm ?? 0) * 1000;
     f32[155] = params.highSteps;
     f32[156] = params.highWeatherRepeat;
-    f32[157] = params.highCloudTypeOverride;
-    f32[158] = params.highDensityMultiplier;
+    f32[157] = highBody ? CLOUD_GENUS_INDEX[highBody.genus] : 0;
+    f32[158] = highBody?.densityScale ?? 0;
     f32[159] = params.highCellWindSpeed;
     f32[160] = params.highCellScaleX;
     f32[161] = params.highCellScaleZ;
@@ -550,7 +548,7 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[175] = params.hiASoftContrast;
     f32[176] = params.highWispScaleX;
     f32[177] = params.highWispScaleZ;
-    f32[178] = params.highWispStrength;
+    f32[178] = highBody?.detailAmount ?? 0;
     f32[179] = params.highHorizonStartKm * 1000;
     f32[180] = params.highHorizonEndKm * 1000;
     f32[181] = 0;
@@ -609,7 +607,31 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
     f32[218] = params.hpShapeSecondaryWeight;
     f32[219] = 0;
 
+    // Special render paths consume the same authored morphology recipe as the
+    // canonical volume dispatcher. Their shaders may approximate a field, but
+    // the meaning and zero/default values stay owned by CloudBody.
+    const localMorphology = localBody?.morphology;
+    f32[220] = localMorphology?.verticalDevelopment ?? 0;
+    f32[221] = localMorphology?.cellScale ?? 0;
+    f32[222] = localMorphology?.cellStrength ?? 0;
+    f32[223] = localMorphology?.sheetUniformity ?? 0;
+    f32[224] = localMorphology?.fiberStrength ?? 0;
+    f32[225] = ((localMorphology?.fiberAngleDeg ?? 0) * Math.PI) / 180;
+    f32[226] = localMorphology?.anvilStrength ?? 0;
+    f32[227] = localMorphology?.erosionScale ?? 0;
+
+    const highMorphology = highBody?.morphology;
+    f32[228] = highMorphology?.verticalDevelopment ?? 0;
+    f32[229] = highMorphology?.cellScale ?? 0;
+    f32[230] = highMorphology?.cellStrength ?? 0;
+    f32[231] = highMorphology?.sheetUniformity ?? 0;
+    f32[232] = highMorphology?.fiberStrength ?? 0;
+    f32[233] = ((highMorphology?.fiberAngleDeg ?? 0) * Math.PI) / 180;
+    f32[234] = highMorphology?.anvilStrength ?? 0;
+    f32[235] = highMorphology?.erosionScale ?? 0;
+
     device.queue.writeBuffer(uniformBuf, 0, uniformCPU);
+    device.queue.writeBuffer(cloudBodyUniformBuf, 0, cloudBodyUniformCPU);
   }
 
   function resizeCanvas(): void {
@@ -624,13 +646,14 @@ export async function createRenderer(canvas: HTMLCanvasElement) {
 
   function render(
     params: DemoParams,
+    cloudBodies: readonly CloudBody[],
     camera: CameraState,
     time: number,
     windOffset: [number, number],
   ): void {
     resizeCanvas();
     const aspect = canvas.width / Math.max(1, canvas.height);
-    writeUniforms(params, camera, aspect, time, windOffset);
+    writeUniforms(params, cloudBodies, camera, aspect, time, windOffset);
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
     const sampleTimestamp = timestampQuerySet !== null

@@ -1,0 +1,16 @@
+{
+  "capturedAt": "2026-08-09",
+  "baseline": {
+    "singleBodyGpuMs": 6.070,
+    "eightBodyGpuMs": 130.359,
+    "eightBodySimpleGpuMs": 125.912
+  },
+  "optimizedCandidateCounts": {
+    "altitudeMeters": [1000, 4000, 8000],
+    "before": [8, 8, 8],
+    "after": [4, 3, 3]
+  },
+  "afterGpuMs": null,
+  "measurementStatus": "pending-local-webgpu-rerun",
+  "note": "No after value is inferred from structural candidate reduction."
+}

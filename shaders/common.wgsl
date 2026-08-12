@@ -19,17 +19,14 @@ struct Uniforms {
   wispyEdgeWidth: f32,
   reserved3: vec3f,
   reserved4: f32,
-  layer0: vec4f,
-  layer1: vec4f,
-  layer2: vec4f,
-  layerShapeDetail0: vec4f,
-  layerShapeDetail1: vec4f,
-  layerShapeDetail2: vec4f,
+  reservedLayers: array<vec4f, 3>,
+  reservedLayerShapeDetails: array<vec4f, 3>,
   hero0: vec4f,
   hero1: vec4f,
   hero2: vec4f,
   quality: vec4f,
   optical: vec4f,
+  // debug mode / detail-off bit / light steps / packed volume-body count
   debugFlags: vec4u,
   hpLow0: vec4f,
   hpLow1: vec4f,
@@ -63,6 +60,21 @@ struct Uniforms {
   hpSky1: vec4f,
   hpShapeWarp0: vec4f,
   hpShapeBlend0: vec4f,
+  heroMorphology0: vec4f,
+  heroMorphology1: vec4f,
+  hpHighMorphology0: vec4f,
+  hpHighMorphology1: vec4f,
+};
+
+struct CloudBodyUniforms {
+  layers: array<vec4f, 8>,
+  layerShapeDetails: array<vec4f, 8>,
+  layerBounds: array<vec4f, 8>,
+  layerBoundTransforms: array<vec4f, 8>,
+  layerMotion: array<vec4f, 8>,
+  layerLife: array<vec4f, 8>,
+  layerMorphology0: array<vec4f, 8>,
+  layerMorphology1: array<vec4f, 8>,
 };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
@@ -79,6 +91,7 @@ struct Uniforms {
 @group(0) @binding(12) var highWarpTex: texture_2d<f32>;
 @group(0) @binding(13) var highWispTex: texture_2d<f32>;
 @group(0) @binding(14) var weatherClampSamp: sampler;
+@group(0) @binding(15) var<uniform> B: CloudBodyUniforms;
 
 fn saturate(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn saturate3(x: vec3f) -> vec3f { return clamp(x, vec3f(0.0), vec3f(1.0)); }
@@ -145,6 +158,14 @@ fn raySphere(ro: vec3f, rd: vec3f, center: vec3f, radius: f32) -> vec2f {
   }
   let s = sqrt(h);
   return vec2f(-b - s, -b + s);
+}
+
+fn rayGroundDistance(ro: vec3f, rd: vec3f) -> f32 {
+  let hit = raySphere(ro, rd, planetCenter(), PLANET_R);
+  if (hit.x <= hit.y && hit.x > 0.0) {
+    return hit.x;
+  }
+  return -1.0;
 }
 
 fn rayCloudShell(ro: vec3f, rd: vec3f, baseAlt: f32, topAlt: f32) -> vec2f {
